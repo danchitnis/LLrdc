@@ -1,0 +1,25 @@
+{
+  "name": "remote-desktop-root",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Root package for remote desktop prototype steps",
+  "scripts": {
+    "step1:test-frame": "tsx step1/scripts/test-frame.ts",
+    "step2:demo": "tsx step2/scripts/interactive-demo.ts",
+    "check": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

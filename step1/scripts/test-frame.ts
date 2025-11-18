@@ -3,7 +3,7 @@
  * Bootstraps a headless Wayland session (sway by default), captures a frame
  * with grim, and writes it through a FIFO so we can verify the pipeline.
  */
-import { spawn, spawnSync, execSync } from 'node:child_process';
+import { spawn, spawnSync, execSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -44,8 +44,8 @@ const cleanupTasks = [
     }
   },
 ];
-let compositorProcess;
-let waylandSocketSymlink;
+let compositorProcess: ChildProcess | undefined;
+let waylandSocketSymlink: string | undefined;
 
 function ensureBinaries() {
   for (const binary of REQUIRED_BINARIES) {
@@ -58,7 +58,7 @@ function ensureBinaries() {
   }
 }
 
-function ensureFifo(pipePath) {
+function ensureFifo(pipePath: string) {
   try {
     const stats = fs.statSync(pipePath);
     if (!stats.isFIFO()) {
@@ -140,7 +140,7 @@ async function startSway() {
   }
 }
 
-function wait(ms) {
+function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -165,26 +165,26 @@ async function waitForWaylandSocket() {
   );
 }
 
-function waitForSocketOrExit() {
+function waitForSocketOrExit(): Promise<string> {
   return new Promise((resolve, reject) => {
-    const onExit = (code) => {
+    const onExit = (code: number | null) => {
       reject(new Error(`sway exited before providing a socket (code ${code})`));
     };
-    compositorProcess.once('exit', onExit);
+    if (compositorProcess) compositorProcess.once('exit', onExit);
     waitForWaylandSocket()
       .then((socket) => {
-        compositorProcess.off('exit', onExit);
+        if (compositorProcess) compositorProcess.off('exit', onExit);
         resolve(socket);
       })
       .catch((err) => {
-        compositorProcess.off('exit', onExit);
+        if (compositorProcess) compositorProcess.off('exit', onExit);
         reject(err);
       });
   });
 }
 
 function captureFrame() {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const reader = fs.createReadStream(PIPE_PATH);
     const writer = fs.createWriteStream(OUTPUT_PATH);
     reader.pipe(writer);
@@ -259,7 +259,7 @@ function shutdown() {
   while (cleanupTasks.length) {
     const fn = cleanupTasks.pop();
     try {
-      fn();
+      if (fn) fn();
     } catch (err) {
       console.warn('Cleanup step failed:', err);
     }

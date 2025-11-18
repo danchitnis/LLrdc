@@ -3,7 +3,7 @@
  * Step 2 demo: launch a headless sway session, start gedit, inject keystrokes
  * with wtype, and capture a screenshot for verification.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -40,8 +40,8 @@ const cleanupTasks = [
     }
   },
 ];
-let compositorProcess;
-let appProcess;
+let compositorProcess: ChildProcess | undefined;
+let appProcess: ChildProcess | undefined;
 
 function ensureBinaries() {
   for (const binary of REQUIRED_BINARIES) {
@@ -54,7 +54,7 @@ function ensureBinaries() {
   }
 }
 
-function wait(ms) {
+function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -79,7 +79,7 @@ async function startSway() {
   console.log(`Headless sway ready (XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}).`);
 }
 
-function waitForWaylandSocket(timeoutMs = 5000) {
+function waitForWaylandSocket(timeoutMs = 5000): Promise<string> {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     (function poll() {
@@ -114,19 +114,19 @@ function waitForWaylandSocket(timeoutMs = 5000) {
   });
 }
 
-function waitForSocketOrExit() {
+function waitForSocketOrExit(): Promise<string> {
   return new Promise((resolve, reject) => {
-    const onExit = (code) => {
+    const onExit = (code: number | null) => {
       reject(new Error(`sway exited before exposing a socket (code ${code})`));
     };
-    compositorProcess.once('exit', onExit);
+    if (compositorProcess) compositorProcess.once('exit', onExit);
     waitForWaylandSocket()
       .then((socket) => {
-        compositorProcess.off('exit', onExit);
+        if (compositorProcess) compositorProcess.off('exit', onExit);
         resolve(socket);
       })
       .catch((err) => {
-        compositorProcess.off('exit', onExit);
+        if (compositorProcess) compositorProcess.off('exit', onExit);
         reject(err);
       });
   });
@@ -147,8 +147,8 @@ function launchDemoApp() {
   });
 }
 
-function typeTextWithWtype(text) {
-  return new Promise((resolve, reject) => {
+function typeTextWithWtype(text: string) {
+  return new Promise<void>((resolve, reject) => {
     const env = {
       ...process.env,
       WAYLAND_DISPLAY: WAYLAND_SOCKET,
@@ -170,7 +170,7 @@ function typeTextWithWtype(text) {
 }
 
 function captureScreenshot() {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const env = {
       ...process.env,
       WAYLAND_DISPLAY: WAYLAND_SOCKET,
@@ -210,7 +210,7 @@ function shutdown() {
   while (cleanupTasks.length) {
     const fn = cleanupTasks.pop();
     try {
-      fn();
+      if (fn) fn();
     } catch (err) {
       console.warn('Cleanup step failed:', err);
     }
