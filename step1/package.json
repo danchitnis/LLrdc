@@ -1,0 +1,15 @@
+{
+  "name": "remote-desktop-step1",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Prototype Wayland capture pipeline for step 1",
+  "scripts": {
+    "test-frame": "node scripts/test-frame.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
