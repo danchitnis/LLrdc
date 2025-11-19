@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Desktop Step 3</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #222;
+            color: #eee;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        #status {
+            margin-bottom: 10px;
+            color: #aaa;
+        }
+
+        #display {
+            border: 2px solid #444;
+            max-width: 100%;
+            height: auto;
+            background-color: #000;
+        }
+
+        .instructions {
+            margin-top: 20px;
+            font-size: 0.9em;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Remote Desktop Viewer</h1>
+    <div id="status">Connecting...</div>
+    <img id="display" alt="Remote Desktop Stream" />
+
+    <div class="instructions">
+        <p>Focus this window and type to send keystrokes to the remote session.</p>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const displayEl = document.getElementById('display');
+
+        const ws = new WebSocket(`ws://${window.location.host}`);
+
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = () => {
+            statusEl.textContent = 'Connected';
+            statusEl.style.color = '#4f4';
+        };
+
+        ws.onclose = () => {
+            statusEl.textContent = 'Disconnected';
+            statusEl.style.color = '#f44';
+        };
+
+        ws.onerror = (err) => {
+            console.error('WebSocket error:', err);
+            statusEl.textContent = 'Error';
+            statusEl.style.color = '#f44';
+        };
+
+        ws.onmessage = (event) => {
+            const blob = new Blob([event.data], { type: 'image/png' });
+            const url = URL.createObjectURL(blob);
+
+            // Revoke the previous URL to avoid memory leaks
+            if (displayEl.src) {
+                URL.revokeObjectURL(displayEl.src);
+            }
+
+            displayEl.src = url;
+        };
+
+        // Input Handling
+        window.addEventListener('keydown', (event) => {
+            // Prevent default browser actions for keys that interfere with remote usage
+            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Backspace'].includes(event.code) || event.key === ' ') {
+                event.preventDefault();
+            }
+
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'keydown',
+                    key: event.key
+                }));
+            }
+        });
+    </script>
+</body>
+
+</html>
