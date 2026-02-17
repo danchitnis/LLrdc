@@ -132,8 +132,8 @@
                 node: 'display',
                 mode: 'video',
                 flushingTime: 0,
-                fps: 15,
-                debug: true,
+                fps: 30, // Match server FPS
+                debug: false, // Disable debug to save performance
                 onError: function(data) {
                     log('Buffer error encountered: ' + JSON.stringify(data));
                     statusEl.textContent = 'Buffer Error';

@@ -63,7 +63,8 @@ test.beforeAll(async () => {
   
   // Use tsx to run the server directly
   serverProcess = spawn('npx', ['tsx', serverPath], {
-    env: { ...process.env, PORT: String(serverPort), FPS: '15' },
+    // env: { ...process.env, PORT: String(serverPort), FPS: '60' },
+    env: { ...process.env, PORT: String(serverPort), FPS: '60' },
     stdio: 'pipe', // Capture stdio for debugging if needed
     detached: false
   });
@@ -109,14 +110,35 @@ test('benchmark video stream performance', async ({ page }) => {
     return stats && stats.fps > 0;
   }, null, { timeout: 15000 });
 
-  console.log('Stream started. Measuring for 10 seconds...');
+  // Spawn xeyes to ensure screen content changes
+  console.log('Spawning xeyes...');
+  await page.evaluate(() => {
+      const ws = new WebSocket(window.location.href.replace('http', 'ws'));
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
+  });
+  // Give xeyes a moment to appear
+  await page.waitForTimeout(2000);
+
+  console.log('Stream started. Measuring for 10 seconds with mouse movement...');
 
   const statsData: { fps: number, latency: number }[] = [];
   const duration = 10000; // 10 seconds
-  const interval = 1000; // Measure every second (since stats update every second)
+  const interval = 1000; // Measure every second
   const startTime = Date.now();
 
+  // Move mouse in a circle to force screen updates
+  const centerX = 500;
+  const centerY = 300;
+  const radius = 100;
+  let angle = 0;
+
   while (Date.now() - startTime < duration) {
+    // Perform mouse movement
+    const x = centerX + radius * Math.cos(angle);
+    const y = centerY + radius * Math.sin(angle);
+    await page.mouse.move(x, y);
+    angle += 0.5;
+
     const stats = await page.evaluate(() => (window as any).getStats());
     statsData.push(stats);
     await page.waitForTimeout(interval);
@@ -137,7 +159,7 @@ test('benchmark video stream performance', async ({ page }) => {
   // 5. Log stats
   console.log('Benchmark Results:');
   console.log(`  FPS: Avg=${avgFps.toFixed(2)}, Min=${minFps}, Max=${maxFps}`);
-  console.log(`  Latency: Avg=${avgLatency.toFixed(2)}ms, Min=${minLatency}ms, Max=${maxLatency}ms`);
+  console.log(`  Latency (WebSocket RTT): Avg=${avgLatency.toFixed(2)}ms, Min=${minLatency}ms, Max=${maxLatency}ms`);
 
   // 6. Fails if Average FPS < 5
   expect(avgFps, `Average FPS (${avgFps.toFixed(2)}) should be >= 5`).toBeGreaterThanOrEqual(5);

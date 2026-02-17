@@ -73,7 +73,7 @@ function wait(ms: number) {
 async function startSway() {
     const swayConfigPath = path.join(XDG_RUNTIME_DIR, 'sway.conf');
     const swaySocketPath = path.join(XDG_RUNTIME_DIR, 'sway-ipc.sock');
-    
+
     // Set SWAYSOCK env var so sway uses it
     process.env.SWAYSOCK = swaySocketPath;
 
@@ -114,7 +114,7 @@ xwayland enable
     });
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
-    
+
     // We can now wait for the specific socket file we defined
     await waitForSocketOrExit();
     console.log(`Headless sway ready (XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}).`);
@@ -208,16 +208,13 @@ function startStreaming(wss: WebSocketServer) {
     let ffmpegArgs: string[];
     if (useWfRecorder) {
         ffmpegArgs = [
-            '-f', 'rawvideo',
-            '-pixel_format', 'yuv420p',
-            '-video_size', '1280x720',
-            '-framerate', '30',
+            '-f', 'nut',
             '-i', '-',
             '-c:v', ffmpegCodec,
             '-pix_fmt', 'yuv420p',
             '-profile:v', 'baseline',
             '-level', '3.1',
-            '-g', '30',
+            '-g', `${FPS}`,
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
             '-f', ffmpegFormat,
@@ -227,14 +224,24 @@ function startStreaming(wss: WebSocketServer) {
         ffmpegArgs = [
             '-f', 'image2pipe',
             '-vcodec', 'ppm',
+            '-probesize', '32', // Low probe size for faster startup
+            '-analyzeduration', '0', // No analyze duration
+            '-fflags', 'nobuffer', // No input buffering
+            '-r', `${FPS}`,
             '-i', '-',
             '-c:v', ffmpegCodec,
             '-pix_fmt', 'yuv420p',
             '-profile:v', 'baseline',
             '-level', '3.1',
-            '-g', '30',
+            '-g', `${FPS}`, // GOP size equal to FPS (1 keyframe/sec)
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
+            // Reduce buffering latency - using x264-params for fine tuning
+            // slice-max-size: limits slice size for lower latency packetization
+            // keyint/min-keyint: force keyframes (though we set -g already)
+            // scenecut=0: disable scene detection for consistent latency
+            // intra-refresh=1: use periodic intra refresh instead of IDR frames for smoother stream
+            '-x264-params', 'slice-max-size=1200:keyint=60:min-keyint=60:scenecut=0:intra-refresh=1',
             '-f', ffmpegFormat,
             '-'
         ];
@@ -250,8 +257,9 @@ function startStreaming(wss: WebSocketServer) {
             XDG_RUNTIME_DIR,
         };
         console.log('Starting wf-recorder...');
-        wfRecorderProcess = spawn('wf-recorder', ['-m', 'sdl', '-c', 'rawvideo', '-f', '-'], { env });
-        
+        // Use nut container for pipe reliability
+        wfRecorderProcess = spawn('wf-recorder', ['-o', screenOutput, '-m', 'nut', '-c', 'rawvideo', '-x', 'yuv420p', '-r', `${FPS}`, '-D', '-f', '-'], { env });
+
         if (wfRecorderProcess.stdout && ffmpegProcess.stdin) {
             wfRecorderProcess.stdout.pipe(ffmpegProcess.stdin);
         }
@@ -304,6 +312,7 @@ async function captureLoop(wss: WebSocketServer) {
     console.log('Starting capture loop...');
     let loopCount = 0;
     while (true) {
+        const loopStart = Date.now();
         if (useWfRecorder) {
             await wait(1000);
             continue;
@@ -312,22 +321,21 @@ async function captureLoop(wss: WebSocketServer) {
         const clientsCount = wss.clients.size;
         const ffmpegRunning = ffmpegProcess && !ffmpegProcess.killed;
         const stdinWritable = ffmpegProcess?.stdin?.writable;
-        
+
         // Force capture every 5 seconds even without clients to debug grim
         const forceDebug = loopCount % (5000 / SCREENSHOT_INTERVAL_MS) === 0;
 
         if ((clientsCount > 0 || forceDebug) && ffmpegRunning && stdinWritable) {
             try {
                 if (forceDebug) console.log(`Debug capture: clients=${clientsCount}`);
-                
+
                 const env = {
                     ...process.env,
                     WAYLAND_DISPLAY: WAYLAND_SOCKET,
                     XDG_RUNTIME_DIR,
                 };
-                const start = Date.now();
                 const grim = spawn('grim', ['-t', 'ppm', '-'], { env });
-                
+
                 if (grim.stderr) {
                     grim.stderr.on('data', (data) => console.error(`grim stderr: ${data}`));
                 }
@@ -338,7 +346,7 @@ async function captureLoop(wss: WebSocketServer) {
                     } else {
                         console.error('ffmpeg stdin not available');
                     }
-                    
+
                     const timeout = setTimeout(() => {
                         console.error('grim timed out, killing...');
                         grim.kill();
@@ -347,8 +355,6 @@ async function captureLoop(wss: WebSocketServer) {
 
                     grim.on('exit', (code) => {
                         clearTimeout(timeout);
-                        const duration = Date.now() - start;
-                        // if (duration > 100) console.warn(`Slow capture: ${duration}ms`);
                         if (code !== 0) console.error(`grim exited with code ${code}`);
                         else if (forceDebug) console.log('Grim finished successfully');
                         resolve(code);
@@ -369,7 +375,10 @@ async function captureLoop(wss: WebSocketServer) {
                 stdinWritable
             });
         }
-        await wait(SCREENSHOT_INTERVAL_MS);
+
+        const elapsed = Date.now() - loopStart;
+        const delay = Math.max(0, SCREENSHOT_INTERVAL_MS - elapsed);
+        await wait(delay);
     }
 }
 
@@ -377,6 +386,7 @@ async function captureLoop(wss: WebSocketServer) {
 
 let screenWidth = 1024;
 let screenHeight = 768;
+let screenOutput = 'HEADLESS-1';
 
 let swayIpcSocket: string | undefined;
 
@@ -393,7 +403,7 @@ function findIpcSocket(): string | undefined {
         if (socket) {
             return path.join(XDG_RUNTIME_DIR, socket);
         }
-    } catch (_) {}
+    } catch (_) { }
     return undefined;
 }
 
@@ -426,13 +436,14 @@ async function updateScreenResolution(retries = 20): Promise<void> {
                 if (outputs.length > 0 && outputs[0].rect) {
                     screenWidth = outputs[0].rect.width;
                     screenHeight = outputs[0].rect.height;
-                    console.log(`Detected resolution: ${screenWidth}x${screenHeight}`);
+                    screenOutput = outputs[0].name || screenOutput;
+                    console.log(`Detected resolution: ${screenWidth}x${screenHeight} on ${screenOutput}`);
                     return;
                 }
             }
             // Suppress error logs during startup retries unless it's the last attempt
             if (i === retries - 1) {
-                 console.error(`swaymsg failed with code ${result.status}: ${result.stderr.toString()}`);
+                console.error(`swaymsg failed with code ${result.status}: ${result.stderr.toString()}`);
             }
         } catch (err) {
             if (i === retries - 1) {
@@ -531,7 +542,7 @@ function spawnApp(command: string) {
         XDG_RUNTIME_DIR,
         SWAYSOCK: swayIpcSocket,
     };
-    
+
     console.log(`Spawning app via swaymsg exec: ${command}`);
     // Use swaymsg exec to ensure the app gets the correct environment (DISPLAY, etc.)
     const child = spawn('swaymsg', ['exec', command], { env, stdio: 'ignore' });
@@ -555,7 +566,7 @@ async function main() {
         WAYLAND_DISPLAY: WAYLAND_SOCKET,
         XDG_RUNTIME_DIR,
     };
-    
+
     // Launch initial app (calculator)
     spawnApp('gnome-calculator');
 
@@ -564,9 +575,9 @@ async function main() {
         if (req.method === 'GET') {
             let urlPath = req.url || '/';
             if (urlPath === '/') urlPath = '/viewer.html';
-            
+
             const filePath = path.join(__dirname, '../public', urlPath);
-            
+
             // Prevent directory traversal
             if (!filePath.startsWith(path.join(__dirname, '../public'))) {
                 res.writeHead(403);
@@ -593,7 +604,7 @@ async function main() {
 
     wss.on('connection', (ws) => {
         console.log('Client connected');
-        
+
         ws.on('error', (err) => {
             console.error('Client socket error:', err);
         });
@@ -605,7 +616,7 @@ async function main() {
         ws.on('message', (data) => {
             try {
                 const msg = JSON.parse(data.toString());
-                
+
                 if (msg.type === 'keydown' && msg.key) {
                     const mappedKey = mapWebKeyToWtype(msg.key);
                     // console.log(`Injecting key: ${msg.key} -> ${mappedKey}`);
@@ -626,7 +637,7 @@ async function main() {
                         console.warn(`Blocked spawn attempt for: ${msg.command}`);
                     }
                 }
-                
+
             } catch (err) {
                 console.error('Failed to parse message:', err);
             }
