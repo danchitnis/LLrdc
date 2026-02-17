@@ -21,9 +21,7 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 const FPS = parseInt(process.env.FPS || '2', 10); // Low FPS for grim
 const SCREENSHOT_INTERVAL_MS = 1000 / FPS;
 
-const XDG_RUNTIME_DIR =
-    process.env.XDG_RUNTIME_DIR ||
-    fs.mkdtempSync(path.join(os.tmpdir(), 'remote-desktop-'));
+const XDG_RUNTIME_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-desktop-'));
 fs.chmodSync(XDG_RUNTIME_DIR, 0o700);
 
 const REQUIRED_BINARIES = ['sway', 'grim', 'wtype'];
@@ -55,16 +53,34 @@ function wait(ms: number) {
 }
 
 async function startSway() {
+    const swayConfigPath = path.join(XDG_RUNTIME_DIR, 'sway.conf');
+    const swaySocketPath = path.join(XDG_RUNTIME_DIR, 'sway-ipc.sock');
+    
+    // Set SWAYSOCK env var so sway uses it
+    process.env.SWAYSOCK = swaySocketPath;
+
+    const configContent = `
+# Minimal Sway Config for Headless Remote Desktop
+input * {
+    xkb_layout "us"
+    xkb_model "pc105"
+}
+output HEADLESS-1 resolution 1280x720
+`;
+    fs.writeFileSync(swayConfigPath, configContent);
+
     const env = {
         ...process.env,
         WAYLAND_DISPLAY: '',
         XDG_RUNTIME_DIR,
+        SWAYSOCK: swaySocketPath, // Explicitly set socket path
         WLR_BACKENDS: 'headless',
         WLR_LIBINPUT_NO_DEVICES: '1',
         WLR_RENDERER: 'pixman',
+        LIBGL_ALWAYS_SOFTWARE: '1', // Suppress EGL/MESA warnings
     };
     // Using --debug for more info, can be removed if too noisy
-    compositorProcess = spawn('sway', [], { env, stdio: 'inherit' });
+    compositorProcess = spawn('sway', ['-c', swayConfigPath], { env, stdio: 'inherit' });
     cleanupTasks.push(() => {
         if (compositorProcess && !compositorProcess.killed) {
             compositorProcess.kill('SIGTERM');
@@ -72,6 +88,8 @@ async function startSway() {
     });
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
+    
+    // We can now wait for the specific socket file we defined
     await waitForSocketOrExit();
     console.log(`Headless sway ready (XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}).`);
 }
@@ -81,18 +99,19 @@ function waitForWaylandSocket(timeoutMs = 5000): Promise<string> {
     return new Promise((resolve, reject) => {
         (function poll() {
             try {
+                // Check for Wayland socket (created by sway automatically, usually wayland-1)
                 const entries = fs.readdirSync(XDG_RUNTIME_DIR);
-                const socket = entries.find((entry) => entry.startsWith('wayland-'));
+                const socket = entries.find((entry) => entry.startsWith('wayland-') && !entry.endsWith('.lock'));
                 if (socket) {
                     const target = path.join(XDG_RUNTIME_DIR, WAYLAND_SOCKET);
                     const source = path.join(XDG_RUNTIME_DIR, socket);
                     if (target !== source) {
                         try {
-                            fs.rmSync(target);
+                            if (fs.existsSync(target)) fs.unlinkSync(target);
+                            fs.symlinkSync(source, target);
                         } catch (_) {
                             // ignore
                         }
-                        fs.symlinkSync(source, target);
                     }
                     return resolve(socket);
                 }
@@ -157,6 +176,75 @@ async function captureScreenshotBuffer(): Promise<Buffer> {
 
 // --- Input Logic ---
 
+let screenWidth = 1024;
+let screenHeight = 768;
+
+let swayIpcSocket: string | undefined;
+
+function findIpcSocket(): string | undefined {
+    // First check if we defined it in the config
+    const definedSocket = path.join(XDG_RUNTIME_DIR, 'sway-ipc.sock');
+    if (fs.existsSync(definedSocket)) {
+        return definedSocket;
+    }
+
+    try {
+        const entries = fs.readdirSync(XDG_RUNTIME_DIR);
+        const socket = entries.find((entry) => entry.startsWith('sway-ipc'));
+        if (socket) {
+            return path.join(XDG_RUNTIME_DIR, socket);
+        }
+    } catch (_) {}
+    return undefined;
+}
+
+async function updateScreenResolution(retries = 20): Promise<void> {
+    if (!swayIpcSocket) {
+        swayIpcSocket = findIpcSocket();
+        if (!swayIpcSocket) {
+            if (retries > 0) {
+                // console.log('Waiting for sway IPC socket...');
+                await wait(500);
+                return updateScreenResolution(retries - 1);
+            }
+            console.error('Could not find sway IPC socket');
+            return;
+        }
+    }
+
+    const env = {
+        ...process.env,
+        WAYLAND_DISPLAY: WAYLAND_SOCKET,
+        XDG_RUNTIME_DIR,
+        SWAYSOCK: swayIpcSocket,
+    };
+
+    for (let i = 0; i < retries; i++) {
+        try {
+            const result = spawnSync('swaymsg', ['-t', 'get_outputs'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+            if (result.status === 0) {
+                const outputs = JSON.parse(result.stdout.toString());
+                if (outputs.length > 0 && outputs[0].rect) {
+                    screenWidth = outputs[0].rect.width;
+                    screenHeight = outputs[0].rect.height;
+                    console.log(`Detected resolution: ${screenWidth}x${screenHeight}`);
+                    return;
+                }
+            }
+            // Suppress error logs during startup retries unless it's the last attempt
+            if (i === retries - 1) {
+                 console.error(`swaymsg failed with code ${result.status}: ${result.stderr.toString()}`);
+            }
+        } catch (err) {
+            if (i === retries - 1) {
+                console.error(`Attempt ${i + 1} to get resolution failed:`, err);
+            }
+        }
+        await wait(500);
+    }
+    console.warn('Failed to detect resolution after retries, using defaults');
+}
+
 function mapWebKeyToWtype(key: string): string {
     switch (key) {
         case 'Enter': return 'Return';
@@ -171,6 +259,39 @@ function mapWebKeyToWtype(key: string): string {
     }
 }
 
+let virtualPointerProcess: ChildProcess | undefined;
+
+function startVirtualPointer() {
+    const env = {
+        ...process.env,
+        WAYLAND_DISPLAY: WAYLAND_SOCKET,
+        XDG_RUNTIME_DIR,
+    };
+    const scriptPath = path.join(PROJECT_ROOT, 'src/virtual_pointer.py');
+
+    const launch = () => {
+        console.log('Starting virtual pointer process...');
+        virtualPointerProcess = spawn('python3', [scriptPath], { env });
+        virtualPointerProcess.stderr?.on('data', (data) => {
+            console.log(`virtual_pointer stderr: ${data}`);
+        });
+        virtualPointerProcess.on('exit', (code) => {
+            if (code !== 0 && compositorProcess && !compositorProcess.killed) {
+                console.error(`virtual_pointer exited with code ${code}, restarting in 1s...`);
+                setTimeout(launch, 1000);
+            }
+        });
+    };
+
+    launch();
+
+    cleanupTasks.push(() => {
+        if (virtualPointerProcess && !virtualPointerProcess.killed) {
+            virtualPointerProcess.kill();
+        }
+    });
+}
+
 function injectKey(key: string) {
     const env = {
         ...process.env,
@@ -178,8 +299,44 @@ function injectKey(key: string) {
         XDG_RUNTIME_DIR,
     };
     const wtypeKey = mapWebKeyToWtype(key);
-    // wtype -k <key>
-    spawn('wtype', ['-k', wtypeKey], { env, stdio: 'ignore' });
+    const child = spawn('wtype', ['-k', wtypeKey], { env });
+    child.on('exit', (code) => {
+        if (code !== 0) console.error(`wtype exited with code ${code}`);
+    });
+}
+
+function injectMouseMove(nx: number, ny: number) {
+    if (!virtualPointerProcess || virtualPointerProcess.killed) return;
+    const x = Math.round(nx * screenWidth);
+    const y = Math.round(ny * screenHeight);
+    virtualPointerProcess.stdin?.write(`m ${x} ${y} ${screenWidth} ${screenHeight}\n`);
+}
+
+function injectMouseButton(button: number, type: 'mousedown' | 'mouseup') {
+    if (!virtualPointerProcess || virtualPointerProcess.killed) return;
+    const state = type === 'mousedown' ? 1 : 0;
+    virtualPointerProcess.stdin?.write(`b ${button} ${state}\n`);
+}
+
+// --- App Launching Logic ---
+function spawnApp(command: string) {
+    if (!swayIpcSocket) swayIpcSocket = findIpcSocket();
+    if (!swayIpcSocket) {
+        console.error('Cannot spawn app: sway IPC socket not found');
+        return;
+    }
+
+    const env = {
+        ...process.env,
+        WAYLAND_DISPLAY: WAYLAND_SOCKET,
+        XDG_RUNTIME_DIR,
+        SWAYSOCK: swayIpcSocket,
+    };
+    
+    console.log(`Spawning app via swaymsg exec: ${command}`);
+    // Use swaymsg exec to ensure the app gets the correct environment (DISPLAY, etc.)
+    const child = spawn('swaymsg', ['exec', command], { env, stdio: 'ignore' });
+    child.unref();
 }
 
 // --- Main ---
@@ -188,17 +345,20 @@ async function main() {
     ensureBinaries();
     await startSway();
 
+    // Get initial resolution
+    await updateScreenResolution();
+
+    startVirtualPointer();
+
     // Start a simple demo app so we have something to see
     const env = {
         ...process.env,
         WAYLAND_DISPLAY: WAYLAND_SOCKET,
         XDG_RUNTIME_DIR,
     };
-    console.log('Launching weston-terminal...');
-    const app = spawn('weston-terminal', [], { env, stdio: 'ignore' });
-    cleanupTasks.push(() => {
-        if (app && !app.killed) app.kill();
-    });
+    
+    // Launch initial app (calculator)
+    spawnApp('gnome-calculator');
 
     // Start HTTP Server
     const server = await import('node:http').then(m => m.createServer((req, res) => {
@@ -222,11 +382,26 @@ async function main() {
         ws.on('message', (data) => {
             try {
                 const msg = JSON.parse(data.toString());
+                
                 if (msg.type === 'keydown' && msg.key) {
                     const mappedKey = mapWebKeyToWtype(msg.key);
-                    console.log(`Injecting key: ${msg.key} -> ${mappedKey}`);
+                    // console.log(`Injecting key: ${msg.key} -> ${mappedKey}`);
                     injectKey(msg.key);
+                } else if (msg.type === 'mousemove' && typeof msg.x === 'number' && typeof msg.y === 'number') {
+                    // console.log(`Mouse move: ${msg.x}, ${msg.y}`);
+                    injectMouseMove(msg.x, msg.y);
+                } else if ((msg.type === 'mousedown' || msg.type === 'mouseup') && typeof msg.button === 'number') {
+                    console.log(`Mouse ${msg.type === 'mousedown' ? 'down' : 'up'}: ${msg.button}`);
+                    injectMouseButton(msg.button, msg.type);
+                } else if (msg.type === 'spawn' && msg.command) {
+                    const allowed = ['gnome-calculator', 'weston-terminal', 'gedit', 'mousepad', 'xclock', 'xeyes'];
+                    if (allowed.includes(msg.command)) {
+                        spawnApp(msg.command);
+                    } else {
+                        console.warn(`Blocked spawn attempt for: ${msg.command}`);
+                    }
                 }
+                
             } catch (err) {
                 console.error('Failed to parse message:', err);
             }

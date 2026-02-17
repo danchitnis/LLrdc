@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Remote Desktop Step 3</title>
+    <title>Remote Desktop Step 4</title>
     <style>
         body {
             font-family: sans-serif;
@@ -26,11 +26,33 @@
             color: #aaa;
         }
 
-        #display {
+        #display-container {
             border: 2px solid #444;
+            background-color: #000;
+            max-width: 100%;
+            display: inline-block;
+            line-height: 0;
+            position: relative; /* For overlay positioning */
+        }
+
+        #display {
             max-width: 100%;
             height: auto;
-            background-color: #000;
+            display: block;
+            pointer-events: none; /* Let clicks pass through to overlay if needed, or just ignore them on img */
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        #input-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            /* Ensure it captures events */
+            background-color: transparent; 
         }
 
         .instructions {
@@ -38,22 +60,60 @@
             font-size: 0.9em;
             color: #888;
         }
+
+        #launcher {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .launcher-btn {
+            background-color: #333;
+            color: #eee;
+            border: 1px solid #555;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: sans-serif;
+            font-size: 0.9em;
+            transition: background-color 0.2s;
+        }
+
+        .launcher-btn:hover {
+            background-color: #444;
+        }
+
+        .launcher-btn:active {
+            background-color: #555;
+        }
     </style>
 </head>
 
 <body>
 
-    <h1>Remote Desktop Viewer</h1>
+    <h1>Remote Desktop Viewer (Step 4)</h1>
     <div id="status">Connecting...</div>
-    <img id="display" alt="Remote Desktop Stream" />
+    <div id="display-container">
+        <img id="display" alt="Remote Desktop Stream" draggable="false" />
+        <div id="input-overlay"></div>
+    </div>
+
+    <div id="launcher">
+        <button class="launcher-btn" onclick="spawn('weston-terminal')">Terminal</button>
+        <button class="launcher-btn" onclick="spawn('gnome-calculator')">Calculator</button>
+        <button class="launcher-btn" onclick="spawn('xclock')">Clock</button>
+        <button class="launcher-btn" onclick="spawn('xeyes')">Eyes</button>
+    </div>
 
     <div class="instructions">
         <p>Focus this window and type to send keystrokes to the remote session.</p>
+        <p>Move mouse and click to interact.</p>
     </div>
 
     <script>
         const statusEl = document.getElementById('status');
         const displayEl = document.getElementById('display');
+        const overlayEl = document.getElementById('input-overlay');
 
         const ws = new WebSocket(`ws://${window.location.host}`);
 
@@ -87,6 +147,15 @@
             displayEl.src = url;
         };
 
+        function spawn(command) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'spawn',
+                    command: command
+                }));
+            }
+        }
+
         // Input Handling
         window.addEventListener('keydown', (event) => {
             // Prevent default browser actions for keys that interfere with remote usage
@@ -100,6 +169,51 @@
                     key: event.key
                 }));
             }
+        });
+
+        // Mouse Handling
+        function sendMouse(type, x, y, button) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type,
+                    x,
+                    y,
+                    button
+                }));
+            }
+        }
+
+        overlayEl.addEventListener('mousemove', (e) => {
+            const rect = overlayEl.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return;
+            const x = (e.clientX - rect.left) / rect.width;
+            const y = (e.clientY - rect.top) / rect.height;
+            // Clamp to 0-1
+            const cx = Math.max(0, Math.min(1, x));
+            const cy = Math.max(0, Math.min(1, y));
+            sendMouse('mousemove', cx, cy);
+        });
+
+        overlayEl.addEventListener('mousedown', (e) => {
+            sendMouse('mousedown', null, null, e.button);
+            e.preventDefault();
+        });
+
+        overlayEl.addEventListener('mouseup', (e) => {
+            sendMouse('mouseup', null, null, e.button);
+            e.preventDefault();
+        });
+
+        // Disable context menu on right click
+        overlayEl.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            return false;
+        });
+
+        // Prevent dragging
+        overlayEl.addEventListener('dragstart', (e) => {
+            e.preventDefault();
+            return false;
         });
     </script>
 </body>

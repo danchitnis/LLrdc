@@ -15,6 +15,7 @@ Step 3 gave us visual updates and keyboard control. Step 4 adds mouse interactio
         - `swaymsg seat seat0 cursor set <x> <y>` for movement.
         - `swaymsg seat seat0 cursor press/release <button>` for clicks.
     - Determine screen resolution dynamically using `swaymsg -t get_outputs` to map normalized coordinates to pixels.
+    - **Optimization**: Throttled mouse move events to ~30 FPS to prevent process spawning storms.
 
 3.  **Refinement**
     - Ensure the mouse position is accurate.
@@ -26,3 +27,20 @@ Step 3 gave us visual updates and keyboard control. Step 4 adds mouse interactio
     - `scripts/server.ts`: Updated to handle mouse messages and use `swaymsg`.
     - `public/viewer.html`: Updated to capture and send mouse events.
 - `step4.md`: This documentation.
+
+## Running the Server
+
+```bash
+# Install dependencies if not already
+npm install
+
+# Run the server
+npx tsx step4/scripts/server.ts
+```
+
+## Testing
+
+1. Open `http://localhost:8080` in a browser.
+2. Move the mouse over the remote desktop image.
+3. Click and drag inside the session.
+4. Verify that the cursor moves and clicks are registered in the remote session (e.g., in `weston-terminal`).
