@@ -11,19 +11,19 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const PROJECT_ROOT = path.resolve(__dirname, '..');
 const LOCAL_TMP_DIR =
     process.env.LOCAL_TMP_DIR || path.join(PROJECT_ROOT, '.temp');
 fs.mkdirSync(LOCAL_TMP_DIR, { recursive: true });
 
-const WAYLAND_SOCKET = process.env.WAYLAND_SOCKET || 'remote-desktop-3';
+const WAYLAND_SOCKET = process.env.WAYLAND_SOCKET || 'remote-desktop';
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const FPS = parseInt(process.env.FPS || '2', 10); // Low FPS for grim
 const SCREENSHOT_INTERVAL_MS = 1000 / FPS;
 
 const XDG_RUNTIME_DIR =
     process.env.XDG_RUNTIME_DIR ||
-    fs.mkdtempSync(path.join(os.tmpdir(), 'remote-desktop-step3-'));
+    fs.mkdtempSync(path.join(os.tmpdir(), 'remote-desktop-'));
 fs.chmodSync(XDG_RUNTIME_DIR, 0o700);
 
 const REQUIRED_BINARIES = ['sway', 'grim', 'wtype'];
@@ -212,8 +212,8 @@ async function main() {
     }));
 
     const wss = new WebSocketServer({ server });
-    server.listen(PORT, () => {
-        console.log(`Server listening on http://localhost:${PORT}`);
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server listening on http://0.0.0.0:${PORT}`);
     });
 
     wss.on('connection', (ws) => {
