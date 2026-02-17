@@ -9,6 +9,7 @@ export default defineConfig({
   reporter: 'html',
   use: {
     trace: 'on-first-retry',
+    video: 'on',
   },
   projects: [
     {

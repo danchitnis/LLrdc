@@ -23,7 +23,7 @@ test.describe('Remote Desktop Mouse Interaction', () => {
 
             serverProcess.stdout?.on('data', (data) => {
                 const output = data.toString();
-                // console.log(`[SERVER]: ${output.trim()}`);
+                console.log(`[SERVER]: ${output.trim()}`);
                 if (output.includes(`Server listening on http://0.0.0.0:${SERVER_PORT}`)) {
                     clearTimeout(timeout);
                     resolve();
@@ -75,7 +75,7 @@ test.describe('Remote Desktop Mouse Interaction', () => {
 
         // Move mouse
         await overlay.hover({ position: { x: 100, y: 100 } });
-        
+
         // Click (Left)
         await overlay.click({ button: 'left', position: { x: 100, y: 100 } });
 

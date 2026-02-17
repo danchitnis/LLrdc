@@ -1,3 +1,5 @@
 .temp
 node_modules
 bin/
+playwright-report/
+test-results/
