@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Remote Desktop Step 4</title>
+    <script src="jmuxer.min.js"></script>
     <style>
         body {
             font-family: sans-serif;
@@ -94,7 +95,7 @@
     <h1>Remote Desktop Viewer (Step 4)</h1>
     <div id="status">Connecting...</div>
     <div id="display-container">
-        <img id="display" alt="Remote Desktop Stream" draggable="false" />
+        <video id="display" autoplay muted playsinline webkit-playsinline></video>
         <div id="input-overlay"></div>
     </div>
 
@@ -110,41 +111,118 @@
         <p>Move mouse and click to interact.</p>
     </div>
 
+    <div id="debug-log"></div>
+
     <script>
         const statusEl = document.getElementById('status');
         const displayEl = document.getElementById('display');
         const overlayEl = document.getElementById('input-overlay');
+        const debugEl = document.getElementById('debug-log');
 
-        const ws = new WebSocket(`ws://${window.location.host}`);
+        function log(msg) {
+            console.log(msg);
+            const line = document.createElement('div');
+            line.textContent = msg;
+            debugEl.appendChild(line);
+        }
+
+        let jmuxer;
+        try {
+            jmuxer = new JMuxer({
+                node: 'display',
+                mode: 'video',
+                flushingTime: 0,
+                fps: 15,
+                debug: true,
+                onError: function(data) {
+                    log('Buffer error encountered: ' + JSON.stringify(data));
+                    statusEl.textContent = 'Buffer Error';
+                    statusEl.style.color = '#f44';
+                }
+            });
+        } catch (e) {
+            log('JMuxer init failed: ' + e.message);
+            statusEl.textContent = 'Error: ' + e.message;
+            statusEl.style.color = '#f44';
+        }
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        log(`Connecting to ${protocol}//${window.location.host}...`);
+        const ws = new WebSocket(`${protocol}//${window.location.host}`);
 
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = () => {
+            log('WebSocket Connected');
             statusEl.textContent = 'Connected';
             statusEl.style.color = '#4f4';
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
+            log(`WebSocket Disconnected (Code: ${event.code}, Reason: ${event.reason})`);
             statusEl.textContent = 'Disconnected';
             statusEl.style.color = '#f44';
         };
 
         ws.onerror = (err) => {
+            log('WebSocket Error (check console)');
             console.error('WebSocket error:', err);
             statusEl.textContent = 'Error';
             statusEl.style.color = '#f44';
         };
 
-        ws.onmessage = (event) => {
-            const blob = new Blob([event.data], { type: 'image/png' });
-            const url = URL.createObjectURL(blob);
+        let fps = 0;
+        let lastFPSUpdate = Date.now();
+        let framesSinceLastUpdate = 0;
+        let latency = 0;
+        let lastPing = 0;
 
-            // Revoke the previous URL to avoid memory leaks
-            if (displayEl.src) {
-                URL.revokeObjectURL(displayEl.src);
+        window.getStats = () => ({ fps, latency });
+
+        function updateFPS() {
+            const now = Date.now();
+            framesSinceLastUpdate++;
+            if (now - lastFPSUpdate >= 1000) {
+                fps = Math.round(framesSinceLastUpdate / ((now - lastFPSUpdate) / 1000));
+                framesSinceLastUpdate = 0;
+                lastFPSUpdate = now;
+                statusEl.textContent = `Connected | FPS: ${fps} | Latency: ${latency}ms`;
             }
+        }
 
-            displayEl.src = url;
+        function measureLatency() {
+            if (ws.readyState === WebSocket.OPEN) {
+                lastPing = Date.now();
+                ws.send(JSON.stringify({ type: 'ping', timestamp: lastPing }));
+            }
+        }
+
+        setInterval(measureLatency, 1000);
+
+        ws.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                updateFPS();
+                if (jmuxer) {
+                    try {
+                        jmuxer.feed({
+                            video: new Uint8Array(event.data)
+                        });
+                    } catch (e) {
+                        log('JMuxer feed error: ' + e.message);
+                    }
+                }
+            } else {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'pong' && typeof msg.timestamp === 'number') {
+                        latency = Date.now() - msg.timestamp;
+                    } else {
+                        log('Received message: ' + JSON.stringify(msg));
+                    }
+                } catch (e) {
+                    log('Received non-JSON message: ' + event.data);
+                }
+            }
         };
 
         function spawn(command) {

@@ -18,8 +18,12 @@ fs.mkdirSync(LOCAL_TMP_DIR, { recursive: true });
 
 const WAYLAND_SOCKET = process.env.WAYLAND_SOCKET || 'remote-desktop';
 const PORT = parseInt(process.env.PORT || '8080', 10);
-const FPS = parseInt(process.env.FPS || '2', 10); // Low FPS for grim
+const FPS = parseInt(process.env.FPS || '30', 10); // Higher FPS for video
 const SCREENSHOT_INTERVAL_MS = 1000 / FPS;
+console.log(`Screenshot interval: ${SCREENSHOT_INTERVAL_MS}ms`);
+
+const VIDEO_CODEC = process.env.VIDEO_CODEC || 'h264';
+const FFMPEG_PATH = path.join(PROJECT_ROOT, 'bin/ffmpeg');
 
 const XDG_RUNTIME_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-desktop-'));
 fs.chmodSync(XDG_RUNTIME_DIR, 0o700);
@@ -36,6 +40,8 @@ const cleanupTasks: (() => void)[] = [
 ];
 
 let compositorProcess: ChildProcess | undefined;
+let useWfRecorder = false;
+let wfRecorderProcess: ChildProcess | undefined;
 
 function ensureBinaries() {
     for (const binary of REQUIRED_BINARIES) {
@@ -45,6 +51,18 @@ function ensureBinaries() {
                 `Missing dependency "${binary}". Install it before running this script.`,
             );
         }
+    }
+    if (!fs.existsSync(FFMPEG_PATH)) {
+        throw new Error(`Missing ffmpeg binary at ${FFMPEG_PATH}`);
+    }
+
+    const wfRecorderResult = spawnSync('which', ['wf-recorder'], { stdio: 'ignore' });
+    // useWfRecorder = wfRecorderResult.status === 0;
+    useWfRecorder = false; // Force disable for now
+    if (useWfRecorder) {
+        console.log('wf-recorder found, will use it for video capture.');
+    } else {
+        console.warn('wf-recorder disabled or not found, falling back to grim loop.');
     }
 }
 
@@ -66,6 +84,9 @@ input * {
     xkb_model "pc105"
 }
 output HEADLESS-1 resolution 1280x720
+
+# Enable XWayland
+xwayland enable
 `;
     fs.writeFileSync(swayConfigPath, configContent);
 
@@ -78,6 +99,11 @@ output HEADLESS-1 resolution 1280x720
         WLR_LIBINPUT_NO_DEVICES: '1',
         WLR_RENDERER: 'pixman',
         LIBGL_ALWAYS_SOFTWARE: '1', // Suppress EGL/MESA warnings
+        WLR_NO_HARDWARE_CURSORS: '1',
+        GDK_BACKEND: 'wayland,x11', // Prefer Wayland, fallback to X11
+        QT_QPA_PLATFORM: 'wayland;xcb', // Prefer Wayland, fallback to XCB
+        CLUTTER_BACKEND: 'wayland',
+        SDL_VIDEODRIVER: 'wayland',
     };
     // Using --debug for more info, can be removed if too noisy
     compositorProcess = spawn('sway', ['-c', swayConfigPath], { env, stdio: 'inherit' });
@@ -92,6 +118,20 @@ output HEADLESS-1 resolution 1280x720
     // We can now wait for the specific socket file we defined
     await waitForSocketOrExit();
     console.log(`Headless sway ready (XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}).`);
+
+    // Check for XWayland socket
+    setTimeout(() => {
+        try {
+            const x11Socket = fs.readdirSync('/tmp/.X11-unix').find(f => f.startsWith('X') && !f.includes('lock'));
+            if (x11Socket) {
+                console.log(`XWayland appears to be running on display :${x11Socket.replace('X', '')}`);
+            } else {
+                console.warn('XWayland socket not found in /tmp/.X11-unix. Legacy X11 apps may fail.');
+            }
+        } catch (e) {
+            console.warn('Could not check XWayland status:', e);
+        }
+    }, 2000);
 }
 
 function waitForWaylandSocket(timeoutMs = 5000): Promise<string> {
@@ -148,30 +188,189 @@ function waitForSocketOrExit(): Promise<string> {
     });
 }
 
-// --- Screenshot Logic ---
+// --- Video Streaming Logic ---
 
-async function captureScreenshotBuffer(): Promise<Buffer> {
-    return new Promise<Buffer>((resolve, reject) => {
+let ffmpegProcess: ChildProcess | undefined;
+cleanupTasks.push(() => {
+    if (ffmpegProcess && !ffmpegProcess.killed) {
+        ffmpegProcess.kill();
+    }
+    if (wfRecorderProcess && !wfRecorderProcess.killed) {
+        wfRecorderProcess.kill();
+    }
+});
+
+function startStreaming(wss: WebSocketServer) {
+    const codec = VIDEO_CODEC;
+    const ffmpegCodec = codec === 'h265' ? 'libx265' : 'libx264';
+    const ffmpegFormat = codec === 'h265' ? 'hevc' : 'h264';
+
+    let ffmpegArgs: string[];
+    if (useWfRecorder) {
+        ffmpegArgs = [
+            '-f', 'rawvideo',
+            '-pixel_format', 'yuv420p',
+            '-video_size', '1280x720',
+            '-framerate', '30',
+            '-i', '-',
+            '-c:v', ffmpegCodec,
+            '-pix_fmt', 'yuv420p',
+            '-profile:v', 'baseline',
+            '-level', '3.1',
+            '-g', '30',
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
+            '-f', ffmpegFormat,
+            '-'
+        ];
+    } else {
+        ffmpegArgs = [
+            '-f', 'image2pipe',
+            '-vcodec', 'ppm',
+            '-i', '-',
+            '-c:v', ffmpegCodec,
+            '-pix_fmt', 'yuv420p',
+            '-profile:v', 'baseline',
+            '-level', '3.1',
+            '-g', '30',
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
+            '-f', ffmpegFormat,
+            '-'
+        ];
+    }
+
+    console.log(`Starting ffmpeg with codec: ${ffmpegCodec} (${useWfRecorder ? 'wf-recorder' : 'grim'} input)`);
+    ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs);
+
+    if (useWfRecorder) {
         const env = {
             ...process.env,
             WAYLAND_DISPLAY: WAYLAND_SOCKET,
             XDG_RUNTIME_DIR,
         };
-        // grim - writes to stdout
-        const grim = spawn('grim', ['-'], { env });
+        console.log('Starting wf-recorder...');
+        wfRecorderProcess = spawn('wf-recorder', ['-m', 'sdl', '-c', 'rawvideo', '-f', '-'], { env });
+        
+        if (wfRecorderProcess.stdout && ffmpegProcess.stdin) {
+            wfRecorderProcess.stdout.pipe(ffmpegProcess.stdin);
+        }
 
-        const chunks: Buffer[] = [];
-        grim.stdout.on('data', (chunk) => chunks.push(chunk));
-
-        grim.on('exit', (code) => {
-            if (code === 0) {
-                resolve(Buffer.concat(chunks));
-            } else {
-                reject(new Error(`grim exited with code ${code}`));
+        wfRecorderProcess.stderr?.on('data', (data) => {
+            const msg = data.toString();
+            if (msg.includes('Error') || msg.includes('fatal')) {
+                console.error(`wf-recorder error: ${msg}`);
             }
         });
-        grim.on('error', reject);
+
+        wfRecorderProcess.on('exit', (code) => {
+            console.error(`wf-recorder exited with code ${code}`);
+            if (useWfRecorder && compositorProcess && !compositorProcess.killed) {
+                console.log('wf-recorder failed or exited, falling back to grim loop...');
+                useWfRecorder = false;
+                if (ffmpegProcess && !ffmpegProcess.killed) {
+                    ffmpegProcess.kill();
+                }
+                // startStreaming will be called again by ffmpegProcess.on('exit')
+            }
+        });
+    }
+
+    ffmpegProcess.stdout?.on('data', (data) => {
+        wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(data);
+            }
+        });
     });
+
+    ffmpegProcess.stderr?.on('data', (data) => {
+        // ffmpeg logs to stderr, can be noisy
+        // console.error(`ffmpeg stderr: ${data}`);
+    });
+
+    ffmpegProcess.on('exit', (code) => {
+        if (compositorProcess && !compositorProcess.killed) {
+            console.error(`ffmpeg exited with code ${code}, restarting in 1s...`);
+            if (wfRecorderProcess && !wfRecorderProcess.killed) {
+                wfRecorderProcess.kill();
+            }
+            setTimeout(() => startStreaming(wss), 1000);
+        }
+    });
+}
+
+async function captureLoop(wss: WebSocketServer) {
+    console.log('Starting capture loop...');
+    let loopCount = 0;
+    while (true) {
+        if (useWfRecorder) {
+            await wait(1000);
+            continue;
+        }
+        loopCount++;
+        const clientsCount = wss.clients.size;
+        const ffmpegRunning = ffmpegProcess && !ffmpegProcess.killed;
+        const stdinWritable = ffmpegProcess?.stdin?.writable;
+        
+        // Force capture every 5 seconds even without clients to debug grim
+        const forceDebug = loopCount % (5000 / SCREENSHOT_INTERVAL_MS) === 0;
+
+        if ((clientsCount > 0 || forceDebug) && ffmpegRunning && stdinWritable) {
+            try {
+                if (forceDebug) console.log(`Debug capture: clients=${clientsCount}`);
+                
+                const env = {
+                    ...process.env,
+                    WAYLAND_DISPLAY: WAYLAND_SOCKET,
+                    XDG_RUNTIME_DIR,
+                };
+                const start = Date.now();
+                const grim = spawn('grim', ['-t', 'ppm', '-'], { env });
+                
+                if (grim.stderr) {
+                    grim.stderr.on('data', (data) => console.error(`grim stderr: ${data}`));
+                }
+
+                await new Promise((resolve) => {
+                    if (ffmpegProcess?.stdin) {
+                        grim.stdout.pipe(ffmpegProcess.stdin, { end: false });
+                    } else {
+                        console.error('ffmpeg stdin not available');
+                    }
+                    
+                    const timeout = setTimeout(() => {
+                        console.error('grim timed out, killing...');
+                        grim.kill();
+                        resolve(null);
+                    }, 2000); // Increased timeout to 2s
+
+                    grim.on('exit', (code) => {
+                        clearTimeout(timeout);
+                        const duration = Date.now() - start;
+                        // if (duration > 100) console.warn(`Slow capture: ${duration}ms`);
+                        if (code !== 0) console.error(`grim exited with code ${code}`);
+                        else if (forceDebug) console.log('Grim finished successfully');
+                        resolve(code);
+                    });
+                    grim.on('error', (err) => {
+                        clearTimeout(timeout);
+                        console.error('grim error:', err);
+                        resolve(null);
+                    });
+                });
+            } catch (err) {
+                console.error('Capture failed:', err);
+            }
+        } else if (clientsCount > 0) {
+            console.warn('Capture skipped:', {
+                clients: clientsCount,
+                ffmpegRunning,
+                stdinWritable
+            });
+        }
+        await wait(SCREENSHOT_INTERVAL_MS);
+    }
 }
 
 // --- Input Logic ---
@@ -362,13 +561,29 @@ async function main() {
 
     // Start HTTP Server
     const server = await import('node:http').then(m => m.createServer((req, res) => {
-        if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            fs.createReadStream(path.join(__dirname, '../public/viewer.html')).pipe(res);
-        } else {
-            res.writeHead(404);
-            res.end('Not Found');
+        if (req.method === 'GET') {
+            let urlPath = req.url || '/';
+            if (urlPath === '/') urlPath = '/viewer.html';
+            
+            const filePath = path.join(__dirname, '../public', urlPath);
+            
+            // Prevent directory traversal
+            if (!filePath.startsWith(path.join(__dirname, '../public'))) {
+                res.writeHead(403);
+                res.end('Forbidden');
+                return;
+            }
+
+            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                const ext = path.extname(filePath);
+                const contentType = ext === '.html' ? 'text/html' : ext === '.js' ? 'application/javascript' : 'text/plain';
+                res.writeHead(200, { 'Content-Type': contentType });
+                fs.createReadStream(filePath).pipe(res);
+                return;
+            }
         }
+        res.writeHead(404);
+        res.end('Not Found');
     }));
 
     const wss = new WebSocketServer({ server });
@@ -378,6 +593,14 @@ async function main() {
 
     wss.on('connection', (ws) => {
         console.log('Client connected');
+        
+        ws.on('error', (err) => {
+            console.error('Client socket error:', err);
+        });
+
+        ws.on('close', (code, reason) => {
+            console.log(`Client disconnected. Code: ${code}, Reason: ${reason}`);
+        });
 
         ws.on('message', (data) => {
             try {
@@ -393,6 +616,8 @@ async function main() {
                 } else if ((msg.type === 'mousedown' || msg.type === 'mouseup') && typeof msg.button === 'number') {
                     console.log(`Mouse ${msg.type === 'mousedown' ? 'down' : 'up'}: ${msg.button}`);
                     injectMouseButton(msg.button, msg.type);
+                } else if (msg.type === 'ping' && typeof msg.timestamp === 'number') {
+                    ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
                 } else if (msg.type === 'spawn' && msg.command) {
                     const allowed = ['gnome-calculator', 'weston-terminal', 'gedit', 'mousepad', 'xclock', 'xeyes'];
                     if (allowed.includes(msg.command)) {
@@ -406,26 +631,11 @@ async function main() {
                 console.error('Failed to parse message:', err);
             }
         });
-
-        ws.on('close', () => console.log('Client disconnected'));
     });
 
-    // Screenshot Loop
-    console.log(`Starting screenshot loop at ${FPS} FPS...`);
-    setInterval(async () => {
-        if (wss.clients.size === 0) return; // Don't capture if no one is watching
-
-        try {
-            const buffer = await captureScreenshotBuffer();
-            wss.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(buffer);
-                }
-            });
-        } catch (err) {
-            console.error('Screenshot failed:', err);
-        }
-    }, SCREENSHOT_INTERVAL_MS);
+    // Video Streaming
+    startStreaming(wss);
+    captureLoop(wss);
 }
 
 function shutdown() {
