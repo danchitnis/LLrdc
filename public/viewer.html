@@ -33,14 +33,16 @@
             max-width: 100%;
             display: inline-block;
             line-height: 0;
-            position: relative; /* For overlay positioning */
+            position: relative;
+            /* For overlay positioning */
         }
 
         #display {
             max-width: 100%;
             height: auto;
             display: block;
-            pointer-events: none; /* Let clicks pass through to overlay if needed, or just ignore them on img */
+            pointer-events: none;
+            /* Let clicks pass through to overlay if needed, or just ignore them on img */
             user-select: none;
             -webkit-user-drag: none;
         }
@@ -53,7 +55,7 @@
             height: 100%;
             cursor: crosshair;
             /* Ensure it captures events */
-            background-color: transparent; 
+            background-color: transparent;
         }
 
         .instructions {
@@ -134,7 +136,7 @@
                 flushingTime: 0,
                 fps: 30, // Match server FPS
                 debug: false, // Disable debug to save performance
-                onError: function(data) {
+                onError: function (data) {
                     log('Buffer error encountered: ' + JSON.stringify(data));
                     statusEl.textContent = 'Buffer Error';
                     statusEl.style.color = '#f44';
@@ -147,8 +149,10 @@
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        log(`Connecting to ${protocol}//${window.location.host}...`);
-        const ws = new WebSocket(`${protocol}//${window.location.host}`);
+        const wsUrl = `${protocol}//${window.location.host}`;
+        log(`Connecting to ${wsUrl}...`);
+        console.log(`Debug: WebSocket URL is ${wsUrl}`);
+        const ws = new WebSocket(wsUrl);
 
         ws.binaryType = 'arraybuffer';
 
@@ -167,9 +171,25 @@
         ws.onerror = (err) => {
             log('WebSocket Error (check console)');
             console.error('WebSocket error:', err);
-            statusEl.textContent = 'Error';
+            statusEl.textContent = 'Connection Error';
             statusEl.style.color = '#f44';
         };
+
+        // Connection timeout check
+        setTimeout(() => {
+            if (ws.readyState === WebSocket.CONNECTING) {
+                log(`Connection timed out (readyState=${ws.readyState}). Check firewall on port 8080.`);
+                statusEl.textContent = 'Connection Timeout';
+                statusEl.style.color = '#f44';
+
+                if (window.location.protocol === 'https:') {
+                    log('WARNING: You are using HTTPS. Ensure the server supports WSS or use HTTP.');
+                }
+            } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+                // Already handled by onclose, don't overwrite
+                log(`Check: Connection closed (readyState=${ws.readyState}).`);
+            }
+        }, 5000);
 
         let fps = 0;
         let lastFPSUpdate = Date.now();

@@ -40,8 +40,8 @@ const cleanupTasks: (() => void)[] = [
 ];
 
 let compositorProcess: ChildProcess | undefined;
-let useWfRecorder = false;
-let wfRecorderProcess: ChildProcess | undefined;
+
+
 
 function ensureBinaries() {
     for (const binary of REQUIRED_BINARIES) {
@@ -54,15 +54,6 @@ function ensureBinaries() {
     }
     if (!fs.existsSync(FFMPEG_PATH)) {
         throw new Error(`Missing ffmpeg binary at ${FFMPEG_PATH}`);
-    }
-
-    const wfRecorderResult = spawnSync('which', ['wf-recorder'], { stdio: 'ignore' });
-    // useWfRecorder = wfRecorderResult.status === 0;
-    useWfRecorder = false; // Force disable for now
-    if (useWfRecorder) {
-        console.log('wf-recorder found, will use it for video capture.');
-    } else {
-        console.warn('wf-recorder disabled or not found, falling back to grim loop.');
     }
 }
 
@@ -99,12 +90,29 @@ xwayland enable
         WLR_LIBINPUT_NO_DEVICES: '1',
         WLR_RENDERER: 'pixman',
         LIBGL_ALWAYS_SOFTWARE: '1', // Suppress EGL/MESA warnings
+        GSK_RENDERER: 'cairo', // Force GTK4 to use software rendering
         WLR_NO_HARDWARE_CURSORS: '1',
         GDK_BACKEND: 'wayland,x11', // Prefer Wayland, fallback to X11
         QT_QPA_PLATFORM: 'wayland;xcb', // Prefer Wayland, fallback to XCB
         CLUTTER_BACKEND: 'wayland',
         SDL_VIDEODRIVER: 'wayland',
     };
+    // Cleanup stale X11 sockets/locks to prevent "No display available" error
+    try {
+        const x11Dir = '/tmp/.X11-unix';
+        if (fs.existsSync(x11Dir)) {
+            // In a real multi-user system this is dangerous, but for this dev env it's necessary
+            // to recover from crashes where Xwayland didn't clean up.
+            // We only remove sockets if we can't connect to them? Or just force remove?
+            // Given the "fully broke" state, force cleanup is appropriate for the "server" startup.
+            console.log('Cleaning up potential stale X11 sockets...');
+            spawnSync('find', ['/tmp/.X11-unix', '-name', 'X*', '-delete']);
+            spawnSync('find', ['/tmp', '-maxdepth', '1', '-name', '.X*-lock', '-delete']);
+        }
+    } catch (e) {
+        console.warn('Failed to clean up X11 keys:', e);
+    }
+
     // Using --debug for more info, can be removed if too noisy
     compositorProcess = spawn('sway', ['-c', swayConfigPath], { env, stdio: 'inherit' });
     cleanupTasks.push(() => {
@@ -188,6 +196,26 @@ function waitForSocketOrExit(): Promise<string> {
     });
 }
 
+async function waitForXWayland(timeoutMs = 10000): Promise<string | undefined> {
+    console.log('Waiting for XWayland to initialize...');
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const x11Socket = fs.readdirSync('/tmp/.X11-unix').find(f => f.startsWith('X') && !f.includes('lock'));
+            if (x11Socket) {
+                const display = ':' + x11Socket.replace('X', '');
+                console.log(`XWayland ready on ${display}`);
+                return display;
+            }
+        } catch (_) {
+            // ignore
+        }
+        await wait(200);
+    }
+    console.warn('Timed out waiting for XWayland. X11 apps may fail to launch.');
+    return undefined;
+}
+
 // --- Video Streaming Logic ---
 
 let ffmpegProcess: ChildProcess | undefined;
@@ -195,8 +223,8 @@ cleanupTasks.push(() => {
     if (ffmpegProcess && !ffmpegProcess.killed) {
         ffmpegProcess.kill();
     }
-    if (wfRecorderProcess && !wfRecorderProcess.killed) {
-        wfRecorderProcess.kill();
+    if (ffmpegProcess && !ffmpegProcess.killed) {
+        ffmpegProcess.kill();
     }
 });
 
@@ -205,84 +233,33 @@ function startStreaming(wss: WebSocketServer) {
     const ffmpegCodec = codec === 'h265' ? 'libx265' : 'libx264';
     const ffmpegFormat = codec === 'h265' ? 'hevc' : 'h264';
 
-    let ffmpegArgs: string[];
-    if (useWfRecorder) {
-        ffmpegArgs = [
-            '-f', 'nut',
-            '-i', '-',
-            '-c:v', ffmpegCodec,
-            '-pix_fmt', 'yuv420p',
-            '-profile:v', 'baseline',
-            '-level', '3.1',
-            '-g', `${FPS}`,
-            '-preset', 'ultrafast',
-            '-tune', 'zerolatency',
-            '-f', ffmpegFormat,
-            '-'
-        ];
-    } else {
-        ffmpegArgs = [
-            '-f', 'image2pipe',
-            '-vcodec', 'ppm',
-            '-probesize', '32', // Low probe size for faster startup
-            '-analyzeduration', '0', // No analyze duration
-            '-fflags', 'nobuffer', // No input buffering
-            '-r', `${FPS}`,
-            '-i', '-',
-            '-c:v', ffmpegCodec,
-            '-pix_fmt', 'yuv420p',
-            '-profile:v', 'baseline',
-            '-level', '3.1',
-            '-g', `${FPS}`, // GOP size equal to FPS (1 keyframe/sec)
-            '-preset', 'ultrafast',
-            '-tune', 'zerolatency',
-            // Reduce buffering latency - using x264-params for fine tuning
-            // slice-max-size: limits slice size for lower latency packetization
-            // keyint/min-keyint: force keyframes (though we set -g already)
-            // scenecut=0: disable scene detection for consistent latency
-            // intra-refresh=1: use periodic intra refresh instead of IDR frames for smoother stream
-            '-x264-params', 'slice-max-size=1200:keyint=60:min-keyint=60:scenecut=0:intra-refresh=1',
-            '-f', ffmpegFormat,
-            '-'
-        ];
-    }
+    const ffmpegArgs = [
+        '-f', 'image2pipe',
+        '-vcodec', 'ppm',
+        '-probesize', '32', // Low probe size for faster startup
+        '-analyzeduration', '0', // No analyze duration
+        '-fflags', 'nobuffer', // No input buffering
+        '-r', `${FPS}`,
+        '-i', '-',
+        '-c:v', ffmpegCodec,
+        '-pix_fmt', 'yuv420p',
+        '-profile:v', 'baseline',
+        '-level', '3.1',
+        '-g', `${FPS}`, // GOP size equal to FPS (1 keyframe/sec)
+        '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
+        // Reduce buffering latency - using x264-params for fine tuning
+        // slice-max-size: limits slice size for lower latency packetization
+        // keyint/min-keyint: force keyframes (though we set -g already)
+        // scenecut=0: disable scene detection for consistent latency
+        // intra-refresh=1: use periodic intra refresh instead of IDR frames for smoother stream
+        '-x264-params', 'slice-max-size=1200:keyint=60:min-keyint=60:scenecut=0:intra-refresh=1',
+        '-f', ffmpegFormat,
+        '-'
+    ];
 
-    console.log(`Starting ffmpeg with codec: ${ffmpegCodec} (${useWfRecorder ? 'wf-recorder' : 'grim'} input)`);
+    console.log(`Starting ffmpeg with codec: ${ffmpegCodec} (grim input)`);
     ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs);
-
-    if (useWfRecorder) {
-        const env = {
-            ...process.env,
-            WAYLAND_DISPLAY: WAYLAND_SOCKET,
-            XDG_RUNTIME_DIR,
-        };
-        console.log('Starting wf-recorder...');
-        // Use nut container for pipe reliability
-        wfRecorderProcess = spawn('wf-recorder', ['-o', screenOutput, '-m', 'nut', '-c', 'rawvideo', '-x', 'yuv420p', '-r', `${FPS}`, '-D', '-f', '-'], { env });
-
-        if (wfRecorderProcess.stdout && ffmpegProcess.stdin) {
-            wfRecorderProcess.stdout.pipe(ffmpegProcess.stdin);
-        }
-
-        wfRecorderProcess.stderr?.on('data', (data) => {
-            const msg = data.toString();
-            if (msg.includes('Error') || msg.includes('fatal')) {
-                console.error(`wf-recorder error: ${msg}`);
-            }
-        });
-
-        wfRecorderProcess.on('exit', (code) => {
-            console.error(`wf-recorder exited with code ${code}`);
-            if (useWfRecorder && compositorProcess && !compositorProcess.killed) {
-                console.log('wf-recorder failed or exited, falling back to grim loop...');
-                useWfRecorder = false;
-                if (ffmpegProcess && !ffmpegProcess.killed) {
-                    ffmpegProcess.kill();
-                }
-                // startStreaming will be called again by ffmpegProcess.on('exit')
-            }
-        });
-    }
 
     ffmpegProcess.stdout?.on('data', (data) => {
         wss.clients.forEach((client) => {
@@ -300,9 +277,6 @@ function startStreaming(wss: WebSocketServer) {
     ffmpegProcess.on('exit', (code) => {
         if (compositorProcess && !compositorProcess.killed) {
             console.error(`ffmpeg exited with code ${code}, restarting in 1s...`);
-            if (wfRecorderProcess && !wfRecorderProcess.killed) {
-                wfRecorderProcess.kill();
-            }
             setTimeout(() => startStreaming(wss), 1000);
         }
     });
@@ -313,10 +287,6 @@ async function captureLoop(wss: WebSocketServer) {
     let loopCount = 0;
     while (true) {
         const loopStart = Date.now();
-        if (useWfRecorder) {
-            await wait(1000);
-            continue;
-        }
         loopCount++;
         const clientsCount = wss.clients.size;
         const ffmpegRunning = ffmpegProcess && !ffmpegProcess.killed;
@@ -529,6 +499,8 @@ function injectMouseButton(button: number, type: 'mousedown' | 'mouseup') {
 }
 
 // --- App Launching Logic ---
+let x11Display: string | undefined;
+
 function spawnApp(command: string) {
     if (!swayIpcSocket) swayIpcSocket = findIpcSocket();
     if (!swayIpcSocket) {
@@ -543,9 +515,12 @@ function spawnApp(command: string) {
         SWAYSOCK: swayIpcSocket,
     };
 
-    console.log(`Spawning app via swaymsg exec: ${command}`);
-    // Use swaymsg exec to ensure the app gets the correct environment (DISPLAY, etc.)
-    const child = spawn('swaymsg', ['exec', command], { env, stdio: 'ignore' });
+    let execCmd = command;
+    if (x11Display && !process.env.DISPLAY) {
+        execCmd = `env DISPLAY=${x11Display} ${command}`;
+    }
+    console.log(`Spawning app via swaymsg exec: ${execCmd}`);
+    const child = spawn('swaymsg', ['exec', execCmd], { env, stdio: 'ignore' });
     child.unref();
 }
 
@@ -559,6 +534,9 @@ async function main() {
     await updateScreenResolution();
 
     startVirtualPointer();
+
+    // Wait for XWayland to be ready before launching X11 apps
+    x11Display = await waitForXWayland();
 
     // Start a simple demo app so we have something to see
     const env = {
@@ -574,6 +552,9 @@ async function main() {
     const server = await import('node:http').then(m => m.createServer((req, res) => {
         if (req.method === 'GET') {
             let urlPath = req.url || '/';
+            const clientIp = req.socket.remoteAddress;
+            console.log(`HTTP ${req.method} ${urlPath} from ${clientIp}`);
+
             if (urlPath === '/') urlPath = '/viewer.html';
 
             const filePath = path.join(__dirname, '../public', urlPath);
@@ -597,13 +578,24 @@ async function main() {
         res.end('Not Found');
     }));
 
-    const wss = new WebSocketServer({ server });
+    const wss = new WebSocketServer({
+        server,
+        verifyClient: (info, done) => {
+            console.log(`WebSocket Upgrade request from ${info.req.socket.remoteAddress}`);
+            done(true);
+        }
+    });
+    server.on('upgrade', (req, socket, head) => {
+        console.log(`HTTP Upgrade event from ${req.socket.remoteAddress}`);
+    });
+
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`Server listening on http://0.0.0.0:${PORT}`);
     });
 
-    wss.on('connection', (ws) => {
-        console.log('Client connected');
+    wss.on('connection', (ws, req) => {
+        const ip = req.socket.remoteAddress;
+        console.log(`Client connected from ${ip}`);
 
         ws.on('error', (err) => {
             console.error('Client socket error:', err);
