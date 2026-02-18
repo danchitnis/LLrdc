@@ -6,7 +6,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 8092;
+const PORT = 8000 + Math.floor(Math.random() * 1000);
+const DISPLAY_NUM = 100 + Math.floor(Math.random() * 100);
 
 // Helper to kill process on port
 import { execSync } from 'child_process';
@@ -26,10 +27,10 @@ let outputBuffer = '';
 test.describe('Video Streaming', () => {
   test.beforeAll(async () => {
     killPort(PORT);
-    console.log('Starting server...');
+    console.log(`Starting server on port ${PORT} display :${DISPLAY_NUM}...`);
     // Use tsx directly to run the server
     serverProcess = spawn('npx', ['tsx', SERVER_PATH], {
-      env: { ...process.env, PORT: PORT.toString(), FPS: '5' },
+      env: { ...process.env, PORT: PORT.toString(), FPS: '5', DISPLAY_NUM: DISPLAY_NUM.toString() },
       stdio: ['ignore', 'pipe', 'pipe'], // Capture stdout/stderr
     });
 
@@ -70,12 +71,12 @@ test.describe('Video Streaming', () => {
       // Wait for process to exit
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
-            if (!serverProcess.killed) serverProcess.kill('SIGKILL');
-            resolve();
+          if (!serverProcess.killed) serverProcess.kill('SIGKILL');
+          resolve();
         }, 5000);
         serverProcess.on('exit', () => {
-            clearTimeout(timeout);
-            resolve();
+          clearTimeout(timeout);
+          resolve();
         });
       });
     }
@@ -100,7 +101,7 @@ test.describe('Video Streaming', () => {
 
     await test.step('Verify video is playing', async () => {
       const video = page.locator('#display');
-      
+
       // Check if video is ready (HAVE_ENOUGH_DATA = 4, HAVE_FUTURE_DATA = 3)
       // We might need to wait a bit for the stream to start
       await expect.poll(async () => {
@@ -121,17 +122,17 @@ test.describe('Video Streaming', () => {
       // Click on the overlay
       const overlay = page.locator('#input-overlay');
       await overlay.click({ position: { x: 100, y: 100 } });
-      
+
       // Type some keys
       await page.keyboard.type('Hello World');
-      
+
       // We can't easily verify the effect on the remote desktop without OCR or more complex setup,
       // but we can verify that these actions don't throw errors in the client console.
       const consoleErrors: string[] = [];
       page.on('console', msg => {
         if (msg.type() === 'error') consoleErrors.push(msg.text());
       });
-      
+
       expect(consoleErrors).toEqual([]);
     });
   });

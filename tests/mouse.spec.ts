@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 
-const SERVER_PORT = 8080;
+const SERVER_PORT = 8080 + Math.floor(Math.random() * 1000);
+const DISPLAY_NUM = 100 + Math.floor(Math.random() * 100);
 const SERVER_URL = `http://localhost:${SERVER_PORT}`;
 
 test.describe('Remote Desktop Mouse Interaction', () => {
@@ -10,16 +11,20 @@ test.describe('Remote Desktop Mouse Interaction', () => {
 
     test.beforeAll(async () => {
         // Start the server
-        console.log('Starting server...');
+        console.log(`Starting server on port ${SERVER_PORT} display :${DISPLAY_NUM}...`);
         serverProcess = spawn('npm', ['start'], {
             cwd: process.cwd(),
+            env: { ...process.env, PORT: SERVER_PORT.toString(), DISPLAY_NUM: DISPLAY_NUM.toString() },
             stdio: 'pipe',
             detached: true,
         });
 
         // Wait for server to be ready
         await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('Timeout waiting for server start')), 20000);
+            const timeout = setTimeout(() => {
+                if (serverProcess) serverProcess.kill();
+                reject(new Error('Timeout waiting for server start'))
+            }, 20000);
 
             serverProcess.stdout?.on('data', (data) => {
                 const output = data.toString();

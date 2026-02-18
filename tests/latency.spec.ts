@@ -60,8 +60,10 @@ test.beforeAll(async () => {
 
   const serverPath = path.join(__dirname, '../src/server.ts');
 
+  const DISPLAY_NUM = 100 + Math.floor(Math.random() * 100);
+
   serverProcess = spawn('npx', ['tsx', serverPath], {
-    env: { ...process.env, PORT: String(serverPort), FPS: '30' },
+    env: { ...process.env, PORT: String(serverPort), FPS: '30', DISPLAY_NUM: DISPLAY_NUM.toString() },
     stdio: 'pipe',
     detached: false
   });

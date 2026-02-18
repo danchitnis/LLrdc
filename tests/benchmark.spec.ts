@@ -58,13 +58,15 @@ test.beforeAll(async () => {
   serverPort = await getFreePort();
   serverUrl = `http://localhost:${serverPort}`;
   console.log(`Starting server on port ${serverPort}...`);
-  
+
   const serverPath = path.join(__dirname, '../src/server.ts');
-  
+
+  const DISPLAY_NUM = 100 + Math.floor(Math.random() * 100);
+
   // Use tsx to run the server directly
   serverProcess = spawn('npx', ['tsx', serverPath], {
     // env: { ...process.env, PORT: String(serverPort), FPS: '60' },
-    env: { ...process.env, PORT: String(serverPort), FPS: '60' },
+    env: { ...process.env, PORT: String(serverPort), FPS: '60', DISPLAY_NUM: DISPLAY_NUM.toString() },
     stdio: 'pipe', // Capture stdio for debugging if needed
     detached: false
   });
@@ -94,7 +96,7 @@ test.afterAll(async () => {
     // Give it a moment to clean up
     await new Promise(r => setTimeout(r, 1000));
     if (!serverProcess.killed) {
-        serverProcess.kill('SIGKILL');
+      serverProcess.kill('SIGKILL');
     }
   }
 });
@@ -113,8 +115,8 @@ test('benchmark video stream performance', async ({ page }) => {
   // Spawn xeyes to ensure screen content changes
   console.log('Spawning xeyes...');
   await page.evaluate(() => {
-      const ws = new WebSocket(window.location.href.replace('http', 'ws'));
-      ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
+    const ws = new WebSocket(window.location.href.replace('http', 'ws'));
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
   });
   // Give xeyes a moment to appear
   await page.waitForTimeout(2000);

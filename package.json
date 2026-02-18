@@ -6,7 +6,8 @@
   "description": "Remote desktop prototype",
   "scripts": {
     "start": "tsx src/server.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "playwright test"
   },
   "engines": {
     "node": ">=18"
