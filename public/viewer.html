@@ -197,10 +197,9 @@
                     }
                 });
 
-                // "avc1.42E01F" = Constrained Baseline Profile, Level 3.1
-                // Matches FFmpeg output (profile Constrained Baseline)
+                // Configure for VP8
                 decoder.configure({
-                    codec: 'avc1.42E01F',
+                    codec: 'vp8',
                     optimizeForLatency: true,
                     hardwareAcceleration: 'prefer-software'
                 });
@@ -209,11 +208,7 @@
                 // CRITICAL: Reset keyframe flag so we don't feed delta frames to new decoder
                 window.hasReceivedKeyFrame = false;
 
-                // Do NOT clear lastSPS/lastPPS. 
-                // FFmpeg might only send them at the start of the stream.
-                // We need to persist them across decoder resets.
-
-                log('Decoder initialized (avc1.42E01F). Waiting for SPS/PPS/Keyframe...');
+                log('Decoder initialized (vp8). Waiting for Keyframe...');
             } catch (e) {
                 log('Failed to initialize decoder: ' + e.message);
                 statusEl.textContent = 'Decoder Init Error';
@@ -317,72 +312,21 @@
 
             if (type === 1) { // Video
                 const timestamp = dv.getFloat64(1, false); // Big Endian
-                const nalData = new Uint8Array(buffer, 9);
+                const chunkData = new Uint8Array(buffer, 9); // VP8 Frame
 
                 // Calculate "Capture to Receive" latency
                 const now = Date.now();
                 latencyMonitor = now - timestamp;
 
-                // Detect start code length to find NAL type
-                let nalType = 0;
-                let offset = 0;
-                // Check for 00 00 00 01
-                if (nalData[0] === 0 && nalData[1] === 0 && nalData[2] === 0 && nalData[3] === 1) {
-                    offset = 4;
-                }
-                // Check for 00 00 01
-                else if (nalData[0] === 0 && nalData[1] === 0 && nalData[2] === 1) {
-                    offset = 3;
-                }
+                // VP8 Keyframe detection:
+                // Raw VP8 Frame: First byte, bit 0 (0=Keyframe, 1=Interframe)
+                const isKey = (chunkData[0] & 0x01) === 0;
 
-                if (offset > 0) {
-                    nalType = nalData[offset] & 0x1F;
-                }
+                // Debug
+                // console.log(`VP8 Frame: ${isKey ? 'Key' : 'Inter'} Size: ${chunkData.length} Time: ${timestamp}`);
 
-                // Debug NALs
-                // if (nalType !== 1) console.log(`NAL: ${nalType} Size: ${nalData.length} Time: ${timestamp}`);
-
-                // SPS (7) and PPS (8) handling
-                if (nalType === 7) {
-                    // console.log(`Received SPS (Size: ${nalData.length}, Header: ${toHex(nalData.subarray(0, 5))}...)`);
-                    window.lastSPS = nalData;
-                    return;
-                }
-                if (nalType === 8) {
-                    // console.log(`Received PPS (Size: ${nalData.length}, Header: ${toHex(nalData.subarray(0, 5))}...)`);
-                    window.lastPPS = nalData;
-                    return;
-                }
-
-                // If IDR (5), prepend SPS/PPS if we have them
-                let chunkData = nalData;
-                let isKey = false;
-                if (nalType === 5) {
-                    isKey = true;
-                    if (!window.lastSPS || !window.lastPPS) {
-                        console.warn('Dropping IDR: Missing SPS/PPS');
-                        return;
-                    }
-
-                    const combined = new Uint8Array(window.lastSPS.length + window.lastPPS.length + nalData.length);
-                    combined.set(window.lastSPS, 0);
-                    combined.set(window.lastPPS, window.lastSPS.length);
-                    combined.set(nalData, window.lastSPS.length + window.lastPPS.length);
-                    chunkData = combined;
-
+                if (isKey) {
                     window.hasReceivedKeyFrame = true;
-                    // console.log('Processed KeyFrame (IDR) with SPS/PPS');
-                } else {
-                    // Check if slice (1)
-                    if (nalType !== 1 && nalType !== 5) {
-                        // Ignore incomplete NALs or other types
-                        return;
-                    }
-                }
-                // Check if slice (1)
-                if (nalType !== 1 && nalType !== 5) {
-                    // Ignore incomplete NALs or other types
-                    return;
                 }
 
                 // Drop frames if we haven't seen a keyframe yet
@@ -406,9 +350,6 @@
                         }
                     }
                 } else {
-                    // Decoder is not configured/closed which shouldn't happen normally if initDecoder works
-                    if (frameCount % 60 === 0) console.log('Decoder state: ' + decoder.state);
-
                     if (decoder.state === 'closed' || decoder.state === 'unconfigured') {
                         if (!isInitializing && !decoderInitTimeout) {
                             log('Decoder stuck/closed. Re-initializing...');

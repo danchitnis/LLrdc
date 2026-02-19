@@ -135,186 +135,83 @@ async function waitForXServer(timeoutMs = 10000) {
     throw new Error(`Timed out waiting for X server at ${DISPLAY}`);
 }
 
-// --- NAL Splitter & Streaming Logic ---
+// --- IVF Splitter & Streaming Logic (VP8) ---
 
 /**
- * Split H.264 stream into NAL units and send them along with timestamps.
- * 
- * Simple state machine to accumulate bytes until start code is found.
- * NAL Format: [00 00 00 01] or [00 00 01] prefix.
+ * Split IVF stream into frames.
+ * IVF Header: 32 bytes.
+ * Frame Header: 12 bytes (4 byte size, 8 byte timestamp).
  */
-class NALSplitter {
+class IVFSplitter {
     private buffer: Buffer;
+    private headerParsed: boolean = false;
 
-    constructor(private onNAL: (nal: Buffer) => void) {
+    constructor(private onFrame: (frame: Buffer) => void) {
         this.buffer = Buffer.alloc(0);
     }
 
     feed(data: Buffer) {
         this.buffer = Buffer.concat([this.buffer, data]);
-        // console.log(`Splitter feed: ${data.length} bytes, total buffer: ${this.buffer.length}`);
 
-        let offset = 0;
-
-        while (true) {
-            // Find NAL start code (0x000001 or 0x00000001)
-            // We search from offset
-            const idx = this.buffer.indexOf(Buffer.from([0, 0, 1]), offset);
-
-            if (idx === -1) {
-                // No more start codes, keep remainder
-                if (offset > 0) {
-                    this.buffer = this.buffer.subarray(offset);
+        // 1. Parse File Header (32 bytes)
+        if (!this.headerParsed) {
+            if (this.buffer.length >= 32) {
+                const signature = this.buffer.toString('utf8', 0, 4);
+                if (signature !== 'DKIF') {
+                    console.error(`Invalid IVF Signature: ${signature}`);
                 }
-                break;
-            }
-
-            // If we found a start code, checks if it is preceeded by 00 (making it 00 00 00 01) or not
-            // The start code is technically the 00 00 01 sequence.
-            // But we want to emit the NAL *before* this start code if we have processed one logic.
-
-            // Wait, standard way:
-            // 1. Find start code.
-            // 2. If valid NAL exists before this start code, emit it.
-            // 3. Mark this start code as beginning of next NAL.
-
-            // To properly handle the first NAL, we assume the stream starts with a start code.
-            // If offset is 0 and idx is 0 (or 1 for 00 00 00 01), we just setup the start pointer.
-
-            // Refined Logic:
-            // Iterate through buffer.
-            // If we find 00 00 01 at 'idx'
-            // The data *before* this (from 'startOfNAL') is the previous NAL.
-
-            // Handling the 4-byte start code (00 00 00 01)
-            // If idx > 0 and buffer[idx-1] == 0, then the start code is actually at idx-1.
-
-            let startCodeLen = 3;
-            let actualStart = idx;
-            if (idx > 0 && this.buffer[idx - 1] === 0) {
-                actualStart = idx - 1;
-                startCodeLen = 4;
-            }
-
-            if (offset === 0 && actualStart === 0) {
-                // This is the very first start code in the buffer (start of stream or segment)
-                // Just skip it and set offset to data
-                offset = actualStart + startCodeLen;
-                continue;
-            }
-
-            // If we are here, we found a start code at `actualStart`.
-            // The data from `0` to `actualStart` is a complete NAL (assuming buffer started with a NAL start)
-            // But wait, if `offset` was moved, we need to capture from `0`? No, we consumed buffer.
-            // We need to keep track of where the *current* NAL started.
-            // Actually simpler:
-            // We just keep splitting.
-            // If we find a start code, everything before it is a NAL unit (if any).
-            // Then we keep the start code and continue.
-
-            // However, `indexOf` searches from `offset`. 
-            // If we strip the buffer every time, we lose context.
-            // Let's not strip until end.
-
-            // Case 1: We found a start code at `actualStart`.
-            // We emit `buffer.subarray(0, actualStart)` which is the previous NAL.
-            // Then we shift buffer: `buffer = buffer.subarray(actualStart)`
-            // BUT, we need to include the start code in the NEXT NAL?
-            // Usually valid NALs in Annex B include the start code for decoders, OR we assume decoders handle it.
-            // WebCodecs `VideoDecoder` handles Annex B (which includes start codes).
-
-            // So:
-            // 1. Buffer has data.
-            // 2. Search for start code *after* the beginning (to find the *end* of current NAL).
-            // We need to skip the start code at the beginning of buffer if it exists.
-
-            // Let's assume buffer starts with a start code (from previous iteration logic).
-            // We skip 3 or 4 bytes.
-            // Search for next 00 00 1.
-
-            let searchStart = 3; // minimum skip
-            // Check if it starts with 00 00 00 01
-            if (this.buffer.length >= 4 && this.buffer[0] === 0 && this.buffer[1] === 0 && this.buffer[2] === 0 && this.buffer[3] === 1) {
-                searchStart = 4;
-            } else if (this.buffer.length >= 3 && this.buffer[0] === 0 && this.buffer[1] === 0 && this.buffer[2] === 1) {
-                searchStart = 3;
+                // Discard header
+                this.buffer = this.buffer.subarray(32);
+                this.headerParsed = true;
             } else {
-                // Buffer doesn't start with start code? 
-                // This might happen if partial NAL or garbage.
-                // We'll search for *first* start code.
-                const firstStart = this.buffer.indexOf(Buffer.from([0, 0, 1]));
-                if (firstStart === -1) {
-                    // No start code at all, keep buffering
-                    break;
-                }
-                // Discard data before first start code
-                let realStart = firstStart;
-                if (firstStart > 0 && this.buffer[firstStart - 1] === 0) realStart = firstStart - 1;
-                this.buffer = this.buffer.subarray(realStart);
-                continue; // Restart loop with clean buffer start
+                return; // Wait for more data
             }
+        }
 
-            const nextStart = this.buffer.indexOf(Buffer.from([0, 0, 1]), searchStart);
-
-            if (nextStart === -1) {
-                // No *next* start code found yet. 
-                // We have a partial NAL in buffer (starts at 0).
-                // Wait for more data.
+        // 2. Parse Frames
+        while (true) {
+            // Need at least 12 bytes for Frame Header
+            if (this.buffer.length < 12) {
                 break;
             }
 
-            // We found the start of the NEXT NAL.
-            // So `0` to `nextStart` (exclusive of 00 00 1) ???
-            // Wait, `indexOf` returns position of `00`.
-            // If it is `00 00 00 01`, the `00` is at `nextStart`.
-            // But we need to check if preceding byte is `00`.
+            const frameSize = this.buffer.readUInt32LE(0);
+            // Timestamp is 64-bit LE, but we ignore it for now (use wall clock)
 
-            let splitPoint = nextStart;
-            if (nextStart > 0 && this.buffer[nextStart - 1] === 0) {
-                splitPoint = nextStart - 1;
+            // Check if we have the full frame
+            if (this.buffer.length < 12 + frameSize) {
+                break;
             }
 
-            const nalUnit = this.buffer.subarray(0, splitPoint);
-            this.onNAL(nalUnit);
+            // Extract Frame
+            const frameData = this.buffer.subarray(12, 12 + frameSize);
+            this.onFrame(frameData);
 
-            // Remove processed NAL from buffer
-            this.buffer = this.buffer.subarray(splitPoint);
-            // Loop continues to process next NAL in buffer
+            // Advance buffer
+            this.buffer = this.buffer.subarray(12 + frameSize);
         }
     }
 }
 
-
 function startStreaming(wss: WebSocketServer) {
-    const codec = VIDEO_CODEC;
-    const ffmpegCodec = codec === 'h265' ? 'libx265' : 'libx264';
-    const ffmpegFormat = codec === 'h265' ? 'hevc' : 'h264'; // or rawvideo for pure? 'h264' is raw annex b
-
-    // x11grab input options
     const inputArgs = [
         '-f', 'x11grab',
         '-draw_mouse', '1',
-        '-r', `${FPS}`,
+        '-framerate', `${FPS}`,
         '-s', '1280x720',
         '-i', `${DISPLAY}`,
     ];
 
     const outputArgs = [
-        '-vf', 'scale=1280:720', // Ensure strict resolution to avoid artifacts
-        '-c:v', ffmpegCodec,
-        '-pix_fmt', 'yuv420p',
-        '-profile:v', 'baseline',
-        '-level', '3.1',
-        '-bf', '0', // No B-frames for low latency
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
-        '-b:v', '2000k', // Cap bitrate at 2Mbps to prevent network congestion/drops
-        '-maxrate', '2000k',
-        '-bufsize', '4000k', // Allow some buffering bursts but keep average low
-        '-g', '5', // Keyframe every 5 frames for fast recovery
-        '-keyint_min', '5',
-        '-x264-params', 'rc-lookahead=0:sync-lookahead=0:scenecut=0',
-        '-f', ffmpegFormat,
+        '-vf', `fps=${FPS},format=yuv420p`,
+        '-c:v', 'libvpx',
+        '-b:v', '2000k',
+        '-g', '120',     // Keyframe every 4 seconds (30fps)
+        '-qmin', '4',    // Prevent best quality (CPU heavy)
+        '-qmax', '50',   // Prevent worst quality (distortion)
+        '-speed', '8',   // Realtime 5-8. 8 is fastest.
+        '-quality', 'realtime',
+        '-f', 'ivf',
         '-'
     ];
 
@@ -322,27 +219,43 @@ function startStreaming(wss: WebSocketServer) {
         '-probesize', '32',
         '-analyzeduration', '0',
         '-fflags', 'nobuffer',
+        '-threads', '2', // VP8 supports threading
         ...inputArgs,
         ...outputArgs
     ];
 
-    console.log(`Starting ffmpeg capture from ${DISPLAY}...`);
+    console.log(`Starting ffmpeg capture (VP8) from ${DISPLAY}...`);
     const env = { ...process.env, DISPLAY };
 
     ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs, { env });
 
-    const splitter = new NALSplitter((nal) => {
-        // Broadcast NAL
-        // Protocol: [1 byte Type][8 bytes Timestamp][NAL Data]
-        // Type 1 = Video
-        // console.log(`Emit NAL: Size=${nal.length}`); // Silenced per user request
+    // Ensure we kill ffmpeg on exit
+    process.on('exit', () => {
+        if (ffmpegProcess) {
+            ffmpegProcess.kill();
+        }
+    });
+    process.on('SIGINT', () => process.exit());
+    process.on('SIGTERM', () => process.exit());
+
+    let lastVideoSent = 0;
+    const targetInterval = 1000 / FPS;
+
+    const splitter = new IVFSplitter((frame) => {
+        // Throttling Logic
+        const now = Date.now();
+        if (now - lastVideoSent < targetInterval) {
+            return;
+        }
+        lastVideoSent = now;
 
         const timestamp = Date.now();
+        // Protocol: [1 byte Type(1)][8 bytes Timestamp][VP8 Frame]
         const header = Buffer.alloc(9);
         header.writeUInt8(1, 0); // Video Type
         header.writeDoubleBE(timestamp, 1);
 
-        const packet = Buffer.concat([header, nal]);
+        const packet = Buffer.concat([header, frame]);
 
         wss.clients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
