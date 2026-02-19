@@ -104,6 +104,8 @@
     <div id="display-container">
         <!-- Replaced video with canvas for explicit painting control -->
         <canvas id="display" width="1280" height="720"></canvas>
+        <video id="webrtc-video" autoplay playsinline muted
+            style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: 0.01;"></video>
         <div id="input-overlay"></div>
     </div>
 
@@ -124,6 +126,7 @@
     <script>
         const statusEl = document.getElementById('status');
         const displayEl = document.getElementById('display'); // This is now a canvas
+        const videoEl = document.getElementById('webrtc-video');
         const overlayEl = document.getElementById('input-overlay');
         const debugEl = document.getElementById('debug-log');
         const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
@@ -268,6 +271,71 @@
 
         initDecoder();
 
+        // --- WebRTC Setup ---
+        let rtcPeer = null;
+        let isWebRtcActive = false;
+
+        function initWebRTC() {
+            rtcPeer = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            rtcPeer.onicecandidate = (e) => {
+                if (e.candidate && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'webrtc_ice', candidate: e.candidate }));
+                }
+            };
+
+            rtcPeer.ontrack = (e) => {
+                log('WebRTC track received');
+                videoEl.srcObject = new MediaStream([e.track]);
+
+                videoEl.play().then(() => {
+                    log('WebRTC Video playing');
+                    isWebRtcActive = true;
+                    statusEl.textContent = 'WebRTC Connected';
+                    statusEl.style.color = '#4bf';
+                    startVideoCanvasLoop();
+                }).catch(err => log('Video play error: ' + err));
+            };
+
+            rtcPeer.oniceconnectionstatechange = () => {
+                log('ICE state: ' + rtcPeer.iceConnectionState);
+                if (rtcPeer.iceConnectionState === 'disconnected' || rtcPeer.iceConnectionState === 'failed') {
+                    isWebRtcActive = false;
+                    statusEl.textContent = 'WebCodecs Fallback';
+                    statusEl.style.color = '#fa4';
+                }
+            };
+
+            rtcPeer.addTransceiver('video', { direction: 'recvonly' });
+            rtcPeer.createOffer().then(offer => {
+                return rtcPeer.setLocalDescription(offer);
+            }).then(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'webrtc_offer', sdp: rtcPeer.localDescription.sdp }));
+                }
+            });
+        }
+
+        function startVideoCanvasLoop() {
+            if (!isWebRtcActive) return;
+            if (ctx && videoEl.videoWidth > 0) {
+                if (displayEl.width !== videoEl.videoWidth || displayEl.height !== videoEl.videoHeight) {
+                    displayEl.width = videoEl.videoWidth;
+                    displayEl.height = videoEl.videoHeight;
+                }
+                ctx.drawImage(videoEl, 0, 0, displayEl.width, displayEl.height);
+                frameCount++;
+                updateStats();
+            }
+            if ('requestVideoFrameCallback' in videoEl) {
+                videoEl.requestVideoFrameCallback(startVideoCanvasLoop);
+            } else {
+                requestAnimationFrame(startVideoCanvasLoop);
+            }
+        }
+
         // --- Network ---
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -279,11 +347,14 @@
 
         ws.onopen = () => {
             log('WebSocket Connected');
-            statusEl.textContent = 'Connected';
+            statusEl.textContent = 'Connected, Negotiating WebRTC...';
             statusEl.style.color = '#4f4';
 
             // Start ping loop
             setInterval(sendPing, 1000);
+
+            // Initiate WebRTC
+            initWebRTC();
         };
 
         ws.onclose = () => {
@@ -334,6 +405,11 @@
                     return;
                 }
 
+                // Skip decoding if WebRTC is successfully rendering
+                if (isWebRtcActive) {
+                    return;
+                }
+
                 if (decoder.state === 'configured') {
                     try {
                         decoder.decode(new EncodedVideoChunk({
@@ -366,6 +442,10 @@
                 if (msg.type === 'pong') {
                     networkLatency = Date.now() - msg.timestamp;
                     updateStatusText();
+                } else if (msg.type === 'webrtc_answer') {
+                    if (rtcPeer) rtcPeer.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+                } else if (msg.type === 'webrtc_ice' && msg.candidate) {
+                    if (rtcPeer) rtcPeer.addIceCandidate(new RTCIceCandidate(msg.candidate));
                 }
             } catch (e) { }
         }

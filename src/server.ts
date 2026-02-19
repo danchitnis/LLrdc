@@ -8,7 +8,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dgram from 'node:dgram';
 import { WebSocketServer, WebSocket } from 'ws';
+import { RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RtpPacket } from 'werift';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -31,6 +33,23 @@ const cleanupTasks: (() => void)[] = [];
 let xvfbProcess: ChildProcess | undefined;
 let sessionProcess: ChildProcess | undefined;
 let ffmpegProcess: ChildProcess | undefined;
+
+// WebRTC Tracks
+const webrtcTracks: Set<MediaStreamTrack> = new Set();
+// UDP Server for RTP
+const rtpPort = parseInt(process.env.RTP_PORT || '5000');
+const udpServer = dgram.createSocket('udp4');
+udpServer.on('message', (msg) => {
+    try {
+        const packet = RtpPacket.deSerialize(msg);
+        for (const track of webrtcTracks) {
+            track.writeRtp(packet);
+        }
+    } catch (e) {
+        // ignore malformed
+    }
+});
+udpServer.bind(rtpPort);
 
 // --- Helpers ---
 
@@ -194,25 +213,23 @@ class IVFSplitter {
 }
 
 function startStreaming(wss: WebSocketServer) {
-    const inputArgs = [
-        '-f', 'x11grab',
-        '-draw_mouse', '1',
-        '-framerate', `${FPS}`,
-        '-s', '1280x720',
-        '-i', `${DISPLAY}`,
-    ];
+    const inputArgs = process.env.TEST_PATTERN ?
+        ['-re', '-f', 'lavfi', '-i', `testsrc=size=1280x720:rate=${FPS}`] :
+        ['-f', 'x11grab', '-video_size', '1280x720', '-i', `:${DISPLAY_NUM}`];
 
     const outputArgs = [
         '-vf', `fps=${FPS},format=yuv420p`,
         '-c:v', 'libvpx',
         '-b:v', '2000k',
         '-g', '120',     // Keyframe every 4 seconds (30fps)
-        '-qmin', '4',    // Prevent best quality (CPU heavy)
-        '-qmax', '50',   // Prevent worst quality (distortion)
+        '-qmin', '4',
+        '-qmax', '50',
         '-speed', '8',   // Realtime 5-8. 8 is fastest.
         '-quality', 'realtime',
-        '-f', 'ivf',
-        '-'
+        '-map', '0:v',
+        // Tee muxer: one to RTP payload_type 96 (UDP 5000), one to IVF (pipe:1)
+        '-f', 'tee',
+        `[f=rtp:payload_type=96]rtp://127.0.0.1:${rtpPort}?pkt_size=1200|[f=ivf]pipe:1`
     ];
 
     const ffmpegArgs = [
@@ -242,13 +259,7 @@ function startStreaming(wss: WebSocketServer) {
     const targetInterval = 1000 / FPS;
 
     const splitter = new IVFSplitter((frame) => {
-        // Throttling Logic
-        const now = Date.now();
-        if (now - lastVideoSent < targetInterval) {
-            return;
-        }
-        lastVideoSent = now;
-
+        // Broadcast raw IVF frame over WebSocket (Fallback)
         const timestamp = Date.now();
         // Protocol: [1 byte Type(1)][8 bytes Timestamp][VP8 Frame]
         const header = Buffer.alloc(9);
@@ -357,7 +368,11 @@ function spawnApp(command: string) {
 async function main() {
     ensureBinaries();
 
-    await startX11();
+    if (!process.env.TEST_PATTERN) {
+        await startX11();
+    } else {
+        console.log('TEST_PATTERN mode: skipping X11 setup.');
+    }
 
     // Start HTTP Server
     const server = await import('node:http').then(m => m.createServer((req, res) => {
@@ -410,6 +425,9 @@ async function main() {
             console.log('TCP_NODELAY set on client socket');
         }
 
+        let peer: RTCPeerConnection | undefined;
+        let track: MediaStreamTrack | undefined;
+
         ws.on('message', (data) => {
             try {
                 const msg = JSON.parse(data.toString());
@@ -427,10 +445,42 @@ async function main() {
                 } else if (msg.type === 'ping') {
                     // Echo back for latency measurement
                     ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
+                } else if (msg.type === 'webrtc_offer' && msg.sdp) {
+                    peer = new RTCPeerConnection({
+                        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                    });
+                    track = new MediaStreamTrack({ kind: 'video' });
+                    peer.addTrack(track);
+                    webrtcTracks.add(track);
+
+                    peer.onIceCandidate.subscribe((candidate) => {
+                        if (candidate && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'webrtc_ice', candidate }));
+                        }
+                    });
+
+                    peer.setRemoteDescription(new RTCSessionDescription(msg.sdp, 'offer'));
+                    peer.createAnswer().then((answer) => {
+                        peer!.setLocalDescription(answer).then(() => {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ type: 'webrtc_answer', sdp: peer!.localDescription }));
+                            }
+                        });
+                    });
+
+                } else if (msg.type === 'webrtc_ice' && msg.candidate) {
+                    if (peer) {
+                        peer.addIceCandidate(msg.candidate).catch(e => console.error('Failed to add ICE', e));
+                    }
                 }
             } catch (e) {
                 // ignore
             }
+        });
+
+        ws.on('close', () => {
+            if (track) webrtcTracks.delete(track);
+            if (peer) peer.close();
         });
     });
 

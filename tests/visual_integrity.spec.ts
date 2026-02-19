@@ -8,7 +8,7 @@ const PORT = 3000 + Math.floor(Math.random() * 1000);
 test.beforeAll(async () => {
     console.log(`Starting server on port ${PORT}...`);
     serverProcess = spawn('npx', ['tsx', 'src/server.ts'], {
-        env: { ...process.env, PORT: PORT.toString(), DISPLAY_NUM: '101', FPS: '30' },
+        env: { ...process.env, PORT: PORT.toString(), DISPLAY_NUM: (PORT + 100).toString(), FPS: '30', RTP_PORT: (PORT + 1000).toString() },
         stdio: 'pipe'
     });
 
@@ -64,7 +64,7 @@ test('verify video integrity (no green artifacts)', async ({ page }) => {
         // console.log(`Current status: ${status}`);
         expect(status).toMatch(/Connected|FPS/);
 
-        const stats = await page.evaluate(() => window.getStats ? window.getStats() : { totalDecoded: 0, fps: 0 });
+        const stats = await page.evaluate(() => (window as any).getStats ? (window as any).getStats() : { totalDecoded: 0, fps: 0 });
         console.log('Checking Stats:', stats);
         expect(stats.totalDecoded).toBeGreaterThan(10);
         // FPS might be 0 initially if just started, but we saw 20 in status bar.
