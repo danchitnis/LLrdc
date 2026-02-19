@@ -4,8 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Remote Desktop Step 4</title>
-    <script src="jmuxer.min.js"></script>
+    <title>Remote Desktop Low Latency</title>
     <style>
         body {
             font-family: sans-serif;
@@ -25,24 +24,20 @@
         #status {
             margin-bottom: 10px;
             color: #aaa;
+            font-family: monospace;
         }
 
         #display-container {
             border: 2px solid #444;
             background-color: #000;
-            max-width: 100%;
             display: inline-block;
             line-height: 0;
             position: relative;
-            /* For overlay positioning */
         }
 
         #display {
-            max-width: 100%;
-            height: auto;
             display: block;
             pointer-events: none;
-            /* Let clicks pass through to overlay if needed, or just ignore them on img */
             user-select: none;
             -webkit-user-drag: none;
         }
@@ -54,7 +49,6 @@
             width: 100%;
             height: 100%;
             cursor: crosshair;
-            /* Ensure it captures events */
             background-color: transparent;
         }
 
@@ -89,15 +83,27 @@
         .launcher-btn:active {
             background-color: #555;
         }
+
+        #debug-log {
+            margin-top: 20px;
+            color: #666;
+            font-size: 12px;
+            max-height: 100px;
+            overflow-y: auto;
+            width: 100%;
+            max-width: 800px;
+            border-top: 1px solid #333;
+        }
     </style>
 </head>
 
 <body>
 
-    <h1>Remote Desktop Viewer (Step 4)</h1>
+    <h1>Remote Desktop Viewer (Low Latency)</h1>
     <div id="status">Connecting...</div>
     <div id="display-container">
-        <video id="display" autoplay muted playsinline webkit-playsinline></video>
+        <!-- Replaced video with canvas for explicit painting control -->
+        <canvas id="display" width="1280" height="720"></canvas>
         <div id="input-overlay"></div>
     </div>
 
@@ -117,179 +123,347 @@
 
     <script>
         const statusEl = document.getElementById('status');
-        const displayEl = document.getElementById('display');
+        const displayEl = document.getElementById('display'); // This is now a canvas
         const overlayEl = document.getElementById('input-overlay');
         const debugEl = document.getElementById('debug-log');
+        const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
+
+        // Optimization: Use OffscreenCanvas if available for decoding? 
+        // WebCodecs requires painting to a context.
 
         function log(msg) {
             console.log(msg);
             const line = document.createElement('div');
             line.textContent = msg;
             debugEl.appendChild(line);
+            debugEl.scrollTop = debugEl.scrollHeight;
         }
 
-        let jmuxer;
-        try {
-            jmuxer = new JMuxer({
-                node: 'display',
-                mode: 'video',
-                flushingTime: 0,
-                fps: 30, // Match server FPS
-                debug: false, // Disable debug to save performance
-                onError: function (data) {
-                    log('Buffer error encountered: ' + JSON.stringify(data));
-                    statusEl.textContent = 'Buffer Error';
-                    statusEl.style.color = '#f44';
+        // --- WebCodecs Setup ---
+
+        let decoder;
+        let frameCount = 0;
+        let lastFPSUpdate = Date.now();
+        let fps = 0;
+        let latencyMonitor = 0; // ms
+        let networkLatency = 0;
+        let totalDecoded = 0;
+
+        // Expose stats for Playwright
+        window.getStats = () => ({ fps, latency: latencyMonitor, totalDecoded });
+
+        let isInitializing = false;
+        let decoderInitTimeout = null;
+
+        function initDecoder() {
+            if (isInitializing) return;
+            isInitializing = true;
+
+            if (decoderInitTimeout) {
+                clearTimeout(decoderInitTimeout);
+                decoderInitTimeout = null;
+            }
+
+            if (!('VideoDecoder' in window)) {
+                log('WebCodecs API not supported. Use Chrome or Edge.');
+                statusEl.textContent = 'WebCodecs Not Supported';
+                isInitializing = false;
+                return;
+            }
+
+            if (decoder) {
+                try {
+                    if (decoder.state !== 'closed') decoder.close();
+                } catch (e) {
+                    console.warn('Error closing decoder:', e);
                 }
-            });
-        } catch (e) {
-            log('JMuxer init failed: ' + e.message);
-            statusEl.textContent = 'Error: ' + e.message;
-            statusEl.style.color = '#f44';
+            }
+
+            try {
+                decoder = new VideoDecoder({
+                    output: handleFrame,
+                    error: (e) => {
+                        log(`Decoder Error: ${e.message} (Code: ${e.code})`);
+                        console.error('VideoDecoder Error Details:', e);
+                        statusEl.textContent = `Decoder Err: ${e.message}`;
+
+                        // Schedule re-init, don't do it synchronously
+                        if (!decoderInitTimeout) {
+                            decoderInitTimeout = setTimeout(() => {
+                                decoderInitTimeout = null;
+                                initDecoder();
+                            }, 100);
+                        }
+                    }
+                });
+
+                // "avc1.42E01F" = Constrained Baseline Profile, Level 3.1
+                // Matches FFmpeg output (profile Constrained Baseline)
+                decoder.configure({
+                    codec: 'avc1.42E01F',
+                    optimizeForLatency: true,
+                    hardwareAcceleration: 'prefer-software'
+                });
+
+
+                // CRITICAL: Reset keyframe flag so we don't feed delta frames to new decoder
+                window.hasReceivedKeyFrame = false;
+
+                // Do NOT clear lastSPS/lastPPS. 
+                // FFmpeg might only send them at the start of the stream.
+                // We need to persist them across decoder resets.
+
+                log('Decoder initialized (avc1.42E01F). Waiting for SPS/PPS/Keyframe...');
+            } catch (e) {
+                log('Failed to initialize decoder: ' + e.message);
+                statusEl.textContent = 'Decoder Init Error';
+                console.error(e);
+            } finally {
+                isInitializing = false;
+            }
         }
+
+        function toHex(arr) {
+            return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        }
+
+        function handleFrame(frame) {
+            if (totalDecoded === 0) {
+                log('First frame decoded successfully!');
+                console.log('Frame Format:', frame.format, frame.codedWidth, frame.codedHeight);
+            }
+            totalDecoded++;
+
+            // Drop old frames if we are behind?
+            // Actually, for low latency, we just paint immediately.
+
+            // Note: frame.timestamp in WebCodecs is the presentation timestamp (PTS) from the container.
+            // Since we synthesized the container (or passed raw), we might not have accurate PTS unless we set it.
+            // But we passed simple chunks.
+
+            // Drawing immediately avoids RequestAnimationFrame latency (up to 16ms).
+            if (ctx) {
+                // Resize canvas if needed
+                if (displayEl.width !== frame.displayWidth || displayEl.height !== frame.displayHeight) {
+                    displayEl.width = frame.displayWidth;
+                    displayEl.height = frame.displayHeight;
+                }
+                ctx.drawImage(frame, 0, 0, displayEl.width, displayEl.height);
+            }
+
+            frame.close(); // Mandatory cleanup!
+
+            frameCount++;
+            updateStats();
+        }
+
+        function updateStats() {
+            const now = Date.now();
+            if (now - lastFPSUpdate >= 1000) {
+                fps = frameCount;
+                frameCount = 0;
+                lastFPSUpdate = now;
+                updateStatusText();
+            }
+        }
+
+        function updateStatusText() {
+            statusEl.textContent = `FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms`;
+        }
+
+        initDecoder();
+
+        // --- Network ---
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}`;
         log(`Connecting to ${wsUrl}...`);
-        console.log(`Debug: WebSocket URL is ${wsUrl}`);
-        const ws = new WebSocket(wsUrl);
 
+        const ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = () => {
             log('WebSocket Connected');
             statusEl.textContent = 'Connected';
             statusEl.style.color = '#4f4';
+
+            // Start ping loop
+            setInterval(sendPing, 1000);
         };
 
-        ws.onclose = (event) => {
-            log(`WebSocket Disconnected (Code: ${event.code}, Reason: ${event.reason})`);
+        ws.onclose = () => {
+            log('WebSocket Disconnected');
             statusEl.textContent = 'Disconnected';
             statusEl.style.color = '#f44';
         };
 
         ws.onerror = (err) => {
-            log('WebSocket Error (check console)');
-            console.error('WebSocket error:', err);
-            statusEl.textContent = 'Connection Error';
-            statusEl.style.color = '#f44';
+            log('WebSocket Error');
+            console.error(err);
         };
-
-        // Connection timeout check
-        setTimeout(() => {
-            if (ws.readyState === WebSocket.CONNECTING) {
-                log(`Connection timed out (readyState=${ws.readyState}). Check firewall on port 8080.`);
-                statusEl.textContent = 'Connection Timeout';
-                statusEl.style.color = '#f44';
-
-                if (window.location.protocol === 'https:') {
-                    log('WARNING: You are using HTTPS. Ensure the server supports WSS or use HTTP.');
-                }
-            } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-                // Already handled by onclose, don't overwrite
-                log(`Check: Connection closed (readyState=${ws.readyState}).`);
-            }
-        }, 5000);
-
-        let fps = 0;
-        let lastFPSUpdate = Date.now();
-        let framesSinceLastUpdate = 0;
-        let latency = 0;
-        let lastPing = 0;
-
-        window.getStats = () => ({ fps, latency });
-
-        function updateFPS() {
-            const now = Date.now();
-            framesSinceLastUpdate++;
-            if (now - lastFPSUpdate >= 1000) {
-                fps = Math.round(framesSinceLastUpdate / ((now - lastFPSUpdate) / 1000));
-                framesSinceLastUpdate = 0;
-                lastFPSUpdate = now;
-                statusEl.textContent = `Connected | FPS: ${fps} | Latency: ${latency}ms`;
-            }
-        }
-
-        function measureLatency() {
-            if (ws.readyState === WebSocket.OPEN) {
-                lastPing = Date.now();
-                ws.send(JSON.stringify({ type: 'ping', timestamp: lastPing }));
-            }
-        }
-
-        setInterval(measureLatency, 1000);
 
         ws.onmessage = (event) => {
             if (event.data instanceof ArrayBuffer) {
-                updateFPS();
-                if (jmuxer) {
-                    try {
-                        jmuxer.feed({
-                            video: new Uint8Array(event.data)
-                        });
-                    } catch (e) {
-                        log('JMuxer feed error: ' + e.message);
-                    }
-                }
+                // Protocol: [1 byte Type][8 byte Timestamp][Data]
+                handleBinaryMessage(event.data);
             } else {
-                try {
-                    const msg = JSON.parse(event.data);
-                    if (msg.type === 'pong' && typeof msg.timestamp === 'number') {
-                        latency = Date.now() - msg.timestamp;
-                    } else {
-                        log('Received message: ' + JSON.stringify(msg));
-                    }
-                } catch (e) {
-                    log('Received non-JSON message: ' + event.data);
-                }
+                handleJsonMessage(event.data);
             }
         };
 
-        function spawn(command) {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'spawn',
-                    command: command
-                }));
+        function handleBinaryMessage(buffer) {
+            const dv = new DataView(buffer);
+            const type = dv.getUint8(0);
+
+            if (type === 1) { // Video
+                const timestamp = dv.getFloat64(1, false); // Big Endian
+                const nalData = new Uint8Array(buffer, 9);
+
+                // Calculate "Capture to Receive" latency
+                const now = Date.now();
+                latencyMonitor = now - timestamp;
+
+                // Detect start code length to find NAL type
+                let nalType = 0;
+                let offset = 0;
+                // Check for 00 00 00 01
+                if (nalData[0] === 0 && nalData[1] === 0 && nalData[2] === 0 && nalData[3] === 1) {
+                    offset = 4;
+                }
+                // Check for 00 00 01
+                else if (nalData[0] === 0 && nalData[1] === 0 && nalData[2] === 1) {
+                    offset = 3;
+                }
+
+                if (offset > 0) {
+                    nalType = nalData[offset] & 0x1F;
+                }
+
+                // Debug NALs
+                // if (nalType !== 1) console.log(`NAL: ${nalType} Size: ${nalData.length} Time: ${timestamp}`);
+
+                // SPS (7) and PPS (8) handling
+                if (nalType === 7) {
+                    // console.log(`Received SPS (Size: ${nalData.length}, Header: ${toHex(nalData.subarray(0, 5))}...)`);
+                    window.lastSPS = nalData;
+                    return;
+                }
+                if (nalType === 8) {
+                    // console.log(`Received PPS (Size: ${nalData.length}, Header: ${toHex(nalData.subarray(0, 5))}...)`);
+                    window.lastPPS = nalData;
+                    return;
+                }
+
+                // If IDR (5), prepend SPS/PPS if we have them
+                let chunkData = nalData;
+                let isKey = false;
+                if (nalType === 5) {
+                    isKey = true;
+                    if (!window.lastSPS || !window.lastPPS) {
+                        console.warn('Dropping IDR: Missing SPS/PPS');
+                        return;
+                    }
+
+                    const combined = new Uint8Array(window.lastSPS.length + window.lastPPS.length + nalData.length);
+                    combined.set(window.lastSPS, 0);
+                    combined.set(window.lastPPS, window.lastSPS.length);
+                    combined.set(nalData, window.lastSPS.length + window.lastPPS.length);
+                    chunkData = combined;
+
+                    window.hasReceivedKeyFrame = true;
+                    // console.log('Processed KeyFrame (IDR) with SPS/PPS');
+                } else {
+                    // Check if slice (1)
+                    if (nalType !== 1 && nalType !== 5) {
+                        // Ignore incomplete NALs or other types
+                        return;
+                    }
+                }
+                // Check if slice (1)
+                if (nalType !== 1 && nalType !== 5) {
+                    // Ignore incomplete NALs or other types
+                    return;
+                }
+
+                // Drop frames if we haven't seen a keyframe yet
+                if (!window.hasReceivedKeyFrame) {
+                    return;
+                }
+
+                if (decoder.state === 'configured') {
+                    try {
+                        decoder.decode(new EncodedVideoChunk({
+                            type: isKey ? 'key' : 'delta',
+                            timestamp: timestamp * 1000,
+                            data: chunkData
+                        }));
+                    } catch (e) {
+                        console.error('Decode exception:', e);
+                        statusEl.textContent = 'Decode Exc: ' + e.message;
+                        // Full Re-init
+                        if (!isInitializing && !decoderInitTimeout) {
+                            initDecoder();
+                        }
+                    }
+                } else {
+                    // Decoder is not configured/closed which shouldn't happen normally if initDecoder works
+                    if (frameCount % 60 === 0) console.log('Decoder state: ' + decoder.state);
+
+                    if (decoder.state === 'closed' || decoder.state === 'unconfigured') {
+                        if (!isInitializing && !decoderInitTimeout) {
+                            log('Decoder stuck/closed. Re-initializing...');
+                            initDecoder();
+                        }
+                    }
+                }
             }
         }
 
-        // Input Handling
+        function handleJsonMessage(data) {
+            try {
+                const msg = JSON.parse(data);
+                if (msg.type === 'pong') {
+                    networkLatency = Date.now() - msg.timestamp;
+                    updateStatusText();
+                }
+            } catch (e) { }
+        }
+
+        function sendPing() {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+            }
+        }
+
+        function spawn(command) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'spawn', command }));
+            }
+        }
+
+        // --- Input Handling ---
+
         window.addEventListener('keydown', (event) => {
-            // Prevent default browser actions for keys that interfere with remote usage
             if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Backspace'].includes(event.code) || event.key === ' ') {
                 event.preventDefault();
             }
-
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'keydown',
-                    key: event.key
-                }));
+                ws.send(JSON.stringify({ type: 'keydown', key: event.key }));
             }
         });
 
-        // Mouse Handling
-        function sendMouse(type, x, y, button) {
+        const sendMouse = (type, x, y, button) => {
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type,
-                    x,
-                    y,
-                    button
-                }));
+                ws.send(JSON.stringify({ type, x, y, button }));
             }
-        }
+        };
 
         overlayEl.addEventListener('mousemove', (e) => {
             const rect = overlayEl.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) return;
-            const x = (e.clientX - rect.left) / rect.width;
-            const y = (e.clientY - rect.top) / rect.height;
-            // Clamp to 0-1
-            const cx = Math.max(0, Math.min(1, x));
-            const cy = Math.max(0, Math.min(1, y));
-            sendMouse('mousemove', cx, cy);
+            if (rect.width === 0) return;
+            const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+            sendMouse('mousemove', x, y);
         });
 
         overlayEl.addEventListener('mousedown', (e) => {
@@ -302,17 +476,11 @@
             e.preventDefault();
         });
 
-        // Disable context menu on right click
         overlayEl.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             return false;
         });
 
-        // Prevent dragging
-        overlayEl.addEventListener('dragstart', (e) => {
-            e.preventDefault();
-            return false;
-        });
     </script>
 </body>
 

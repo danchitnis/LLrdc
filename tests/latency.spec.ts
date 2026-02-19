@@ -92,6 +92,7 @@ test.afterAll(async () => {
 
 test('measure end-to-end mouse latency', async ({ page }) => {
   test.setTimeout(60000);
+  page.on('console', msg => console.log(`[Browser]: ${msg.text()}`));
   await page.goto(serverUrl);
 
   // Wait for stream
@@ -104,15 +105,20 @@ test('measure end-to-end mouse latency', async ({ page }) => {
   await page.evaluate(() => {
     (window as any).monitorPixelChange = (x: number, y: number, width: number, height: number, timeout: number = 5000) => {
       return new Promise((resolve, reject) => {
-        const video = document.getElementById('display') as HTMLVideoElement;
+        const display = document.getElementById('display') as HTMLVideoElement | HTMLCanvasElement;
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        // Handle both video (videoWidth/Height) and canvas (width/height)
+        const dWidth = (display as HTMLVideoElement).videoWidth || (display as HTMLCanvasElement).width;
+        const dHeight = (display as HTMLVideoElement).videoHeight || (display as HTMLCanvasElement).height;
+
+        canvas.width = dWidth;
+        canvas.height = dHeight;
+
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return reject('No context');
 
         // Get baseline of the region
-        ctx.drawImage(video, 0, 0);
+        ctx.drawImage(display, 0, 0);
         const baseline = ctx.getImageData(x, y, width, height).data;
         const start = performance.now();
         let maxDiff = 0;
@@ -120,7 +126,7 @@ test('measure end-to-end mouse latency', async ({ page }) => {
         function check() {
           if (performance.now() - start > timeout) return resolve({ time: -1, maxDiff }); // Timeout
 
-          ctx!.drawImage(video, 0, 0);
+          ctx!.drawImage(display, 0, 0);
           const current = ctx!.getImageData(x, y, width, height).data;
 
           let diffSum = 0;
@@ -139,10 +145,11 @@ test('measure end-to-end mouse latency', async ({ page }) => {
           if (changedPixels > 10) { // Threshold: at least 10 pixels changed
             resolve({ time: performance.now(), maxDiff: diffSum });
           } else {
+            // Check aggressively
             requestAnimationFrame(check);
           }
         }
-        requestAnimationFrame(check);
+        check();
       });
     };
   });

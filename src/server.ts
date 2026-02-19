@@ -18,7 +18,6 @@ fs.mkdirSync(LOCAL_TMP_DIR, { recursive: true });
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const FPS = parseInt(process.env.FPS || '30', 10);
-const SCREENSHOT_INTERVAL_MS = 1000 / FPS;
 // X11 Display number
 const DISPLAY_NUM = process.env.DISPLAY_NUM || '99';
 const DISPLAY = `:${DISPLAY_NUM}`;
@@ -73,7 +72,7 @@ async function startX11() {
 
     // 2. Start Xvfb
     // -screen 0 1280x720x24 defines the resolution and depth
-    xvfbProcess = spawn('Xvfb', [DISPLAY, '-screen', '0', '1280x720x24'], {
+    xvfbProcess = spawn('Xvfb', [DISPLAY, '-screen', '0', '1280x720x24', '-nolisten', 'tcp'], {
         stdio: 'inherit'
     });
 
@@ -136,12 +135,160 @@ async function waitForXServer(timeoutMs = 10000) {
     throw new Error(`Timed out waiting for X server at ${DISPLAY}`);
 }
 
-// --- Video Streaming Logic ---
+// --- NAL Splitter & Streaming Logic ---
+
+/**
+ * Split H.264 stream into NAL units and send them along with timestamps.
+ * 
+ * Simple state machine to accumulate bytes until start code is found.
+ * NAL Format: [00 00 00 01] or [00 00 01] prefix.
+ */
+class NALSplitter {
+    private buffer: Buffer;
+
+    constructor(private onNAL: (nal: Buffer) => void) {
+        this.buffer = Buffer.alloc(0);
+    }
+
+    feed(data: Buffer) {
+        this.buffer = Buffer.concat([this.buffer, data]);
+        // console.log(`Splitter feed: ${data.length} bytes, total buffer: ${this.buffer.length}`);
+
+        let offset = 0;
+
+        while (true) {
+            // Find NAL start code (0x000001 or 0x00000001)
+            // We search from offset
+            const idx = this.buffer.indexOf(Buffer.from([0, 0, 1]), offset);
+
+            if (idx === -1) {
+                // No more start codes, keep remainder
+                if (offset > 0) {
+                    this.buffer = this.buffer.subarray(offset);
+                }
+                break;
+            }
+
+            // If we found a start code, checks if it is preceeded by 00 (making it 00 00 00 01) or not
+            // The start code is technically the 00 00 01 sequence.
+            // But we want to emit the NAL *before* this start code if we have processed one logic.
+
+            // Wait, standard way:
+            // 1. Find start code.
+            // 2. If valid NAL exists before this start code, emit it.
+            // 3. Mark this start code as beginning of next NAL.
+
+            // To properly handle the first NAL, we assume the stream starts with a start code.
+            // If offset is 0 and idx is 0 (or 1 for 00 00 00 01), we just setup the start pointer.
+
+            // Refined Logic:
+            // Iterate through buffer.
+            // If we find 00 00 01 at 'idx'
+            // The data *before* this (from 'startOfNAL') is the previous NAL.
+
+            // Handling the 4-byte start code (00 00 00 01)
+            // If idx > 0 and buffer[idx-1] == 0, then the start code is actually at idx-1.
+
+            let startCodeLen = 3;
+            let actualStart = idx;
+            if (idx > 0 && this.buffer[idx - 1] === 0) {
+                actualStart = idx - 1;
+                startCodeLen = 4;
+            }
+
+            if (offset === 0 && actualStart === 0) {
+                // This is the very first start code in the buffer (start of stream or segment)
+                // Just skip it and set offset to data
+                offset = actualStart + startCodeLen;
+                continue;
+            }
+
+            // If we are here, we found a start code at `actualStart`.
+            // The data from `0` to `actualStart` is a complete NAL (assuming buffer started with a NAL start)
+            // But wait, if `offset` was moved, we need to capture from `0`? No, we consumed buffer.
+            // We need to keep track of where the *current* NAL started.
+            // Actually simpler:
+            // We just keep splitting.
+            // If we find a start code, everything before it is a NAL unit (if any).
+            // Then we keep the start code and continue.
+
+            // However, `indexOf` searches from `offset`. 
+            // If we strip the buffer every time, we lose context.
+            // Let's not strip until end.
+
+            // Case 1: We found a start code at `actualStart`.
+            // We emit `buffer.subarray(0, actualStart)` which is the previous NAL.
+            // Then we shift buffer: `buffer = buffer.subarray(actualStart)`
+            // BUT, we need to include the start code in the NEXT NAL?
+            // Usually valid NALs in Annex B include the start code for decoders, OR we assume decoders handle it.
+            // WebCodecs `VideoDecoder` handles Annex B (which includes start codes).
+
+            // So:
+            // 1. Buffer has data.
+            // 2. Search for start code *after* the beginning (to find the *end* of current NAL).
+            // We need to skip the start code at the beginning of buffer if it exists.
+
+            // Let's assume buffer starts with a start code (from previous iteration logic).
+            // We skip 3 or 4 bytes.
+            // Search for next 00 00 1.
+
+            let searchStart = 3; // minimum skip
+            // Check if it starts with 00 00 00 01
+            if (this.buffer.length >= 4 && this.buffer[0] === 0 && this.buffer[1] === 0 && this.buffer[2] === 0 && this.buffer[3] === 1) {
+                searchStart = 4;
+            } else if (this.buffer.length >= 3 && this.buffer[0] === 0 && this.buffer[1] === 0 && this.buffer[2] === 1) {
+                searchStart = 3;
+            } else {
+                // Buffer doesn't start with start code? 
+                // This might happen if partial NAL or garbage.
+                // We'll search for *first* start code.
+                const firstStart = this.buffer.indexOf(Buffer.from([0, 0, 1]));
+                if (firstStart === -1) {
+                    // No start code at all, keep buffering
+                    break;
+                }
+                // Discard data before first start code
+                let realStart = firstStart;
+                if (firstStart > 0 && this.buffer[firstStart - 1] === 0) realStart = firstStart - 1;
+                this.buffer = this.buffer.subarray(realStart);
+                continue; // Restart loop with clean buffer start
+            }
+
+            const nextStart = this.buffer.indexOf(Buffer.from([0, 0, 1]), searchStart);
+
+            if (nextStart === -1) {
+                // No *next* start code found yet. 
+                // We have a partial NAL in buffer (starts at 0).
+                // Wait for more data.
+                break;
+            }
+
+            // We found the start of the NEXT NAL.
+            // So `0` to `nextStart` (exclusive of 00 00 1) ???
+            // Wait, `indexOf` returns position of `00`.
+            // If it is `00 00 00 01`, the `00` is at `nextStart`.
+            // But we need to check if preceding byte is `00`.
+
+            let splitPoint = nextStart;
+            if (nextStart > 0 && this.buffer[nextStart - 1] === 0) {
+                splitPoint = nextStart - 1;
+            }
+
+            const nalUnit = this.buffer.subarray(0, splitPoint);
+            this.onNAL(nalUnit);
+
+            // Remove processed NAL from buffer
+            this.buffer = this.buffer.subarray(splitPoint);
+            // Loop continues to process next NAL in buffer
+        }
+    }
+}
+
 
 function startStreaming(wss: WebSocketServer) {
     const codec = VIDEO_CODEC;
     const ffmpegCodec = codec === 'h265' ? 'libx265' : 'libx264';
-    const ffmpegFormat = codec === 'h265' ? 'hevc' : 'h264';
+    const ffmpegFormat = codec === 'h265' ? 'hevc' : 'h264'; // or rawvideo for pure? 'h264' is raw annex b
 
     // x11grab input options
     const inputArgs = [
@@ -153,14 +300,20 @@ function startStreaming(wss: WebSocketServer) {
     ];
 
     const outputArgs = [
+        '-vf', 'scale=1280:720', // Ensure strict resolution to avoid artifacts
         '-c:v', ffmpegCodec,
         '-pix_fmt', 'yuv420p',
         '-profile:v', 'baseline',
         '-level', '3.1',
-        '-g', '30', // GOP = 30 (1s)
+        '-bf', '0', // No B-frames for low latency
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
-        '-x264-params', 'slice-max-size=1200:keyint=30:min-keyint=30:scenecut=0',
+        '-b:v', '2000k', // Cap bitrate at 2Mbps to prevent network congestion/drops
+        '-maxrate', '2000k',
+        '-bufsize', '4000k', // Allow some buffering bursts but keep average low
+        '-g', '5', // Keyframe every 5 frames for fast recovery
+        '-keyint_min', '5',
+        '-x264-params', 'rc-lookahead=0:sync-lookahead=0:scenecut=0',
         '-f', ffmpegFormat,
         '-'
     ];
@@ -174,17 +327,32 @@ function startStreaming(wss: WebSocketServer) {
     ];
 
     console.log(`Starting ffmpeg capture from ${DISPLAY}...`);
-    // Ensure DISPLAY is set for ffmpeg
     const env = { ...process.env, DISPLAY };
 
     ffmpegProcess = spawn(FFMPEG_PATH, ffmpegArgs, { env });
 
-    ffmpegProcess.stdout?.on('data', (data) => {
+    const splitter = new NALSplitter((nal) => {
+        // Broadcast NAL
+        // Protocol: [1 byte Type][8 bytes Timestamp][NAL Data]
+        // Type 1 = Video
+        // console.log(`Emit NAL: Size=${nal.length}`); // Silenced per user request
+
+        const timestamp = Date.now();
+        const header = Buffer.alloc(9);
+        header.writeUInt8(1, 0); // Video Type
+        header.writeDoubleBE(timestamp, 1);
+
+        const packet = Buffer.concat([header, nal]);
+
         wss.clients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
-                client.send(data);
+                client.send(packet);
             }
         });
+    });
+
+    ffmpegProcess.stdout?.on('data', (data) => {
+        splitter.feed(data);
     });
 
     ffmpegProcess.stderr?.on('data', (data) => {
@@ -214,10 +382,7 @@ function startStreaming(wss: WebSocketServer) {
 // --- Input Logic (xdotool) ---
 
 const screenWidth = 1280;
-const screenHeight = 768; // Xvfb set to 1280x720, aligning. wait, Xvfb args say 720.
-// Correcting logic: The Xvfb command uses 1280x720. 
-// xdotool uses absolute coordinates, but our client sends normalized 0..1.
-
+const screenHeight = 720; // 720 matches Xvfb
 
 function injectKey(key: string, type: 'keydown' | 'keyup') {
     // Map browser keys to X11 keysyms
@@ -244,37 +409,25 @@ function injectKey(key: string, type: 'keydown' | 'keyup') {
     };
 
     const xKey = keyMap[key] || key;
-
-    // Sanitize
-    if (!/^[a-zA-Z0-9_\-]+$/.test(xKey)) {
-        // If not valid, ignore to be safe (unless it's in our map)
-        if (!Object.values(keyMap).includes(xKey)) return;
-    }
+    if (!/^[a-zA-Z0-9_\-]+$/.test(xKey) && !Object.values(keyMap).includes(xKey)) return;
 
     const mode = type === 'keydown' ? 'keydown' : 'keyup';
     spawn('xdotool', [mode, xKey], { env: { ...process.env, DISPLAY } });
 }
 
 function injectMouseMove(nx: number, ny: number) {
-    // nx, ny are 0..1
-    const x = Math.round(nx * 1280);
-    const y = Math.round(ny * 720);
+    const x = Math.round(nx * screenWidth);
+    const y = Math.round(ny * screenHeight);
     spawn('xdotool', ['mousemove', x.toString(), y.toString()], { env: { ...process.env, DISPLAY } });
 }
 
 function injectMouseButton(button: number, type: 'mousedown' | 'mouseup') {
-    // web: 0=left, 1=middle, 2=right
-    // xdotool: 1=left, 2=middle, 3=right
     let xbtn = 1;
     if (button === 0) xbtn = 1;
     else if (button === 1) xbtn = 2;
     else if (button === 2) xbtn = 3;
 
-    if (type === 'mousedown') {
-        spawn('xdotool', ['mousedown', xbtn.toString()], { env: { ...process.env, DISPLAY } });
-    } else {
-        spawn('xdotool', ['mouseup', xbtn.toString()], { env: { ...process.env, DISPLAY } });
-    }
+    spawn('xdotool', [type, xbtn.toString()], { env: { ...process.env, DISPLAY } });
 }
 
 // --- App Launching Logic ---
@@ -283,9 +436,6 @@ function spawnApp(command: string) {
     const env = { ...process.env, DISPLAY };
     console.log(`Spawning app: ${command}`);
     const child = spawn(command, [], { env, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
-    child.stderr.on('data', (data) => {
-        console.error(`App ${command} stderr: ${data}`);
-    });
     child.unref();
 }
 
@@ -301,7 +451,6 @@ async function main() {
         console.log(`HTTP ${req.method} ${req.url} from ${req.socket.remoteAddress}`);
         if (req.method === 'GET') {
             let urlPath = req.url || '/';
-            // Simple logging
             if (urlPath === '/') urlPath = '/viewer.html';
 
             const filePath = path.join(__dirname, '../public', urlPath);
@@ -314,7 +463,12 @@ async function main() {
             if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
                 const ext = path.extname(filePath);
                 const contentType = ext === '.html' ? 'text/html' : ext === '.js' ? 'application/javascript' : 'text/plain';
-                res.writeHead(200, { 'Content-Type': contentType });
+                // Add Headers for SharedArrayBuffer / WebCodecs if needed (future proofing)
+                res.writeHead(200, {
+                    'Content-Type': contentType,
+                    'Cross-Origin-Opener-Policy': 'same-origin',
+                    'Cross-Origin-Embedder-Policy': 'require-corp'
+                });
                 fs.createReadStream(filePath).pipe(res);
                 return;
             }
@@ -323,14 +477,9 @@ async function main() {
         res.end('Not Found');
     }));
 
-    server.on('upgrade', (req, socket, head) => {
-        console.log(`HTTP Upgrade request from ${req.socket.remoteAddress}`);
-        console.log(`Upgrade Headers:`, req.headers);
-    });
-
     const wss = new WebSocketServer({
         server,
-        perMessageDeflate: false
+        perMessageDeflate: false // Important for low latency/overhead
     });
 
     server.listen(PORT, '0.0.0.0', () => {
@@ -339,7 +488,15 @@ async function main() {
 
     wss.on('connection', (ws, req) => {
         console.log(`Client connected from ${req.socket.remoteAddress}`);
-        console.log(`Headers:`, req.headers);
+
+        // Optimize TCP Socket
+        // @ts-ignore - access internal socket
+        const socket = req.socket;
+        if (socket) {
+            socket.setNoDelay(true); // Disable Nagle
+            console.log('TCP_NODELAY set on client socket');
+        }
+
         ws.on('message', (data) => {
             try {
                 const msg = JSON.parse(data.toString());
@@ -354,9 +511,12 @@ async function main() {
                     if (allowed.includes(msg.command)) {
                         spawnApp(msg.command);
                     }
+                } else if (msg.type === 'ping') {
+                    // Echo back for latency measurement
+                    ws.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
                 }
             } catch (e) {
-                console.error('Msg error', e);
+                // ignore
             }
         });
     });
