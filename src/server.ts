@@ -49,8 +49,13 @@ udpServer.on('message', (msg) => {
         // ignore malformed
     }
 });
-udpServer.bind(rtpPort);
-
+udpServer.bind(rtpPort, () => {
+    try {
+        udpServer.setRecvBufferSize(10 * 1024 * 1024); // 10MB receive buffer for bursting I-frames
+    } catch (e) {
+        console.warn('Could not set large UDP receive buffer. You might drop packets if ffmpeg bursts.', e);
+    }
+});
 // --- Helpers ---
 
 function ensureBinaries() {
@@ -220,14 +225,15 @@ function startStreaming(wss: WebSocketServer) {
     const outputArgs = [
         '-vf', `fps=${FPS},format=yuv420p`,
         '-c:v', 'libvpx',
-        '-b:v', '1500k',           // Set target bitrate
-        '-minrate', '1500k',       // Force CBR (Constant Bitrate) for consistent packets
-        '-maxrate', '1500k',       // Cap maximum bitrate
-        '-bufsize', '3000k',       // Set buffer size (2x maxrate)
+        '-b:v', '2000k',           // Set target bitrate
+        '-minrate', '2000k',       // Force CBR (Constant Bitrate) for consistent packets
+        '-maxrate', '2000k',       // Cap maximum bitrate
+        '-bufsize', '500k',        // TINY buffer size: Forces ffmpeg to strictly pace slices to avoid network switch buffer overruns (Fixes 1FPS drop on LAN)
+        '-rc_lookahead', '0',      // Realtime lookahead
         '-crf', '10',              // Adjust CRF to balance quality and speed
         '-g', '30',                // Keyframe every 1 second (30fps) - critical for WebRTC recovery
         '-deadline', 'realtime',   // Essential for low latency VP8
-        '-cpu-used', '4',          // 0-16, lower is higher quality (4 is a safe realtime balance)
+        '-cpu-used', '6',          // 0-16, lower is higher quality (6 is faster for real-time maintaining 30fps at higher bitrates)
         '-threads', '4',           // Increase threads
         '-speed', '8',             // Realtime 5-8. 8 is fastest.
         '-map', '0:v',

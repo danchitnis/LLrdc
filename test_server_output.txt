@@ -1,0 +1,234 @@
+
+> remote-desktop@0.1.0 start
+> tsx src/server.ts
+
+Starting Xvfb on :108...
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+Errors from xkbcomp are not fatal to the X server
+Xvfb is ready.
+Configuring X11 (disabling screensaver/dpms)...
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+Errors from xkbcomp are not fatal to the X server
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+Errors from xkbcomp are not fatal to the X server
+Starting xfce4-session...
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+libEGL warning: failed to open /dev/dri/card0: Permission denied
+
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+Errors from xkbcomp are not fatal to the X server
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=1000 pid=130237 comm="xfce4-session" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.xfce.Xfconf' requested by ':1.2' (uid=1000 pid=130237 comm="xfce4-session" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.xfce.Xfconf'
+dbus-daemon[130247]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=1000 pid=130237 comm="xfce4-session" label="unconfined")
+dbus-daemon[130247]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.freedesktop.systemd1' requested by ':1.5' (uid=1000 pid=130267 comm="dbus-update-activation-environment --systemd SSH_A" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activated service 'org.freedesktop.systemd1' failed: Process org.freedesktop.systemd1 exited with status 1
+dbus-update-activation-environment: warning: error sending to systemd: org.freedesktop.DBus.Error.Spawn.ChildExited: Process org.freedesktop.systemd1 exited with status 1
+gpg-agent: a gpg-agent is already running - not starting a new one
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gtk.vfs.Daemon' requested by ':1.6' (uid=1000 pid=130278 comm="xfwm4" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gtk.vfs.Daemon'
+fuse: failed to access mountpoint /run/user/1000/gvfs: Transport endpoint is not connected
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.freedesktop.thumbnails.Thumbnailer1' requested by ':1.11' (uid=1000 pid=130306 comm="xfdesktop" label="unconfined")
+
+** (update-notifier:130334): WARNING **: 03:25:07.557: already running?
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='ca.desrt.dconf' requested by ':1.14' (uid=1000 pid=130355 comm="light-locker" label="unconfined")
+
+** (light-locker:130355): ERROR **: 03:25:07.574: Environment variable XDG_SESSION_PATH not set. Is LightDM running?
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'ca.desrt.dconf'
+Cannot register authentication agent: GDBus.Error:org.freedesktop.PolicyKit1.Error.Failed: An authentication agent already exists for the given subject
+Xlib:  extension "DPMS" missing on display ":108.0".
+
+(xfce4-power-manager:130356): xfce4-power-manager-WARNING **: 03:25:07.593: Monitor is not DPMS capable
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.freedesktop.Notifications' requested by ':1.18' (uid=1000 pid=130356 comm="xfce4-power-manager" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.freedesktop.Notifications'
+Process already running (98:Address already in use). Exiting.
+Another notification daemon is running, exiting
+Another notification daemon is running, exiting
+
+(nm-applet:130339): Gtk-WARNING **: 03:25:07.669: Can't set a parent on widget which has a parent
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gnome.evolution.dataserver.Sources5' requested by ':1.21' (uid=1000 pid=130407 comm="/usr/libexec/evolution-data-server/evolution-alarm" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gtk.vfs.UDisks2VolumeMonitor' requested by ':1.12' (uid=1000 pid=130342 comm="/usr/lib/x86_64-linux-gnu/tumbler-1/tumblerd" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gnome.OnlineAccounts' requested by ':1.23' (uid=1000 pid=130445 comm="/usr/libexec/evolution-source-registry" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gtk.vfs.UDisks2VolumeMonitor'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gtk.vfs.AfcVolumeMonitor' requested by ':1.12' (uid=1000 pid=130342 comm="/usr/lib/x86_64-linux-gnu/tumbler-1/tumblerd" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gnome.evolution.dataserver.Sources5'
+
+(xfce4-power-manager:130356): xfce4-power-manager-WARNING **: 03:25:07.714: Unable to inhibit systemd sleep: GDBus.Error:org.freedesktop.DBus.Error.AccessDenied: Permission denied
+goa-daemon-Message: 03:25:07.720: goa-daemon version 3.50.4 starting
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gnome.Identity' requested by ':1.25' (uid=1000 pid=130489 comm="/usr/libexec/goa-daemon" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gtk.vfs.AfcVolumeMonitor'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gnome.Identity'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gnome.OnlineAccounts'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gtk.vfs.MTPVolumeMonitor' requested by ':1.12' (uid=1000 pid=130342 comm="/usr/lib/x86_64-linux-gnu/tumbler-1/tumblerd" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gtk.vfs.MTPVolumeMonitor'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gtk.vfs.GoaVolumeMonitor' requested by ':1.12' (uid=1000 pid=130342 comm="/usr/lib/x86_64-linux-gnu/tumbler-1/tumblerd" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gtk.vfs.GoaVolumeMonitor'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gtk.vfs.GPhoto2VolumeMonitor' requested by ':1.12' (uid=1000 pid=130342 comm="/usr/lib/x86_64-linux-gnu/tumbler-1/tumblerd" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gtk.vfs.GPhoto2VolumeMonitor'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.freedesktop.thumbnails.Thumbnailer1'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gnome.evolution.dataserver.Calendar8' requested by ':1.21' (uid=1000 pid=130407 comm="/usr/libexec/evolution-data-server/evolution-alarm" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gnome.evolution.dataserver.Calendar8'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gnome.evolution.dataserver.AddressBook10' requested by ':1.36' (uid=1000 pid=130572 comm="/usr/libexec/evolution-calendar-factory" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gnome.evolution.dataserver.AddressBook10'
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Activating service name='org.gtk.vfs.Metadata' requested by ':1.11' (uid=1000 pid=130306 comm="xfdesktop" label="unconfined")
+dbus-daemon[130236]: [session uid=1000 pid=130236 pidfd=5] Successfully activated service 'org.gtk.vfs.Metadata'
+
+(tracker-extract-3:130626): GLib-GIO-WARNING **: 03:25:07.844: Error creating IO channel for /proc/self/mountinfo: Invalid argument (g-io-error-quark, 13)
+XFCE session started (assumed).
+Configuring X11 post-start...
+Starting ffmpeg capture (VP8) from :108...
+Server listening on http://0.0.0.0:8080
+ffmpeg stderr: ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2024 the FFmpeg developers
+  built with gcc 8 (Debian 8.3.0-6)
+  configuration: --enable-gpl --enable-version3 --enable-static --disable-debug --disable-ffplay --disable-indev=sndio --disable-outdev=sndio --cc=gcc --enable-fontconfig --enable-frei0r --enable-gnutls --enable-gmp --enable-libgme --enable-gray --enable-libaom --enable-libfribidi --enable-libass --enable-libvmaf --enable-libfreetype --enable-libmp3lame --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-librubberband --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libvorbis --enable-libopus --enable-libtheora --enable-libvidstab --enable-libvo-amrwbenc --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libdav1d --enable-libxvid --enable-libzvbi --enable-libzimg
+  libavutil      59.  8.100 / 59.  8.100
+  libavcodec     61.  3.100 / 61.  3.100
+  libavformat    61.  1.100 / 61.  1.100
+  libavdevice    61.  1.100 / 61.  1.100
+  libavfilter    10.  1.100 / 10.  1.100
+  libswscale      8.  1.100 /  8.  1.100
+  libswresample   5.  1.100 /  5.  1.100
+  libpostproc    58.  1.100 / 58.  1.100
+
+ffmpeg stderr:   Stream #0:0: Video: rawvideo (BGR[0] / 0x524742), bgr0, 1280x720, 883852 kb/s, 29.97 fps, 1000k tbr, 1000k tbn
+
+ffmpeg stderr: Stream mapping:
+  Stream #0:0 -> #0:0 (rawvideo (native) -> vp8 (libvpx))
+
+ffmpeg stderr: Press [q] to stop, [?] for help
+
+ffmpeg stderr: [libvpx @ 0x1a58a2c0] v1.11.0-30-g888bafc78
+
+ffmpeg stderr: Output #0, tee, to '[f=rtp:payload_type=96]rtp://127.0.0.1:12080?pkt_size=1000|[f=ivf]pipe:1':
+  Metadata:
+    encoder         : Lavf61.1.100
+  Stream #0:0: Video: vp8, yuv420p(progressive), 1280x720, q=2-31, 2500 kb/s, 30 fps, 30 tbn
+      Metadata:
+        encoder         : Lavc61.3.100 libvpx
+      Side data:
+        cpb: bitrate max/min/avg: 2500000/2500000/2500000 buffer size: 5000000 vbv_delay: N/A
+
+
+** (xiccd:130393): WARNING **: 03:25:32.587: EDID is empty
+
+** (xiccd:130393): CRITICAL **: 03:25:47.602: unable to create profile: Timeout was reached
+
+** (xiccd:130393): CRITICAL **: 03:25:47.602: unable to create profile: Timeout was reached
+
+** (xiccd:130393): CRITICAL **: 03:25:57.596: Failed to get device list: Timeout was reached
+
+** (xiccd:130393): CRITICAL **: 03:25:57.596: Failed to get profile list: Timeout was reached
+
+** (xiccd:130393): CRITICAL **: 03:25:57.596: failed to create colord device: Timeout was reached
+X connection to :108 broken (explicit kill or server shutdown).
+X connection to :108.0 broken (explicit kill or server shutdown).
+A connection to the bus can't be made
+A connection to the bus can't be made
+
+(tumblerd:130342): tumblerd-CRITICAL **: 03:30:05.014: Name org.freedesktop.thumbnails.Cache1 lost on the message dbus, exiting
+(xfconfd:130252): xfconfd-WARNING **: 03:30:05.021: Name org.xfce.Xfconf lost on the message dbus, exiting.
+.
+
+(tumblerd:130342): tumblerd-CRITICAL **: 03:30:05.025: Name org.freedesktop.thumbnails.Manager1 lost on the message dbus, exiting.
+
+(tumblerd:130342): tumblerd-CRITICAL **: 03:30:05.025: Name org.freedesktop.thumbnails.Thumbnailer1 lost on the message dbus, exiting.
+
+(tracker-miner-fs-3:130358): GVFS-RemoteVolumeMonitor-WARNING **: 03:30:05.024: Owner of volume monitor org.gtk.vfs.UDisks2VolumeMonitor disconnected from the bus; removing drives/volumes/mounts
+
+(tracker-miner-fs-3:130358): GVFS-RemoteVolumeMonitor-WARNING **: 03:30:05.025: Owner of volume monitor org.gtk.vfs.AfcVolumeMonitor disconnected from the bus; removing drives/volumes/mounts
+
+(tracker-miner-fs-3:130358): GVFS-RemoteVolumeMonitor-WARNING **: 03:30:05.025: Owner of volume monitor org.gtk.vfs.MTPVolumeMonitor disconnected from the bus; removing drives/volumes/mounts
+
+(tracker-miner-fs-3:130358): GVFS-RemoteVolumeMonitor-WARNING **: 03:30:05.025: Owner of volume monitor org.gtk.vfs.GoaVolumeMonitor disconnected from the bus; removing drives/volumes/mounts

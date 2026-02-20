@@ -266,7 +266,8 @@
         }
 
         function updateStatusText() {
-            statusEl.textContent = `FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms`;
+            const codecInfo = isWebRtcActive ? '[WebRTC VP8]' : '[WebCodecs VP8]';
+            statusEl.textContent = `${codecInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms`;
         }
 
         initDecoder();
@@ -312,6 +313,9 @@
 
             rtcPeer.addTransceiver('video', { direction: 'recvonly' });
             rtcPeer.createOffer().then(offer => {
+                // Strip Congestion Control extensions so Chrome's BWE (Bandwidth Estimator) doesn't throttle the framerate
+                offer.sdp = offer.sdp.replace(/a=rtcp-fb:\d* transport-cc\r\n/g, '');
+                offer.sdp = offer.sdp.replace(/a=rtcp-fb:\d* goog-remb\r\n/g, '');
                 return rtcPeer.setLocalDescription(offer);
             }).then(() => {
                 if (ws.readyState === WebSocket.OPEN) {
