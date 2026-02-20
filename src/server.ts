@@ -394,14 +394,70 @@ function injectKey(key: string, type: 'keydown' | 'keyup') {
         'PageDown': 'Page_Down',
         'Delete': 'Delete',
         'Insert': 'Insert',
-        ' ': 'space'
+        ' ': 'space',
+        '#': 'numbersign',
+        '$': 'dollar',
+        '%': 'percent',
+        '&': 'ampersand',
+        '(': 'parenleft',
+        ')': 'parenright',
+        '*': 'asterisk',
+        '+': 'plus',
+        ',': 'comma',
+        '-': 'minus',
+        '.': 'period',
+        '/': 'slash',
+        ':': 'colon',
+        ';': 'semicolon',
+        '<': 'less',
+        '=': 'equal',
+        '>': 'greater',
+        '?': 'question',
+        '@': 'at',
+        '[': 'bracketleft',
+        '\\': 'backslash',
+        ']': 'bracketright',
+        '^': 'asciicircum',
+        '_': 'underscore',
+        '`': 'grave',
+        '{': 'braceleft',
+        '|': 'bar',
+        '}': 'braceright',
+        '~': 'asciitilde',
+        '"': 'quotedbl',
+        "'": 'apostrophe',
+        '!': 'exclam'
     };
 
+    // Add F1-F12
+    for (let i = 1; i <= 12; i++) {
+        keyMap[`F${i}`] = `F${i}`;
+    }
+
     const xKey = keyMap[key] || key;
-    if (!/^[a-zA-Z0-9_\-]+$/.test(xKey) && !Object.values(keyMap).includes(xKey)) return;
+
+    // Validation: allow alphanumerics, underscores, hyphens, and mapped keysyms.
+    // Also allow single characters if they are printable ASCII.
+    const isMapped = Object.values(keyMap).includes(xKey);
+    const isValidName = /^[a-zA-Z0-9_\-]+$/.test(xKey);
+    const isPrintableSingle = key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) <= 126;
+
+    if (!isMapped && !isValidName && !isPrintableSingle) {
+        console.warn(`Ignoring potentially unsafe or unknown key: "${key}" (xKey: "${xKey}")`);
+        return;
+    }
 
     const mode = type === 'keydown' ? 'keydown' : 'keyup';
-    spawn('xdotool', [mode, xKey], { env: { ...process.env, DISPLAY } });
+
+    // For single printable characters that are NOT in the keyMap, 
+    // we use 'key' command which handles shift internally if needed for things like 'A' or '!'
+    // But since we are doing keydown/keyup for infinite loop fix, we must be careful.
+    // xdotool keydown 'A' works if the keysym is valid.
+
+    spawn('xdotool', [mode, xKey], {
+        env: { ...process.env, DISPLAY },
+        stdio: 'ignore'
+    });
 }
 
 function injectMouseMove(nx: number, ny: number) {

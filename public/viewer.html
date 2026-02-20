@@ -483,11 +483,17 @@
         // --- Input Handling ---
 
         window.addEventListener('keydown', (event) => {
-            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Backspace'].includes(event.code) || event.key === ' ') {
+            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Backspace', 'Enter', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'].includes(event.code) || event.key === ' ') {
                 event.preventDefault();
             }
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'keydown', key: event.key }));
+            }
+        });
+
+        window.addEventListener('keyup', (event) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'keyup', key: event.key }));
             }
         });
 
