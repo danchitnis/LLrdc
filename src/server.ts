@@ -78,6 +78,25 @@ function wait(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Read DBUS_SESSION_BUS_ADDRESS from the running xfconfd process environment.
+ * Without this the server has no session bus address (it wasn't started inside
+ * dbus-run-session), so xfconf-query auto-launches a FRESH xfconfd that is
+ * isolated from the one xfdesktop is using.
+ */
+function getSessionDbusAddress(): string {
+    try {
+        const result = spawnSync('pgrep', ['-x', 'xfconfd'], { encoding: 'utf8' });
+        const pid = result.stdout?.trim().split('\n')[0];
+        if (!pid) return '';
+        const environ = fs.readFileSync(`/proc/${pid}/environ`, 'utf8');
+        const match = environ.split('\0').find(e => e.startsWith('DBUS_SESSION_BUS_ADDRESS='));
+        return match ? match.slice('DBUS_SESSION_BUS_ADDRESS='.length) : '';
+    } catch {
+        return '';
+    }
+}
+
 // --- X11 / XFCE Startup ---
 
 async function startX11() {
@@ -144,6 +163,42 @@ async function startX11() {
         spawnSync('xfconf-query', ['-c', 'xfwm4', '-p', '/general/use_compositing', '-s', 'false'], { env: xenv });
     } catch (e) {
         console.error('Failed to configure X settings:', e);
+    }
+
+    // Set desktop wallpaper dynamically: xfdesktop creates properties for
+    // whatever monitor name Xvfb exposes at runtime, so we list them after
+    // the session starts and set each last-image property to our wallpaper.
+    try {
+        // Read the ACTUAL session DBUS address from xfconfd's /proc environ.
+        // Without this, xfconf-query auto-launches a NEW isolated xfconfd and
+        // xfdesktop (which uses the original session bus) never sees the changes.
+        const dbusAddr = getSessionDbusAddress();
+        if (!dbusAddr) {
+            console.warn('Could not find DBUS session bus address; wallpaper not set.');
+        } else {
+            const xenv = { ...process.env, DISPLAY, DBUS_SESSION_BUS_ADDRESS: dbusAddr };
+            const wallpaper = process.env.WALLPAPER ||
+                '/usr/share/backgrounds/xfce/xfce-shapes.svg';
+
+            const listResult = spawnSync('xfconf-query', ['-c', 'xfce4-desktop', '-l'], { env: xenv });
+            const allProps = (listResult.stdout?.toString() ?? '').split('\n').map(p => p.trim());
+            const imageProps = allProps.filter(p => p.endsWith('/last-image'));
+
+            for (const prop of imageProps) {
+                spawnSync('xfconf-query', ['-c', 'xfce4-desktop', '-p', prop, '-s', wallpaper], { env: xenv });
+                const styleProp = prop.replace('/last-image', '/image-style');
+                spawnSync('xfconf-query', ['-c', 'xfce4-desktop', '-p', styleProp, '-s', '5'], { env: xenv });
+            }
+
+            if (imageProps.length > 0) {
+                spawnSync('xfdesktop', ['--reload'], { env: xenv });
+                console.log(`Wallpaper set to: ${wallpaper} (${imageProps.length} workspace(s)) [bus: ${dbusAddr}]`);
+            } else {
+                console.warn('No xfce4-desktop backdrop properties found; wallpaper not set.');
+            }
+        }
+    } catch (e) {
+        console.error('Failed to set wallpaper:', e);
     }
 }
 
