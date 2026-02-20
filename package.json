@@ -1,9 +1,13 @@
 {
-  "name": "remote-desktop",
+  "name": "llrdc",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Remote desktop prototype",
+  "description": "LLrdc: Low Latency remote desktop",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danchitnis/llrdc.git"
+  },
   "scripts": {
     "start": "tsx src/server.ts",
     "check": "tsc --noEmit",

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# docker-build.sh — Build the remote-desktop Docker image.
+# docker-build.sh — Build the llrdc Docker image.
 set -euo pipefail
 
-IMAGE_NAME="${IMAGE_NAME:-remote-desktop}"
+IMAGE_NAME="${IMAGE_NAME:-danchitnis/llrdc}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
