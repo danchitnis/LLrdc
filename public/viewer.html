@@ -153,7 +153,7 @@
         let totalDecoded = 0;
 
         // Expose stats for Playwright
-        window.getStats = () => ({ fps, latency: latencyMonitor, totalDecoded });
+        window.getStats = () => ({ fps, latency: latencyMonitor, totalDecoded, webrtcFps: fps });
 
         let isInitializing = false;
         let decoderInitTimeout = null;
@@ -277,8 +277,10 @@
 
         function initWebRTC() {
             rtcPeer = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+                bundlePolicy: 'max-bundle'
             });
+            window.rtcPeer = rtcPeer;
 
             rtcPeer.onicecandidate = (e) => {
                 if (e.candidate && ws.readyState === WebSocket.OPEN) {
@@ -318,15 +320,27 @@
             });
         }
 
-        function startVideoCanvasLoop() {
+        let lastVideoFrameTime = 0;
+
+        function startVideoCanvasLoop(now, metadata) {
             if (!isWebRtcActive) return;
             if (ctx && videoEl.videoWidth > 0) {
+                // If using requestVideoFrameCallback, metadata gives accurate framing
+                // If using requestAnimationFrame, we just draw everything we can
+                if (metadata) {
+                    if (metadata.mediaTime !== lastVideoFrameTime) {
+                        lastVideoFrameTime = metadata.mediaTime;
+                        frameCount++;
+                    }
+                } else {
+                    frameCount++; // Fallback ticking
+                }
+
                 if (displayEl.width !== videoEl.videoWidth || displayEl.height !== videoEl.videoHeight) {
                     displayEl.width = videoEl.videoWidth;
                     displayEl.height = videoEl.videoHeight;
                 }
                 ctx.drawImage(videoEl, 0, 0, displayEl.width, displayEl.height);
-                frameCount++;
                 updateStats();
             }
             if ('requestVideoFrameCallback' in videoEl) {

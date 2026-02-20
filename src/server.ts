@@ -37,7 +37,7 @@ let ffmpegProcess: ChildProcess | undefined;
 // WebRTC Tracks
 const webrtcTracks: Set<MediaStreamTrack> = new Set();
 // UDP Server for RTP
-const rtpPort = parseInt(process.env.RTP_PORT || '5000');
+const rtpPort = process.env.RTP_PORT ? parseInt(process.env.RTP_PORT) : parseInt(process.env.PORT ? (parseInt(process.env.PORT) + 4000).toString() : '5000');
 const udpServer = dgram.createSocket('udp4');
 udpServer.on('message', (msg) => {
     try {
@@ -220,16 +220,20 @@ function startStreaming(wss: WebSocketServer) {
     const outputArgs = [
         '-vf', `fps=${FPS},format=yuv420p`,
         '-c:v', 'libvpx',
-        '-b:v', '2000k',
-        '-g', '120',     // Keyframe every 4 seconds (30fps)
-        '-qmin', '4',
-        '-qmax', '50',
-        '-speed', '8',   // Realtime 5-8. 8 is fastest.
-        '-quality', 'realtime',
+        '-b:v', '1500k',           // Set target bitrate
+        '-minrate', '1500k',       // Force CBR (Constant Bitrate) for consistent packets
+        '-maxrate', '1500k',       // Cap maximum bitrate
+        '-bufsize', '3000k',       // Set buffer size (2x maxrate)
+        '-crf', '10',              // Adjust CRF to balance quality and speed
+        '-g', '30',                // Keyframe every 1 second (30fps) - critical for WebRTC recovery
+        '-deadline', 'realtime',   // Essential for low latency VP8
+        '-cpu-used', '4',          // 0-16, lower is higher quality (4 is a safe realtime balance)
+        '-threads', '4',           // Increase threads
+        '-speed', '8',             // Realtime 5-8. 8 is fastest.
         '-map', '0:v',
         // Tee muxer: one to RTP payload_type 96 (UDP 5000), one to IVF (pipe:1)
         '-f', 'tee',
-        `[f=rtp:payload_type=96]rtp://127.0.0.1:${rtpPort}?pkt_size=1200|[f=ivf]pipe:1`
+        `[f=rtp:payload_type=96]rtp://127.0.0.1:${rtpPort}?pkt_size=1000|[f=ivf]pipe:1`
     ];
 
     const ffmpegArgs = [
