@@ -46,7 +46,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   curl \
   xz-utils \
   gnupg \
+  sudo \
   && rm -rf /var/lib/apt/lists/*
+
+# ── Non-root user ────────────────────────────────────────────────────────────
+# Create user 'remote' with a home directory and add to sudo group (no password).
+# Must come before any step that writes to /home/remote.
+RUN useradd -m -s /bin/bash remote \
+  && echo 'remote ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/remote \
+  && chmod 0440 /etc/sudoers.d/remote
 
 # ── Cursor theme default ──────────────────────────────────────────────────────
 # Point the X11 "default" icon directory at DMZ-White so every app picks up
@@ -54,9 +62,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /usr/share/icons/default \
   && printf '[Icon Theme]\nInherits=DMZ-White\n' \
   > /usr/share/icons/default/index.theme \
-  && echo 'Xcursor.theme: DMZ-White' >> /root/.Xresources \
-  && echo 'Xcursor.size: 24'         >> /root/.Xresources \
-  && mkdir -p /root/.config/xfce4/xfconf/xfce-perchannel-xml \
+  && echo 'Xcursor.theme: DMZ-White' >> /home/remote/.Xresources \
+  && echo 'Xcursor.size: 24'         >> /home/remote/.Xresources \
+  && mkdir -p /home/remote/.config/xfce4/xfconf/xfce-perchannel-xml \
   && printf '%s\n' \
   '<?xml version="1.0" encoding="UTF-8"?>' \
   '<channel name="xsettings" version="1.0">' \
@@ -65,7 +73,8 @@ RUN mkdir -p /usr/share/icons/default \
   '    <property name="CursorThemeSize" type="int"    value="24"/>' \
   '  </property>' \
   '</channel>' \
-  > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
+  > /home/remote/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml \
+  && chown -R remote:remote /home/remote
 
 # ── Node.js 24 ───────────────────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
@@ -103,6 +112,10 @@ COPY src/ ./src/
 COPY public/ ./public/
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
+# Hand /app ownership to 'remote' and switch to that user for runtime.
+RUN chown -R remote:remote /app
+USER remote
+
 # Expose the WebSocket / HTTP port
 EXPOSE 8080
 
