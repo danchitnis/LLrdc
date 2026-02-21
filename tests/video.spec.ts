@@ -100,20 +100,19 @@ test.describe('Video Streaming', () => {
     });
 
     await test.step('Verify video is playing', async () => {
-      const video = page.locator('#display');
+      const display = page.locator('#display');
 
-      // Check if video is ready (HAVE_ENOUGH_DATA = 4, HAVE_FUTURE_DATA = 3)
-      // We might need to wait a bit for the stream to start
+      // Check if video frames have been decoded using the exposed stats
       await expect.poll(async () => {
-        return await video.evaluate((v: HTMLVideoElement) => v.readyState);
+        return await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
       }, {
-        message: 'Video should be ready',
+        message: 'Video should be decoding and rendering frames',
         timeout: 10000,
-      }).toBeGreaterThanOrEqual(3);
+      }).toBeGreaterThan(0);
 
-      // Check if video has dimensions
-      const width = await video.evaluate((v: HTMLVideoElement) => v.videoWidth);
-      const height = await video.evaluate((v: HTMLVideoElement) => v.videoHeight);
+      // Check if canvas has dimensions
+      const width = await display.evaluate((c: HTMLCanvasElement) => c.width);
+      const height = await display.evaluate((c: HTMLCanvasElement) => c.height);
       expect(width).toBeGreaterThan(0);
       expect(height).toBeGreaterThan(0);
     });

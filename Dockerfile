@@ -8,6 +8,23 @@ RUN go mod download
 COPY cmd/ ./cmd/
 RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server
 
+# Download ffmpeg static binary during the Golang build stage
+RUN apt-get update && apt-get install -y xz-utils && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /app/bin /tmp/ffmpeg-dl \
+  && curl -fsSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
+  -o /tmp/ffmpeg.tar.xz \
+  && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg-dl --strip-components=1 \
+  && mv /tmp/ffmpeg-dl/ffmpeg /app/bin/ffmpeg \
+  && chmod +x /app/bin/ffmpeg \
+  && rm -rf /tmp/ffmpeg-dl /tmp/ffmpeg.tar.xz
+
+FROM node:22-alpine AS node-builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
 FROM ubuntu:24.04
 
 # Avoid interactive prompts during apt installs
@@ -85,22 +102,14 @@ RUN mkdir -p /usr/share/icons/default \
   > /home/remote/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml \
   && chown -R remote:remote /home/remote
 
-# ── ffmpeg static binary (downloaded at build time) ─────────────────────────
-# Downloaded before source files so this expensive step is cached independently
-# of any code changes. Places ffmpeg at /app/bin/ffmpeg (FFMPEG_PATH).
-RUN mkdir -p /app/bin /tmp/ffmpeg-dl \
-  && curl -fsSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
-  -o /tmp/ffmpeg.tar.xz \
-  && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg-dl --strip-components=1 \
-  && mv /tmp/ffmpeg-dl/ffmpeg /app/bin/ffmpeg \
-  && chmod +x /app/bin/ffmpeg \
-  && rm -rf /tmp/ffmpeg-dl /tmp/ffmpeg.tar.xz
-
 # ── App directory ─────────────────────────────────────────────────────────────
 WORKDIR /app
 
-# Copy public assets (these change most frequently)
-COPY public/ ./public/
+# Copy FFMPEG
+COPY --from=builder /app/bin/ffmpeg /app/bin/ffmpeg
+
+# Copy public assets from node builder
+COPY --from=node-builder /app/public/ ./public/
 
 # Copy the compiled Go server binary from the builder stage
 COPY --from=builder /app/llrdc /app/llrdc

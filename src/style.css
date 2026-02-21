@@ -1,0 +1,88 @@
+body {
+  font-family: sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: #222;
+  color: #eee;
+  margin: 0;
+  padding: 20px;
+}
+
+h1 {
+  margin-bottom: 10px;
+}
+
+#status {
+  margin-bottom: 10px;
+  color: #aaa;
+  font-family: monospace;
+}
+
+#display-container {
+  border: 2px solid #444;
+  background-color: #000;
+  display: inline-block;
+  line-height: 0;
+  position: relative;
+}
+
+#display {
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#input-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  background-color: transparent;
+}
+
+.instructions {
+  margin-top: 20px;
+  font-size: 0.9em;
+  color: #888;
+}
+
+#launcher {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.launcher-btn {
+  background-color: #333;
+  color: #eee;
+  border: 1px solid #555;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: sans-serif;
+  font-size: 0.9em;
+  transition: background-color 0.2s;
+}
+
+.launcher-btn:hover {
+  background-color: #444;
+}
+
+.launcher-btn:active {
+  background-color: #555;
+}
+
+#debug-log {
+  margin-top: 20px;
+  color: #666;
+  font-size: 12px;
+  max-height: 100px;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 800px;
+  border-top: 1px solid #333;
+}
