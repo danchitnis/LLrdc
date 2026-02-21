@@ -10,8 +10,21 @@
 
 <body>
 
-    <h1>LLrdc (Low Latency Remote Desktop)</h1>
-    <div id="status">Connecting...</div>
+    <div id="top-bar">
+        <div id="brand">LLrdc</div>
+        <div id="config">
+            <label for="bandwidth-select">Bandwidth:</label>
+            <select id="bandwidth-select">
+                <option value="1">1 Mbps</option>
+                <option value="5" selected>5 Mbps</option>
+                <option value="10">10 Mbps</option>
+                <option value="20">20 Mbps</option>
+                <option value="50">50 Mbps</option>
+            </select>
+        </div>
+        <div id="status">Connecting...</div>
+    </div>
+
     <div id="display-container">
         <!-- Replaced video with canvas for explicit painting control -->
         <canvas id="display" width="1280" height="720"></canvas>
@@ -19,20 +32,6 @@
             style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: 0.01;"></video>
         <div id="input-overlay"></div>
     </div>
-
-    <div id="launcher">
-        <button class="launcher-btn" data-spawn="weston-terminal">Terminal</button>
-        <button class="launcher-btn" data-spawn="gnome-calculator">Calculator</button>
-        <button class="launcher-btn" data-spawn="xclock">Clock</button>
-        <button class="launcher-btn" data-spawn="xeyes">Eyes</button>
-    </div>
-
-    <div class="instructions">
-        <p>Focus this window and type to send keystrokes to the remote session.</p>
-        <p>Move mouse and click to interact.</p>
-    </div>
-
-    <div id="debug-log"></div>
 
     <script type="module" src="/src/viewer.ts"></script>
 </body>

@@ -2,28 +2,54 @@ body {
   font-family: sans-serif;
   display: flex;
   flex-direction: column;
-  align-items: center;
   background-color: #222;
   color: #eee;
   margin: 0;
-  padding: 20px;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
-h1 {
-  margin-bottom: 10px;
+#top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #111;
+  padding: 10px 20px;
+  border-bottom: 1px solid #333;
+}
+
+#brand {
+  font-size: 1.2em;
+  font-weight: bold;
+}
+
+#config {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#bandwidth-select {
+  background-color: #333;
+  color: #eee;
+  border: 1px solid #555;
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 #status {
-  margin-bottom: 10px;
   color: #aaa;
   font-family: monospace;
 }
 
 #display-container {
-  border: 2px solid #444;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   background-color: #000;
-  display: inline-block;
-  line-height: 0;
   position: relative;
 }
 
@@ -32,6 +58,9 @@ h1 {
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 #input-overlay {
@@ -42,47 +71,4 @@ h1 {
   height: 100%;
   cursor: crosshair;
   background-color: transparent;
-}
-
-.instructions {
-  margin-top: 20px;
-  font-size: 0.9em;
-  color: #888;
-}
-
-#launcher {
-  margin-top: 20px;
-  display: flex;
-  gap: 10px;
-}
-
-.launcher-btn {
-  background-color: #333;
-  color: #eee;
-  border: 1px solid #555;
-  padding: 8px 16px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: sans-serif;
-  font-size: 0.9em;
-  transition: background-color 0.2s;
-}
-
-.launcher-btn:hover {
-  background-color: #444;
-}
-
-.launcher-btn:active {
-  background-color: #555;
-}
-
-#debug-log {
-  margin-top: 20px;
-  color: #666;
-  font-size: 12px;
-  max-height: 100px;
-  overflow-y: auto;
-  width: 100%;
-  max-width: 800px;
-  border-top: 1px solid #333;
 }
