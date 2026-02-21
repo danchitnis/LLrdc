@@ -64,7 +64,7 @@ test.beforeAll(async () => {
   const DISPLAY_NUM = 100 + Math.floor(Math.random() * 100);
 
   // Use tsx to run the server directly
-  serverProcess = spawn('npx', ['tsx', serverPath], {
+  serverProcess = spawn('npm', ['start'], {
     // env: { ...process.env, PORT: String(serverPort), FPS: '60' },
     env: { ...process.env, PORT: String(serverPort), FPS: '60', DISPLAY_NUM: DISPLAY_NUM.toString() },
     stdio: 'pipe', // Capture stdio for debugging if needed

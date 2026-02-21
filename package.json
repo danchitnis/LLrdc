@@ -9,23 +9,17 @@
     "url": "git+https://github.com/danchitnis/llrdc.git"
   },
   "scripts": {
-    "start": "tsx src/server.ts",
+    "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080} -e PORT=${PORT:-8080} -e DISPLAY_NUM=${DISPLAY_NUM:-99} dchitnis/llrdc",
     "check": "tsc --noEmit",
     "test": "playwright test"
   },
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {
-    "werift": "^0.22.9",
-    "ws": "^8.19.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@types/node": "^25.2.3",
-    "@types/ws": "^8.18.1",
-    "ts-node": "^10.9.2",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

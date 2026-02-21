@@ -7,7 +7,7 @@ const PORT = 3000 + Math.floor(Math.random() * 1000);
 
 test.beforeAll(async () => {
     console.log(`Starting server on port ${PORT}...`);
-    serverProcess = spawn('npx', ['tsx', 'src/server.ts'], {
+    serverProcess = spawn('npm', ['start'], {
         env: { ...process.env, PORT: PORT.toString(), DISPLAY_NUM: (PORT + 100).toString(), FPS: '30', RTP_PORT: (PORT + 1000).toString() },
         stdio: 'pipe'
     });

@@ -1,4 +1,13 @@
 # syntax=docker/dockerfile:1
+FROM golang:1.24 AS builder
+WORKDIR /app
+# Download dependencies first
+COPY go.mod go.sum ./
+RUN go mod download
+# Copy source and build
+COPY cmd/ ./cmd/
+RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server
+
 FROM ubuntu:24.04
 
 # Avoid interactive prompts during apt installs
@@ -76,11 +85,6 @@ RUN mkdir -p /usr/share/icons/default \
   > /home/remote/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml \
   && chown -R remote:remote /home/remote
 
-# ── Node.js 24 ───────────────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-  && apt-get install -y nodejs \
-  && rm -rf /var/lib/apt/lists/*
-
 # ── ffmpeg static binary (downloaded at build time) ─────────────────────────
 # Downloaded before source files so this expensive step is cached independently
 # of any code changes. Places ffmpeg at /app/bin/ffmpeg (FFMPEG_PATH).
@@ -95,21 +99,11 @@ RUN mkdir -p /app/bin /tmp/ffmpeg-dl \
 # ── App directory ─────────────────────────────────────────────────────────────
 WORKDIR /app
 
-# Install npm dependencies (cached until package.json/lock changes)
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-
-# ── Runtime dependencies (tsx to run TypeScript directly) ─────────────────────
-# Installed here (before source copy) so this layer is cached independently.
-RUN npm install --no-save tsx typescript
-
-# Copy source files (changes occasionally)
-COPY tsconfig.json ./
-COPY src/ ./src/
-
-# Copy public assets last — these change most frequently and should not bust
-# the expensive layers above (ffmpeg download, npm installs).
+# Copy public assets (these change most frequently)
 COPY public/ ./public/
+
+# Copy the compiled Go server binary from the builder stage
+COPY --from=builder /app/llrdc /app/llrdc
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
 # Hand /app ownership to 'remote' and switch to that user for runtime.
@@ -119,7 +113,7 @@ USER remote
 # Expose the WebSocket / HTTP port
 EXPOSE 8080
 
-# Graceful-shutdown: forward SIGTERM to node
+# Graceful-shutdown: forward SIGTERM to go binary
 STOPSIGNAL SIGTERM
 
-CMD ["node", "--import", "tsx", "src/server.ts"]
+CMD ["/app/llrdc"]

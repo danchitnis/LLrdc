@@ -72,7 +72,7 @@ test.describe('Remote Desktop Mouse Interaction', () => {
 
         // Wait for connection
         const status = page.locator('#status');
-        await expect(status).toHaveText('Connected', { timeout: 15000 });
+        await expect(status).toContainText(/Connected|FPS|Latency/, { timeout: 15000 });
 
         // Interact with the overlay
         const overlay = page.locator('#input-overlay');

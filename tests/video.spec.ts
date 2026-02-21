@@ -29,7 +29,7 @@ test.describe('Video Streaming', () => {
     killPort(PORT);
     console.log(`Starting server on port ${PORT} display :${DISPLAY_NUM}...`);
     // Use tsx directly to run the server
-    serverProcess = spawn('npx', ['tsx', SERVER_PATH], {
+    serverProcess = spawn('npm', ['start'], {
       env: { ...process.env, PORT: PORT.toString(), FPS: '5', DISPLAY_NUM: DISPLAY_NUM.toString() },
       stdio: ['ignore', 'pipe', 'pipe'], // Capture stdout/stderr
     });

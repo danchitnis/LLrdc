@@ -64,7 +64,7 @@ test.beforeAll(async () => {
 
   const DISPLAY_NUM = 100 + Math.floor(Math.random() * 100);
 
-  serverProcess = spawn('npx', ['tsx', serverPath], {
+  serverProcess = spawn('npm', ['start'], {
     env: { ...process.env, PORT: String(serverPort), FPS: '30', DISPLAY_NUM: DISPLAY_NUM.toString() },
     stdio: 'pipe',
     detached: false
@@ -74,20 +74,22 @@ test.beforeAll(async () => {
   serverProcess.stderr?.on('data', (data) => console.error(`[Server Error]: ${data}`));
 
   try {
-    await waitForPort(serverPort);
+    // Wait for server to be ready via logs
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timeout waiting for server start')), 20000);
+      const dataHandler = (data: any) => {
+        if (data.toString().includes(`Server listening on`)) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+      serverProcess.stdout?.on('data', dataHandler);
+      serverProcess.stderr?.on('data', dataHandler);
+      serverProcess.on('exit', (code) => {
+        if (code !== null && code !== 0) reject(new Error('Server failed to start'));
+      });
+    });
     console.log(`Server is ready on port ${serverPort}`);
-
-    // Kill background processes that cause noise/EMFILE AFTER they have started
-    try {
-      // Wait a bit for XFCE to fully spawn them
-      await new Promise(r => setTimeout(r, 2000));
-      const killCmd = "pkill -f 'xfdesktop|tracker|tumblerd|xfce4-panel|gvfsd'";
-      require('child_process').execSync(killCmd, { stdio: 'ignore' });
-      console.log('Killed background processes.');
-    } catch (e) {
-      // ignore
-    }
-
   } catch (e) {
     console.error('Server failed to start');
     if (serverProcess) serverProcess.kill();
