@@ -28,7 +28,7 @@ To build the Docker image, run the included build script from the repository's r
 ./docker-build.sh
 ```
 
-This will automatically create a Docker image tagged `danchitnis/llrdc:latest`. The build process includes node module installation, downloading the FFmpeg binary, and configuring the X11/XFCE environment.
+This will automatically create a Docker image tagged `danchitnis/llrdc:latest`. The build process compiles the Go backend and configures the X11/XFCE environment.
 
 ### 2. Run the Container
 
