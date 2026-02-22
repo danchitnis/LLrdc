@@ -13,7 +13,7 @@
     "build": "tsc && vite build",
     "lint": "eslint src/",
     "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080} -e PORT=${PORT:-8080} -e DISPLAY_NUM=${DISPLAY_NUM:-99} danchitnis/llrdc",
-    "test": "playwright test"
+    "test": "./test.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

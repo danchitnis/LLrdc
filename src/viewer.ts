@@ -38,6 +38,9 @@ if (bandwidthSelect) {
     bandwidthSelect.addEventListener('change', (e) => {
         const value = (e.target as HTMLSelectElement).value;
         network.sendMsg(JSON.stringify({ type: 'config', bandwidth: parseInt(value, 10) }));
+        if (webrtc.isWebRtcActive) {
+            webrtc.initWebRTC();
+        }
     });
 }
 
@@ -72,9 +75,16 @@ function handleJsonMessage(msg: Record<string, unknown>) {
     }
 }
 
-window.getStats = () => ({
-    fps: webcodecs.fps,
-    latency: webcodecs.latencyMonitor,
-    totalDecoded: webcodecs.totalDecoded,
-    webrtcFps: webrtc.fps
-});
+window.getStats = () => {
+    let webrtcTotal = 0;
+    const v = document.getElementById('webrtc-video') as HTMLVideoElement;
+    if (v && v.getVideoPlaybackQuality) {
+        webrtcTotal = v.getVideoPlaybackQuality().totalVideoFrames;
+    }
+    return {
+        fps: webrtc.isWebRtcActive ? webrtc.fps : webcodecs.fps,
+        latency: webcodecs.latencyMonitor,
+        totalDecoded: webrtc.isWebRtcActive ? webrtcTotal : webcodecs.totalDecoded,
+        webrtcFps: webrtc.fps
+    };
+};

@@ -19,6 +19,10 @@ export class WebRTCManager {
     }
 
     public initWebRTC() {
+        if (this.rtcPeer) {
+            this.rtcPeer.close();
+        }
+        this.isWebRtcActive = false;
         this.rtcPeer = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
             bundlePolicy: 'max-bundle'
@@ -69,7 +73,13 @@ export class WebRTCManager {
             return this.rtcPeer!.setLocalDescription(offer);
         }).then(() => {
             if (this.rtcPeer!.localDescription) {
-                this.sendWs(JSON.stringify({ type: 'webrtc_offer', sdp: this.rtcPeer!.localDescription.sdp }));
+                this.sendWs(JSON.stringify({
+                    type: 'webrtc_offer',
+                    sdp: {
+                        type: this.rtcPeer!.localDescription.type,
+                        sdp: this.rtcPeer!.localDescription.sdp
+                    }
+                }));
             }
         });
     }

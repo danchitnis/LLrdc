@@ -119,12 +119,13 @@ func startStreaming(onFrame func([]byte)) {
 				close(doneCh)
 			}()
 
+			// Wait for IVF splitter to finish reading pipeline to avoid Wait closing stdout prematurely
+			<-doneCh
+			
 			err = cmd.Wait()
 			log.Printf("ffmpeg exited: %v", err)
 			
-			// Wait for IVF splitter to finish reading pipeline to avoid spamming multiple goroutines sequentially
-			<-doneCh
-			
+
 			ffmpegMutex.Lock()
 			shouldRun := ffmpegShouldRun
 			ffmpegMutex.Unlock()

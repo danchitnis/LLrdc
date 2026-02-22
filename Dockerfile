@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   # X11 / Virtual framebuffer
   xvfb \
   x11-xserver-utils \
+  x11-apps \
   xdotool \
   # XFCE desktop environment + goodies
   xfce4 \

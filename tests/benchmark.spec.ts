@@ -24,35 +24,7 @@ async function getFreePort(): Promise<number> {
   });
 }
 
-// Helper to wait for port to be ready
-async function waitForPort(port: number, timeout = 10000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const socket = new net.Socket();
-        socket.setTimeout(200);
-        socket.on('connect', () => {
-          socket.destroy();
-          resolve();
-        });
-        socket.on('timeout', () => {
-          socket.destroy();
-          reject(new Error('timeout'));
-        });
-        socket.on('error', (err) => {
-          socket.destroy();
-          reject(err);
-        });
-        socket.connect(port, 'localhost');
-      });
-      return;
-    } catch (e) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-  }
-  throw new Error(`Port ${port} not ready after ${timeout}ms`);
-}
+// Removed waitForPort
 
 test.beforeAll(async () => {
   serverPort = await getFreePort();
@@ -80,7 +52,20 @@ test.beforeAll(async () => {
   });
 
   try {
-    await waitForPort(serverPort);
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timeout waiting for server start')), 20000);
+      const dataHandler = (data: any) => {
+        if (data.toString().includes(`Server listening on`)) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      };
+      serverProcess.stdout?.on('data', dataHandler);
+      serverProcess.stderr?.on('data', dataHandler);
+      serverProcess.on('exit', (code) => {
+        if (code !== null && code !== 0) reject(new Error('Server failed to start'));
+      });
+    });
     console.log(`Server is ready on port ${serverPort}`);
   } catch (e) {
     console.error('Server failed to start');

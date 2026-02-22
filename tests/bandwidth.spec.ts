@@ -84,7 +84,10 @@ test.describe('Bandwidth Configuration', () => {
 
             // Verify that decoding is happening initally
             await expect.poll(async () => {
-                return await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
+                return await page.evaluate(() => {
+                    const v = document.getElementById('webrtc-video') as HTMLVideoElement;
+                    return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats ? window.getStats().totalDecoded : 0);
+                });
             }, {
                 message: 'Video should be decoding initial frames',
                 timeout: 10000,
@@ -93,7 +96,10 @@ test.describe('Bandwidth Configuration', () => {
 
         await test.step('Switch bandwidth to 1 Mbps', async () => {
             // Capture the frames we have decoded SO FAR. 
-            const framesBeforeConfig = await page.evaluate(() => window.getStats().totalDecoded);
+            const framesBeforeConfig = await page.evaluate(() => {
+                const v = document.getElementById('webrtc-video') as HTMLVideoElement;
+                return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats().totalDecoded || 0);
+            });
 
             const content = await page.content();
             console.log("HTML:", content.substring(0, 1000));
@@ -108,7 +114,10 @@ test.describe('Bandwidth Configuration', () => {
 
             // Check that the buffer started rising AGAIN after we presumably broke and restarted playback.
             await expect.poll(async () => {
-                return await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
+                return await page.evaluate(() => {
+                    const v = document.getElementById('webrtc-video') as HTMLVideoElement;
+                    return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats ? window.getStats().totalDecoded : 0);
+                });
             }, {
                 message: 'Video should have resumed decoding frames after 1 Mbps switch',
                 timeout: 10000,
@@ -116,7 +125,10 @@ test.describe('Bandwidth Configuration', () => {
         });
 
         await test.step('Switch bandwidth to 10 Mbps', async () => {
-            const framesBeforeConfig2 = await page.evaluate(() => window.getStats().totalDecoded);
+            const framesBeforeConfig2 = await page.evaluate(() => {
+                const v = document.getElementById('webrtc-video') as HTMLVideoElement;
+                return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats().totalDecoded || 0);
+            });
 
             const selectLocator = page.locator('#bandwidth-select');
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
@@ -125,7 +137,10 @@ test.describe('Bandwidth Configuration', () => {
             await page.waitForTimeout(3000);
 
             await expect.poll(async () => {
-                return await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
+                return await page.evaluate(() => {
+                    const v = document.getElementById('webrtc-video') as HTMLVideoElement;
+                    return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats ? window.getStats().totalDecoded : 0);
+                });
             }, {
                 message: 'Video should have resumed decoding frames after 10 Mbps switch',
                 timeout: 10000,

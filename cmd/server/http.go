@@ -49,6 +49,11 @@ func startHTTPServer() {
 
 			w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 			w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+			
+			if filepath.Ext(filePath) == ".html" {
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			}
+			
 			http.ServeFile(w, r, filePath)
 			return
 		}
@@ -96,6 +101,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		delete(clients, conn)
 		clientsMutex.Unlock()
 	}()
+
+	var connMutex sync.Mutex
+	writeJSON := func(v interface{}) error {
+		connMutex.Lock()
+		defer connMutex.Unlock()
+		return conn.WriteJSON(v)
+	}
 
 	var pc *webrtc.PeerConnection
 
@@ -152,7 +164,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		case "ping":
 			if ts, ok := msg["timestamp"].(float64); ok {
 				resp := map[string]interface{}{"type": "pong", "timestamp": ts}
-				conn.WriteJSON(resp)
+				writeJSON(resp)
 			}
 		case "webrtc_offer":
 			if sdpMap, ok := msg["sdp"].(map[string]interface{}); ok {
@@ -160,6 +172,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				var sdp webrtc.SessionDescription
 				json.Unmarshal(b, &sdp)
 
+				if pc != nil {
+					pc.Close()
+				}
 				pc, err = createPeerConnection()
 				if err != nil {
 					log.Printf("Failed to create PeerConnection: %v", err)
@@ -169,7 +184,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 					if candidate != nil {
 						cJSON := candidate.ToJSON()
-						conn.WriteJSON(map[string]interface{}{
+						writeJSON(map[string]interface{}{
 							"type":      "webrtc_ice",
 							"candidate": cJSON,
 						})
@@ -192,7 +207,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
-				conn.WriteJSON(map[string]interface{}{
+				writeJSON(map[string]interface{}{
 					"type": "webrtc_answer",
 					"sdp":  pc.LocalDescription(),
 				})
