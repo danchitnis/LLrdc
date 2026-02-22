@@ -64,8 +64,9 @@ func startStreaming(onFrame func([]byte)) {
 
 			// Format bitrate dynamically,e.g 5 Mbps = "5000k"
 			bitrateStr := fmt.Sprintf("%dk", bw*1000)
-			// keep bufsize somewhat smaller for low latency, maybe half of bitrate
-			bufSizeStr := fmt.Sprintf("%dk", bw*500)
+
+			// bufsize = ~1 frame worth of data for low-latency CBR
+			frameBufStr := fmt.Sprintf("%dk", bw*1000/FPS)
 
 			outputArgs := []string{
 				"-vf", fmt.Sprintf("fps=%d,format=yuv420p", FPS),
@@ -73,14 +74,15 @@ func startStreaming(onFrame func([]byte)) {
 				"-b:v", bitrateStr,
 				"-minrate", bitrateStr,
 				"-maxrate", bitrateStr,
-				"-bufsize", bufSizeStr,
+				"-bufsize", frameBufStr,
 				"-rc_lookahead", "0",
-				"-crf", "10",
-				"-g", "30",
+				"-skip_threshold", "0",
+				"-g", "120",
+				"-keyint_min", "120",
 				"-deadline", "realtime",
-				"-cpu-used", "6",
+				"-cpu-used", "8",
 				"-threads", "4",
-				"-speed", "8",
+				"-error-resilient", "1",
 				"-flush_packets", "1",
 				"-f", "ivf",
 				"pipe:1",

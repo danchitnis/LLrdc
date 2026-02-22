@@ -68,7 +68,10 @@ func startHTTPServer() {
 }
 
 func broadcastIVFFrame(frame []byte) {
-	WriteWebRTCFrame(frame)
+	// Copy frame for async WebRTC delivery so we don't block the IVF reader
+	webrtcCopy := make([]byte, len(frame))
+	copy(webrtcCopy, frame)
+	go WriteWebRTCFrame(webrtcCopy)
 
 	timestamp := float64(time.Now().UnixNano()) / float64(time.Millisecond)
 	header := make([]byte, 9)
