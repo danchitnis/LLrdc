@@ -7,7 +7,6 @@ LLrdc (Low Latency remote desktop) is an entirely web-based, low-latency remote 
 - **XFCE4 Desktop in Docker**: Runs a full Ubuntu 24.04 and XFCE4 desktop environment inside a reproducible Docker container.
 - **Web-Based Client**: Access your desktop entirely via a modern web browser—no client software required.
 - **High-Performance Streaming**: Leverages WebRTC for ultra-low latency video streaming, with fallback to WebCodecs/WebSockets.
-- **Hardware Acceleration**: Automatic and dynamic detection of NVIDIA GPUs for accelerated encoding and processing.
 
 
 
@@ -18,7 +17,6 @@ LLrdc provides convenient bash scripts to handle all Docker operations easily.
 ### Prerequisites
 
 - Docker installed
-- (Optional) NVIDIA drivers if you want GPU acceleration
 
 ### 1. Build the Docker Image
 
@@ -38,7 +36,7 @@ Once built, start the container using the run script:
 ./docker-run.sh
 ```
 
-This will run the desktop container mapping port `8080` internally to port `8080` on the host. The script will automatically detect the number of host CPUs and explicitly map them to the container, and if it detects `nvidia-smi`, it will automatically add the `--gpus all` flag for rendering and encoding operations.
+This will run the desktop container mapping port `8080` internally to port `8080` on the host. The script will automatically detect the number of host CPUs and explicitly map them to the container.
 
 ### 3. Connect
 

@@ -21,14 +21,6 @@ SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
 NUM_CPUS=$(nproc)
 CPU_LIST="0-$((NUM_CPUS - 1))"
 
-# Detect NVIDIA GPU
-GPU_FLAGS=()
-if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
-  GPU_FLAGS=(--gpus all)
-  echo "  GPU   : NVIDIA GPU detected — enabling --gpus all"
-else
-  echo "  GPU   : No NVIDIA GPU detected — running CPU-only"
-fi
 
 echo "▶ Starting container: ${CONTAINER_NAME}"
 echo "  Image : ${IMAGE_NAME}:${IMAGE_TAG}"
@@ -45,7 +37,6 @@ docker run \
   --cpuset-cpus "${CPU_LIST}" \
   --ulimit rtprio=99 \
   --cap-add=SYS_NICE \
-  "${GPU_FLAGS[@]}" \
   --env PORT="${SERVER_PORT}" \
   --env FPS="${SERVER_FPS}" \
   --env DISPLAY_NUM="${SERVER_DISPLAY_NUM}" \
