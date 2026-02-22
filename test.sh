@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 cleanup() {
-    echo "Cleaning up docker image..."
+    echo "Cleaning up docker containers..."
     sleep 2 # Give node time to terminate the docker run commands gracefully
     docker rm -f $(docker ps -aq --filter ancestor=danchitnis/llrdc:latest) 2>/dev/null || true
-    docker rmi danchitnis/llrdc:latest || true
+    # docker rmi danchitnis/llrdc:latest || true
 }
 trap cleanup EXIT
 

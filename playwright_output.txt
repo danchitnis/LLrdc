@@ -1,0 +1,260 @@
+
+Running 1 test using 1 worker
+
+Starting server on port 35667...
+[Server]: 
+> llrdc@0.1.0 start
+> docker run --rm -p ${PORT:-8080}:${PORT:-8080} -e PORT=${PORT:-8080} -e DISPLAY_NUM=${DISPLAY_NUM:-99} danchitnis/llrdc
+
+
+[Server]: 2026/02/22 05:45:20 Starting llrdc (Go)...
+
+[Server]: 2026/02/22 05:45:20 Starting Xvfb on :184...
+
+[Server Error]: _XSERVTransmkdir: ERROR: euid != 0,directory /tmp/.X11-unix will not be created.
+
+[Server Error]: The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+
+[Server Error]: Errors from xkbcomp are not fatal to the X server
+
+[Server]: 2026/02/22 05:45:20 Xvfb is ready.
+
+[Server Error]: The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+
+[Server Error]: Errors from xkbcomp are not fatal to the X server
+
+[Server Error]: The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+
+[Server Error]: Errors from xkbcomp are not fatal to the X server
+
+[Server]: 2026/02/22 05:45:20 Starting xfce4-session...
+
+[Server Error]: The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86CameraAccessEnable
+> Warning:          Could not resolve keysym XF86CameraAccessDisable
+> Warning:          Could not resolve keysym XF86CameraAccessToggle
+> Warning:          Could not resolve keysym XF86NextElement
+> Warning:          Could not resolve keysym XF86PreviousElement
+> Warning:          Could not resolve keysym XF86AutopilotEngageToggle
+> Warning:          Could not resolve keysym XF86MarkWaypoint
+> Warning:          Could not resolve keysym XF86Sos
+> Warning:          Could not resolve keysym XF86NavChart
+> Warning:          Could not resolve keysym XF86FishingChart
+> Warning:          Could not resolve keysym XF86SingleRangeRadar
+> Warning:          Could not resolve keysym XF86DualRangeRadar
+> Warning:          Could not resolve keysym XF86RadarOverlay
+> Warning:          Could not resolve keysym XF86TraditionalSonar
+> Warning:          Could not resolve keysym XF86ClearvuSonar
+> Warning:          Could not resolve keysym XF86SidevuSonar
+> Warning:          Could not resolve keysym XF86NavInfo
+
+[Server Error]: Errors from xkbcomp are not fatal to the X server
+
+[Server Error]: 
+(xfce4-session:27): dbind-WARNING **: 05:45:20.416: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: dbus-daemon[26]: [session uid=1001 pid=26] Activating service name='org.xfce.Xfconf' requested by ':1.1' (uid=1001 pid=27 comm="xfce4-session" label="docker-default (enforce)")
+
+[Server Error]: dbus-daemon[26]: [session uid=1001 pid=26] Successfully activated service 'org.xfce.Xfconf'
+
+[Server Error]: _IceTransmkdir: ERROR: euid != 0,directory /tmp/.ICE-unix will not be created.
+
+[Server Error]: 
+(xfce4-session:27): xfce4-session-WARNING **: 05:45:20.434: No SSH authentication agent found
+
+[Server Error]: gpg-agent[44]: directory '/home/remote/.gnupg' created
+gpg-agent[44]: directory '/home/remote/.gnupg/private-keys-v1.d' created
+
+[Server Error]: gpg-agent[45]: gpg-agent (GnuPG) 2.4.4 started
+
+[Server Error]: 
+(xfwm4:46): dbind-WARNING **: 05:45:20.450: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(xfwm4:46): xfwm4-WARNING **: 05:45:20.758: Another compositing manager is running on screen 0
+
+[Server Error]: 
+(xfsettingsd:51): dbind-WARNING **: 05:45:20.773: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(xfsettingsd:51): libupower-glib-WARNING **: 05:45:20.776: Couldn't connect to proxy: Could not connect: No such file or directory
+
+[Server Error]: 
+(xfce4-panel:55): dbind-WARNING **: 05:45:20.848: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(migrate:61): dbind-WARNING **: 05:45:20.861: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(Thunar:60): dbind-WARNING **: 05:45:20.866: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(xfdesktop:71): dbind-WARNING **: 05:45:20.910: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+** (xfdesktop:71): WARNING **: 05:45:21.044: Thumbnailer failed calling GetFlavors
+
+[Server Error]: 
+(xfdesktop:71): GLib-GObject-CRITICAL **: 05:45:21.044: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+
+[Server Error]: 
+(xfce4-notifyd:76): dbind-WARNING **: 05:45:21.051: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(xfsettingsd:75): dbind-WARNING **: 05:45:21.052: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+** (xfdesktop:71): WARNING **: 05:45:21.074: Failed to get system bus: Could not connect: No such file or directory
+
+[Server Error]: xfce4-panel-Message: 05:45:21.186: Plugin "(null)-7" was not found and has been removed from the configuration
+
+[Server Error]: xfce4-panel-Message: 05:45:21.188: Plugin "power-manager-plugin-9" was not found and has been removed from the configuration
+
+[Server Error]: 
+(wrapper-2.0:87): dbind-WARNING **: 05:45:21.196: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(wrapper-2.0:89): dbind-WARNING **: 05:45:21.198: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(wrapper-2.0:88): dbind-WARNING **: 05:45:21.199: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: libclock-Message: 05:45:21.222: could not get proxy for org.freedesktop.login1
+
+(xfce4-panel:55): libclock-WARNING **: 05:45:21.222: could not instantiate a sleep monitor
+
+[Server Error]: 
+(wrapper-2.0:99): dbind-WARNING **: 05:45:21.301: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+[Server Error]: 
+(xfce4-session:27): xfce4-session-WARNING **: 05:45:21.670: failed to run script: Failed to execute child process ?/usr/bin/pm-is-supported? (No such file or directory)
+
+[Server Error]: 
+(xfce4-session:27): xfce4-session-WARNING **: 05:45:21.671: failed to run script: Failed to execute child process ?/usr/bin/pm-is-supported? (No such file or directory)
+
+[Server Error]: 
+(xfce4-session:27): xfce4-session-WARNING **: 05:45:21.673: failed to run script: Failed to execute child process ?/usr/bin/pm-is-supported? (No such file or directory)
+
+[Server]: 2026/02/22 05:45:23 Server listening on http://0.0.0.0:35667
+
+Server is ready on port 35667
+[Server]: 2026/02/22 05:45:23 Starting ffmpeg capture (VP8) from :184 at 5 Mbps...
+
+[Server]: 2026/02/22 05:45:23 HTTP GET / from 172.17.0.1:44202
+
+[Server]: 2026/02/22 05:45:23 HTTP GET /assets/main-CP-ElWep.js from 172.17.0.1:44202
+2026/02/22 05:45:23 HTTP GET /assets/main-CqeyMBpz.css from 172.17.0.1:44204
+
+[Server]: 2026/02/22 05:45:23 Client connected from 172.17.0.1:44212
+
+[Browser]: Connecting to ws://localhost:35667...
+[Browser]: Decoder initialized (vp8). Waiting for Keyframe...
+[Browser]: WebSocket Connected
+[Browser]: WebRTC track received
+[Browser]: ICE state: checking
+[Browser]: First frame decoded successfully!
+[Browser]: Frame Format: I420 1280 720
+[Browser]: ICE state: connected
+[Browser]: WebRTC Video playing
+[Server]: 2026/02/22 05:45:24 Client connected from 172.17.0.1:44214
+2026/02/22 05:45:24 Spawning app: xeyes
+
+Iteration 0: Latency 110.16ms
+[Server]: 2026/02/22 05:45:28 Shutting down...
+2026/02/22 05:45:28 Killing ffmpeg (cleanup)...
+2026/02/22 05:45:28 Killing xfce4-session...
+2026/02/22 05:45:28 Killing Xvfb...
+
+Stopping server...
+  ✘  1 [chromium] › tests/latency.spec.ts:109:1 › measure end-to-end mouse latency (5.4s)
+
+
+  1) [chromium] › tests/latency.spec.ts:109:1 › measure end-to-end mouse latency ───────────────────
+
+    Test was interrupted.
+
+    Error: page.evaluate: Test ended.
+
+      198 |     // Start monitoring entire screen for simplicity (or a large central region)
+      199 |     // xeyes should be visible.
+    > 200 |     const detectionPromise = page.evaluate(() => {
+          |                                   ^
+      201 |       return (window as any).monitorPixelChange(0, 0, 1280, 720);
+      202 |     });
+      203 |
+        at /home/danial/code/remote-desktop/tests/latency.spec.ts:200:35
+
+    Error: locator.hover: Test ended.
+    Call log:
+    [2m  - waiting for locator('#input-overlay')[22m
+    [2m    - locator resolved to <div id="input-overlay"></div>[22m
+    [2m  - attempting hover action[22m
+    [2m    - waiting for element to be visible and stable[22m
+
+
+      205 |
+      206 |     // 3. Move to target (relative to overlay)
+    > 207 |     await overlay.hover({ position: { x: targetX, y: targetY } });
+          |                   ^
+      208 |
+      209 |     // 4. Wait for detection
+      210 |     const result: any = await detectionPromise;
+        at /home/danial/code/remote-desktop/tests/latency.spec.ts:207:19
+
+    attachment #1: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/latency-measure-end-to-end-mouse-latency-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 interrupted
+    [chromium] › tests/latency.spec.ts:109:1 › measure end-to-end mouse latency ────────────────────

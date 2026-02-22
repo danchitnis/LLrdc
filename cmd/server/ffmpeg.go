@@ -81,9 +81,9 @@ func startStreaming(onFrame func([]byte)) {
 				"-cpu-used", "6",
 				"-threads", "4",
 				"-speed", "8",
-				"-map", "0:v",
-				"-f", "tee",
-				fmt.Sprintf("[f=rtp:payload_type=96]rtp://127.0.0.1:%d?pkt_size=1000|[f=ivf]pipe:1", RtpPort),
+				"-flush_packets", "1",
+				"-f", "ivf",
+				"pipe:1",
 			}
 
 			args := append([]string{

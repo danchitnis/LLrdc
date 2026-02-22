@@ -10,7 +10,6 @@ var (
 	FPS        int
 	DisplayNum string
 	Display    string
-	RtpPort    int
 )
 
 func initConfig() {
@@ -29,9 +28,4 @@ func initConfig() {
 		DisplayNum = "99"
 	}
 	Display = ":" + DisplayNum
-
-	RtpPort = Port + 4000
-	if rp, err := strconv.Atoi(os.Getenv("RTP_PORT")); err == nil {
-		RtpPort = rp
-	}
 }

@@ -68,6 +68,8 @@ func startHTTPServer() {
 }
 
 func broadcastIVFFrame(frame []byte) {
+	WriteWebRTCFrame(frame)
+
 	timestamp := float64(time.Now().UnixNano()) / float64(time.Millisecond)
 	header := make([]byte, 9)
 	header[0] = 1 // Video Type

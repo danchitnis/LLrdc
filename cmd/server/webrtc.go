@@ -2,55 +2,32 @@ package main
 
 import (
 	"log"
-	"net"
+	"time"
 
 	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
 )
 
-var videoTrack *webrtc.TrackLocalStaticRTP
+var videoTrack *webrtc.TrackLocalStaticSample
 
 func initWebRTC() {
 	var err error
-	videoTrack, err = webrtc.NewTrackLocalStaticRTP(
+	videoTrack, err = webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", "pion",
 	)
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)
 	}
-
-	go rtpListener()
 }
 
-func rtpListener() {
-	addr := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: RtpPort,
-	}
-
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		log.Fatalf("Failed to listen on RTP port %d: %v", RtpPort, err)
-	}
-	defer conn.Close()
-
-	if err := conn.SetReadBuffer(10 * 1024 * 1024); err != nil {
-		log.Printf("Warning: Failed to set RTP UDP read buffer (%v)\n", err)
-	}
-
-	log.Printf("Listening for RTP packets on %s\n", addr.String())
-
-	buf := make([]byte, 2048)
-	for {
-		n, _, err := conn.ReadFromUDP(buf)
+func WriteWebRTCFrame(frame []byte) {
+	if videoTrack != nil {
+		err := videoTrack.WriteSample(media.Sample{
+			Data:     frame,
+			Duration: time.Second / time.Duration(FPS),
+		})
 		if err != nil {
-			log.Printf("RTP Read error: %v", err)
-			continue
-		}
-
-		if videoTrack != nil {
-			if _, err := videoTrack.Write(buf[:n]); err != nil {
-				// Avoid spamming log on err
-			}
+			// Avoid spamming log on err
 		}
 	}
 }
