@@ -12,7 +12,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint src/",
-    "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080} -e PORT=${PORT:-8080} -e DISPLAY_NUM=${DISPLAY_NUM:-99} dchitnis/llrdc",
+    "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080} -e PORT=${PORT:-8080} -e DISPLAY_NUM=${DISPLAY_NUM:-99} danchitnis/llrdc",
     "test": "playwright test"
   },
   "devDependencies": {

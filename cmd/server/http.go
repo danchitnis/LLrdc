@@ -143,6 +143,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					spawnApp(cmd, Display)
 				}
 			}
+		case "config":
+			if bwFloat, ok := msg["bandwidth"].(float64); ok {
+				bw := int(bwFloat)
+				log.Printf("Received bandwidth config: %d Mbps", bw)
+				SetBandwidth(bw)
+			}
 		case "ping":
 			if ts, ok := msg["timestamp"].(float64); ok {
 				resp := map[string]interface{}{"type": "pong", "timestamp": ts}
