@@ -46,6 +46,18 @@ func SetQuality(quality int) {
 	}
 }
 
+func SetFramerate(fps int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	FPS = fps
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
+		ffmpegCmd.Process.Kill()
+	}
+}
+
 func startStreaming(onFrame func([]byte)) {
 	ffmpegPath := "/app/bin/ffmpeg"
 	if _, err := os.Stat(ffmpegPath); os.IsNotExist(err) {
@@ -73,23 +85,24 @@ func startStreaming(onFrame func([]byte)) {
 			mode := targetMode
 			bw := targetBandwidthMbps
 			quality := targetQuality
+			fps := FPS
 			ffmpegMutex.Unlock()
 
-			inputArgs := []string{"-f", "x11grab", "-video_size", "1280x720", "-i", Display}
+			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-video_size", "1280x720", "-i", Display}
 			if os.Getenv("TEST_PATTERN") != "" {
-				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=1280x720:rate=%d", FPS)}
+				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=1280x720:rate=%d", fps)}
 			}
 
 			outputArgs := []string{
-				"-vf", fmt.Sprintf("fps=%d,format=yuv420p", FPS),
+				"-pix_fmt", "yuv420p",
 				"-c:v", "libvpx",
 			}
 
 			if mode == "bandwidth" {
 				// Format bitrate dynamically,e.g 5 Mbps = "5000k"
 				bitrateStr := fmt.Sprintf("%dk", bw*1000)
-				// keep bufsize somewhat smaller for low latency, maybe half of bitrate
-				bufSizeStr := fmt.Sprintf("%dk", bw*500)
+				// keep bufsize very small for low latency (e.g., 0.2s buffer)
+				bufSizeStr := fmt.Sprintf("%dk", bw*200)
 
 				outputArgs = append(outputArgs,
 					"-b:v", bitrateStr,
@@ -111,7 +124,8 @@ func startStreaming(onFrame func([]byte)) {
 				// Quality 10 -> 2 Mbps, Quality 100 -> 20 Mbps
 				maxKbps := 2000 + (quality-10)*18000/90
 				maxrateStr := fmt.Sprintf("%dk", maxKbps)
-				bufsizeStr := fmt.Sprintf("%dk", maxKbps)
+				// Small buffer for low latency
+				bufsizeStr := fmt.Sprintf("%dk", maxKbps/5)
 
 				outputArgs = append(outputArgs,
 					"-b:v", maxrateStr,
@@ -124,7 +138,7 @@ func startStreaming(onFrame func([]byte)) {
 
 			outputArgs = append(outputArgs,
 				"-rc_lookahead", "0",
-				"-g", "30",
+				"-g", fmt.Sprintf("%d", fps),
 				"-deadline", "realtime",
 				"-cpu-used", "6",
 				"-threads", "4",

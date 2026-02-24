@@ -1,4 +1,4 @@
-import { bandwidthSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue } from './ui';
+import { bandwidthSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -38,6 +38,7 @@ interface ConfigMessage {
     type: 'config';
     bandwidth?: number;
     quality?: number;
+    framerate?: number;
 }
 
 function sendConfig() {
@@ -55,6 +56,7 @@ function sendConfig() {
     } else {
         config.quality = parseInt(qualitySlider.value, 10);
     }
+    config.framerate = parseInt(framerateSelect.value, 10);
     
     network.sendMsg(JSON.stringify(config));
     if (webrtc.isWebRtcActive) {
@@ -86,6 +88,10 @@ if (qualitySlider && qualityValue) {
         qualityValue.textContent = (e.target as HTMLInputElement).value;
     });
     qualitySlider.addEventListener('change', sendConfig);
+}
+
+if (framerateSelect) {
+    framerateSelect.addEventListener('change', sendConfig);
 }
 
 function handleBinaryMessage(buffer: ArrayBuffer) {

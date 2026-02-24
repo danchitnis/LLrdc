@@ -9,6 +9,7 @@ export const configDropdown = document.getElementById('config-dropdown') as HTML
 export const targetTypeRadios = document.getElementsByName('target-type') as NodeListOf<HTMLInputElement>;
 export const qualitySlider = document.getElementById('quality-slider') as HTMLInputElement;
 export const qualityValue = document.getElementById('quality-value') as HTMLSpanElement;
+export const framerateSelect = document.getElementById('framerate-select') as HTMLSelectElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
 

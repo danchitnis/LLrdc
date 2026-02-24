@@ -170,6 +170,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Received quality config: %d", q)
 				SetQuality(q)
 			}
+			if fpsFloat, ok := msg["framerate"].(float64); ok {
+				fps := int(fpsFloat)
+				log.Printf("Received framerate config: %d fps", fps)
+				SetFramerate(fps)
+			}
 		case "ping":
 			if ts, ok := msg["timestamp"].(float64); ok {
 				resp := map[string]interface{}{"type": "pong", "timestamp": ts}
