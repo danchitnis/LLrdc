@@ -3,10 +3,14 @@ import { log, statusEl } from './ui';
 export class NetworkManager {
     public ws: WebSocket;
     public networkLatency = 0;
+    public wsBandwidthMbps = 0;
 
     private onBinaryMessage: (buffer: ArrayBuffer) => void;
     private onJsonMessage: (msg: Record<string, unknown>) => void;
     private onOpenCallback: () => void;
+    
+    private bytesReceived = 0;
+    private lastBytesUpdate = Date.now();
 
     constructor(onBinaryMessage: (buffer: ArrayBuffer) => void, onJsonMessage: (msg: Record<string, unknown>) => void, onOpenCallback: () => void) {
         this.onBinaryMessage = onBinaryMessage;
@@ -27,6 +31,7 @@ export class NetworkManager {
                 statusEl.style.color = '#4f4';
             }
             setInterval(() => this.sendPing(), 1000);
+            setInterval(() => this.updateBandwidth(), 1000);
             this.onOpenCallback();
         };
 
@@ -45,8 +50,10 @@ export class NetworkManager {
 
         this.ws.onmessage = (event: MessageEvent) => {
             if (event.data instanceof ArrayBuffer) {
+                this.bytesReceived += event.data.byteLength;
                 this.onBinaryMessage(event.data);
             } else if (typeof event.data === 'string') {
+                this.bytesReceived += event.data.length;
                 try {
                     const msg = JSON.parse(event.data) as Record<string, unknown>;
                     if (msg.type === 'pong') {
@@ -59,6 +66,17 @@ export class NetworkManager {
                 }
             }
         };
+    }
+    
+    private updateBandwidth() {
+        const now = Date.now();
+        const deltaMs = now - this.lastBytesUpdate;
+        if (deltaMs >= 1000) {
+            const bits = this.bytesReceived * 8;
+            this.wsBandwidthMbps = (bits / (deltaMs / 1000)) / 1000000;
+            this.bytesReceived = 0;
+            this.lastBytesUpdate = now;
+        }
     }
 
     private sendPing() {

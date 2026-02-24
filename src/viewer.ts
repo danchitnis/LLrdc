@@ -1,4 +1,4 @@
-import { bandwidthSelect } from './ui';
+import { bandwidthSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -22,7 +22,8 @@ const network = new NetworkManager(
 
 const webcodecs: WebCodecsManager = new WebCodecsManager(
     () => webrtc.isWebRtcActive,
-    () => network.networkLatency
+    () => network.networkLatency,
+    () => network.wsBandwidthMbps
 );
 
 const webrtc: WebRTCManager = new WebRTCManager(
@@ -33,15 +34,58 @@ const webrtc: WebRTCManager = new WebRTCManager(
 
 setupInput((data) => network.sendMsg(data));
 
-// Hook up bandwidth select if we want to send it to the server in the future
-if (bandwidthSelect) {
-    bandwidthSelect.addEventListener('change', (e) => {
-        const value = (e.target as HTMLSelectElement).value;
-        network.sendMsg(JSON.stringify({ type: 'config', bandwidth: parseInt(value, 10) }));
-        if (webrtc.isWebRtcActive) {
-            webrtc.initWebRTC();
+interface ConfigMessage {
+    type: 'config';
+    bandwidth?: number;
+    quality?: number;
+}
+
+function sendConfig() {
+    let target = 'bandwidth';
+    for (const radio of targetTypeRadios) {
+        if (radio.checked) {
+            target = radio.value;
+            break;
         }
+    }
+
+    const config: ConfigMessage = { type: 'config' };
+    if (target === 'bandwidth') {
+        config.bandwidth = parseInt(bandwidthSelect.value, 10);
+    } else {
+        config.quality = parseInt(qualitySlider.value, 10);
+    }
+    
+    network.sendMsg(JSON.stringify(config));
+    if (webrtc.isWebRtcActive) {
+        webrtc.initWebRTC();
+    }
+}
+
+if (configBtn && configDropdown) {
+    configBtn.addEventListener('click', () => {
+        configDropdown.classList.toggle('hidden');
     });
+}
+
+for (const radio of targetTypeRadios) {
+    radio.addEventListener('change', () => {
+        const isBandwidth = radio.value === 'bandwidth';
+        bandwidthSelect.disabled = !isBandwidth;
+        qualitySlider.disabled = isBandwidth;
+        sendConfig();
+    });
+}
+
+if (bandwidthSelect) {
+    bandwidthSelect.addEventListener('change', sendConfig);
+}
+
+if (qualitySlider && qualityValue) {
+    qualitySlider.addEventListener('input', (e) => {
+        qualityValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    qualitySlider.addEventListener('change', sendConfig);
 }
 
 function handleBinaryMessage(buffer: ArrayBuffer) {

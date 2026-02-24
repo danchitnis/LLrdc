@@ -11,6 +11,9 @@ export class WebRTCManager {
     private frameCount = 0;
     private lastFPSUpdate = Date.now();
     private getLatencyMonitor: () => number;
+    private lastBytesReceived = 0;
+    private bandwidthMbps = 0;
+    private statsInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(sendWs: (data: string) => void, getNetworkLatencyVal: () => number, getLatencyMonitor: () => number) {
         this.sendWs = sendWs;
@@ -19,6 +22,8 @@ export class WebRTCManager {
     }
 
     public initWebRTC() {
+        if (this.statsInterval) clearInterval(this.statsInterval);
+        
         if (this.rtcPeer) {
             this.rtcPeer.close();
         }
@@ -28,6 +33,8 @@ export class WebRTCManager {
             bundlePolicy: 'max-bundle'
         });
         window.rtcPeer = this.rtcPeer;
+
+        this.statsInterval = setInterval(() => this.pollStats(), 1000);
 
         this.rtcPeer.onicecandidate = (e: RTCPeerConnectionIceEvent) => {
             if (e.candidate) {
@@ -111,13 +118,33 @@ export class WebRTCManager {
         }
     }
 
+    private pollStats() {
+        if (!this.isWebRtcActive || !this.rtcPeer) return;
+        this.rtcPeer.getStats(null).then(stats => {
+            let bytesReceived = 0;
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                    bytesReceived = report.bytesReceived;
+                }
+            });
+            
+            if (this.lastBytesReceived > 0 && bytesReceived > this.lastBytesReceived) {
+                const deltaBytes = bytesReceived - this.lastBytesReceived;
+                const bits = deltaBytes * 8;
+                this.bandwidthMbps = bits / 1000000;
+            }
+            this.lastBytesReceived = bytesReceived;
+        }).catch(() => {});
+    }
+
     private updateStats() {
         const now = Date.now();
-        if (now - this.lastFPSUpdate >= 1000) {
+        const deltaMs = now - this.lastFPSUpdate;
+        if (deltaMs >= 1000) {
             this.fps = this.frameCount;
             this.frameCount = 0;
             this.lastFPSUpdate = now;
-            updateStatusText(this.isWebRtcActive, this.fps, this.getLatencyMonitor(), this.getNetworkLatencyVal());
+            updateStatusText(this.isWebRtcActive, this.fps, this.getLatencyMonitor(), this.getNetworkLatencyVal(), this.bandwidthMbps);
         }
     }
 

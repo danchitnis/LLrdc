@@ -12,7 +12,9 @@ import (
 )
 
 var (
+	targetMode          = "bandwidth" // "bandwidth" or "quality"
 	targetBandwidthMbps = 5 // Initial default: 5 Mbps
+	targetQuality       = 70 // 10-100
 	ffmpegCmd           *exec.Cmd
 	ffmpegMutex         sync.Mutex
 	ffmpegShouldRun     = true
@@ -22,10 +24,24 @@ func SetBandwidth(bwMbps int) {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
 
+	targetMode = "bandwidth"
 	targetBandwidthMbps = bwMbps
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target bandwidth changed to %d Mbps, restarting ffmpeg...", bwMbps)
+		ffmpegCmd.Process.Kill()
+	}
+}
+
+func SetQuality(quality int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	targetMode = "quality"
+	targetQuality = quality
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target quality changed to %d, restarting ffmpeg...", quality)
 		ffmpegCmd.Process.Kill()
 	}
 }
@@ -54,7 +70,9 @@ func startStreaming(onFrame func([]byte)) {
 				ffmpegMutex.Unlock()
 				break
 			}
+			mode := targetMode
 			bw := targetBandwidthMbps
+			quality := targetQuality
 			ffmpegMutex.Unlock()
 
 			inputArgs := []string{"-f", "x11grab", "-video_size", "1280x720", "-i", Display}
@@ -62,31 +80,61 @@ func startStreaming(onFrame func([]byte)) {
 				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=1280x720:rate=%d", FPS)}
 			}
 
-			// Format bitrate dynamically,e.g 5 Mbps = "5000k"
-			bitrateStr := fmt.Sprintf("%dk", bw*1000)
-
-			// bufsize = ~1 frame worth of data for low-latency CBR
-			frameBufStr := fmt.Sprintf("%dk", bw*1000/FPS)
-
 			outputArgs := []string{
 				"-vf", fmt.Sprintf("fps=%d,format=yuv420p", FPS),
 				"-c:v", "libvpx",
-				"-b:v", bitrateStr,
-				"-minrate", bitrateStr,
-				"-maxrate", bitrateStr,
-				"-bufsize", frameBufStr,
+			}
+
+			if mode == "bandwidth" {
+				// Format bitrate dynamically,e.g 5 Mbps = "5000k"
+				bitrateStr := fmt.Sprintf("%dk", bw*1000)
+				// keep bufsize somewhat smaller for low latency, maybe half of bitrate
+				bufSizeStr := fmt.Sprintf("%dk", bw*500)
+
+				outputArgs = append(outputArgs,
+					"-b:v", bitrateStr,
+					"-minrate", bitrateStr,
+					"-maxrate", bitrateStr,
+					"-bufsize", bufSizeStr,
+					"-crf", "10",
+				)
+			} else {
+				// Quality mode: Map 10-100 to crf 50-4
+				crf := 50 - (quality-10)*46/90
+				if crf < 4 {
+					crf = 4
+				}
+				if crf > 63 {
+					crf = 63
+				}
+				// Scale maxrate with quality to give high quality more headroom
+				// Quality 10 -> 2 Mbps, Quality 100 -> 20 Mbps
+				maxKbps := 2000 + (quality-10)*18000/90
+				maxrateStr := fmt.Sprintf("%dk", maxKbps)
+				bufsizeStr := fmt.Sprintf("%dk", maxKbps)
+
+				outputArgs = append(outputArgs,
+					"-b:v", maxrateStr,
+					"-maxrate", maxrateStr,
+					"-bufsize", bufsizeStr,
+					"-crf", fmt.Sprintf("%d", crf),
+					"-qmin", fmt.Sprintf("%d", crf),
+				)
+			}
+
+			outputArgs = append(outputArgs,
 				"-rc_lookahead", "0",
-				"-skip_threshold", "0",
-				"-g", "120",
-				"-keyint_min", "120",
+				"-g", "30",
 				"-deadline", "realtime",
-				"-cpu-used", "8",
+				"-cpu-used", "6",
 				"-threads", "4",
-				"-error-resilient", "1",
+				"-speed", "8",
 				"-flush_packets", "1",
 				"-f", "ivf",
 				"pipe:1",
-			}
+			)
+
+			log.Printf("Starting ffmpeg capture (VP8) from %s at %s target...", Display, mode)
 
 			args := append([]string{
 				"-probesize", "32",
@@ -95,8 +143,6 @@ func startStreaming(onFrame func([]byte)) {
 				"-threads", "2",
 			}, inputArgs...)
 			args = append(args, outputArgs...)
-
-			log.Printf("Starting ffmpeg capture (VP8) from %s at %d Mbps...", Display, bw)
 
 			cmd := exec.Command(ffmpegPath, args...)
 			cmd.Env = append(os.Environ(), "DISPLAY="+Display)

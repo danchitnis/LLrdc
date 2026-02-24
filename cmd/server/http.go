@@ -165,6 +165,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				bw := int(bwFloat)
 				log.Printf("Received bandwidth config: %d Mbps", bw)
 				SetBandwidth(bw)
+			} else if qFloat, ok := msg["quality"].(float64); ok {
+				q := int(qFloat)
+				log.Printf("Received quality config: %d", q)
+				SetQuality(q)
 			}
 		case "ping":
 			if ts, ok := msg["timestamp"].(float64); ok {

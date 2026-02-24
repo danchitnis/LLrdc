@@ -13,10 +13,12 @@ export class WebCodecsManager {
 
     private getIsWebRtcActive: () => boolean;
     private getNetworkLatency: () => number;
+    private getWsBandwidthMbps: () => number;
 
-    constructor(getIsWebRtcActive: () => boolean, getNetworkLatency: () => number) {
+    constructor(getIsWebRtcActive: () => boolean, getNetworkLatency: () => number, getWsBandwidthMbps: () => number) {
         this.getIsWebRtcActive = getIsWebRtcActive;
         this.getNetworkLatency = getNetworkLatency;
+        this.getWsBandwidthMbps = getWsBandwidthMbps;
         this.initDecoder();
     }
 
@@ -105,7 +107,7 @@ export class WebCodecsManager {
             this.fps = this.frameCount;
             this.frameCount = 0;
             this.lastFPSUpdate = now;
-            updateStatusText(this.getIsWebRtcActive(), this.fps, this.latencyMonitor, this.getNetworkLatency());
+            updateStatusText(this.getIsWebRtcActive(), this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps());
         }
     }
 

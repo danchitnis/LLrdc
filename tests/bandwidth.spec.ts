@@ -105,6 +105,9 @@ test.describe('Bandwidth Configuration', () => {
             console.log("HTML:", content.substring(0, 1000));
 
             // Select 1 Mbps from the dropdown
+            const configBtnLocator = page.locator('#config-btn');
+            await configBtnLocator.click();
+
             const selectLocator = page.locator('#bandwidth-select');
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
             await selectLocator.selectOption('1');
