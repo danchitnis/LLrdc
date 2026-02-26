@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -68,7 +69,18 @@ func WriteWebRTCFrame(frame []byte) {
 	}
 }
 
-func createPeerConnection() (*webrtc.PeerConnection, error) {
+func createPeerConnection(hostIP string) (*webrtc.PeerConnection, error) {
+	s := webrtc.SettingEngine{}
+	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
+	
+	publicIP := os.Getenv("WEBRTC_PUBLIC_IP")
+	if publicIP == "" {
+		publicIP = hostIP
+	}
+	s.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
+
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
+
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -77,7 +89,7 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 		},
 	}
 
-	pc, err := webrtc.NewPeerConnection(config)
+	pc, err := api.NewPeerConnection(config)
 	if err != nil {
 		return nil, err
 	}

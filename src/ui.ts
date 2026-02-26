@@ -1,4 +1,5 @@
 export const statusEl = document.getElementById('status') as HTMLDivElement;
+export const displayContainerEl = document.getElementById('display-container') as HTMLDivElement;
 export const displayEl = document.getElementById('display') as HTMLCanvasElement;
 export const videoEl = document.getElementById('webrtc-video') as HTMLVideoElement;
 export const overlayEl = document.getElementById('input-overlay') as HTMLDivElement;
@@ -17,8 +18,9 @@ export function log(msg: string) {
     console.log(msg);
 }
 
-export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMonitor: number, networkLatency: number, bandwidthMbps: number = 0) {
+export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMonitor: number, networkLatency: number, bandwidthMbps: number = 0, width: number = 0, height: number = 0) {
     if (!statusEl) return;
     const codecInfo = isWebRtcActive ? '[WebRTC VP8]' : '[WebCodecs VP8]';
-    statusEl.textContent = `${codecInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms | BW: ${bandwidthMbps.toFixed(2)} Mbps`;
+    const resInfo = (width > 0 && height > 0) ? ` | Res: ${width}x${height}` : '';
+    statusEl.textContent = `${codecInfo}${resInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms | BW: ${bandwidthMbps.toFixed(2)} Mbps`;
 }

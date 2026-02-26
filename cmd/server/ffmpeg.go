@@ -13,8 +13,8 @@ import (
 
 var (
 	targetMode          = "bandwidth" // "bandwidth" or "quality"
-	targetBandwidthMbps = 5 // Initial default: 5 Mbps
-	targetQuality       = 70 // 10-100
+	targetBandwidthMbps = 5           // Initial default: 5 Mbps
+	targetQuality       = 70          // 10-100
 	ffmpegCmd           *exec.Cmd
 	ffmpegMutex         sync.Mutex
 	ffmpegShouldRun     = true
@@ -59,13 +59,24 @@ func SetFramerate(fps int) {
 	}
 }
 
+func RestartForResize() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	ResetWebRTCSampleTime()
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Println("Screen size changed, restarting ffmpeg...")
+		ffmpegCmd.Process.Kill()
+	}
+}
+
 func startStreaming(onFrame func([]byte)) {
 	ffmpegPath := "/app/bin/ffmpeg"
 	if _, err := os.Stat(ffmpegPath); os.IsNotExist(err) {
 		log.Println("Warning: /app/bin/ffmpeg not found, relying on system PATH")
 		ffmpegPath = "ffmpeg"
 	}
-	
+
 	cleanupTasks = append(cleanupTasks, func() {
 		ffmpegMutex.Lock()
 		defer ffmpegMutex.Unlock()
@@ -89,9 +100,11 @@ func startStreaming(onFrame func([]byte)) {
 			fps := FPS
 			ffmpegMutex.Unlock()
 
-			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-video_size", "1280x720", "-i", Display}
+			width, height := GetScreenSize()
+			size := fmt.Sprintf("%dx%d", width, height)
+			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-video_size", size, "-i", Display + ".0"}
 			if os.Getenv("TEST_PATTERN") != "" {
-				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=1280x720:rate=%d", fps)}
+				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
 
 			outputArgs := []string{
@@ -177,7 +190,11 @@ func startStreaming(onFrame func([]byte)) {
 			if err != nil {
 				log.Fatalf("Failed to get stdout from ffmpeg: %v", err)
 			}
-			
+			stderr, err := cmd.StderrPipe()
+			if err != nil {
+				log.Fatalf("Failed to get stderr from ffmpeg: %v", err)
+			}
+
 			ffmpegMutex.Lock()
 			ffmpegCmd = cmd
 			ffmpegMutex.Unlock()
@@ -185,6 +202,20 @@ func startStreaming(onFrame func([]byte)) {
 			if err := cmd.Start(); err != nil {
 				log.Fatalf("Failed to start ffmpeg: %v", err)
 			}
+
+			// Log stderr in background
+			go func() {
+				buf := make([]byte, 1024)
+				for {
+					n, err := stderr.Read(buf)
+					if n > 0 {
+						log.Printf("[ffmpeg stderr]: %s", string(buf[:n]))
+					}
+					if err != nil {
+						break
+					}
+				}
+			}()
 
 			// Start IVF splitting in a bounded way
 			doneCh := make(chan struct{})
@@ -195,15 +226,14 @@ func startStreaming(onFrame func([]byte)) {
 
 			// Wait for IVF splitter to finish reading pipeline to avoid Wait closing stdout prematurely
 			<-doneCh
-			
+
 			err = cmd.Wait()
 			log.Printf("ffmpeg exited: %v", err)
-			
 
 			ffmpegMutex.Lock()
 			shouldRun := ffmpegShouldRun
 			ffmpegMutex.Unlock()
-			
+
 			if !shouldRun {
 				break
 			}

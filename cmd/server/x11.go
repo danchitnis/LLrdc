@@ -44,7 +44,7 @@ func startX11(displayNum string) error {
 	os.Remove(socketPath)
 
 	// Start Xvfb
-	xvfb := exec.Command("Xvfb", display, "-screen", "0", "1280x720x24", "-nolisten", "tcp", "-ac")
+	xvfb := exec.Command("Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp", "-ac", "+extension", "RANDR")
 	xvfb.Stdout = os.Stdout
 	xvfb.Stderr = os.Stderr
 	if err := xvfb.Start(); err != nil {
@@ -92,6 +92,28 @@ func startX11(displayNum string) error {
 
 	// Set wallpaper
 	setWallpaper(env, displayNum)
+
+	return nil
+}
+
+func resizeDisplay(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("invalid resize: %dx%d", width, height)
+	}
+	mode := fmt.Sprintf("%dx%d", width, height)
+	log.Printf("Resizing X11 display to %s", mode)
+	env := append(os.Environ(), "DISPLAY="+Display)
+
+	// Try multiple ways to resize
+	// 1. try xrandr -s
+	if err := runWithEnv("xrandr", []string{"-s", mode}, env); err == nil {
+		return nil
+	}
+
+	// 2. try xrandr --fb
+	if err := runWithEnv("xrandr", []string{"--fb", mode}, env); err != nil {
+		log.Printf("xrandr --fb failed: %v", err)
+	}
 
 	return nil
 }

@@ -32,7 +32,8 @@ docker run \
   --interactive \
   --tty \
   --name "${CONTAINER_NAME}" \
-  --publish "${HOST_PORT}:${CONTAINER_PORT}" \
+  --publish "${HOST_PORT}:${CONTAINER_PORT}/tcp" \
+  --publish "${HOST_PORT}:${CONTAINER_PORT}/udp" \
   --shm-size 256m \
   --cpuset-cpus "${CPU_LIST}" \
   --ulimit rtprio=99 \

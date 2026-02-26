@@ -12,9 +12,10 @@ var cleanupTasks []func()
 func main() {
 	log.SetOutput(os.Stdout)
 	log.Println("Starting llrdc (Go)...")
-    
+
 	// Initialize config
 	initConfig()
+	initScreenSize(1920, 1080)
 
 	// Setup signal handling
 	sigs := make(chan os.Signal, 1)

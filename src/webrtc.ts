@@ -15,6 +15,7 @@ export class WebRTCManager {
     private lastBytesReceived = 0;
     private bandwidthMbps = 0;
     private webrtcLatency = 0;
+    private hasSentWebrtcReady = false;
     private statsInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(sendWs: (data: string) => void, getNetworkLatencyVal: () => number, getLatencyMonitor: () => number) {
@@ -31,6 +32,7 @@ export class WebRTCManager {
         }
         this.isWebRtcActive = false;
         this.lastTotalDecoded = -1;
+        this.hasSentWebrtcReady = false;
         this.rtcPeer = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
             bundlePolicy: 'max-bundle'
@@ -65,9 +67,7 @@ export class WebRTCManager {
         this.rtcPeer.oniceconnectionstatechange = () => {
             if (!this.rtcPeer) return;
             log('ICE state: ' + this.rtcPeer.iceConnectionState);
-            if (this.rtcPeer.iceConnectionState === 'connected' || this.rtcPeer.iceConnectionState === 'completed') {
-                this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
-            } else if (this.rtcPeer.iceConnectionState === 'disconnected' || this.rtcPeer.iceConnectionState === 'failed') {
+            if (this.rtcPeer.iceConnectionState === 'disconnected' || this.rtcPeer.iceConnectionState === 'failed') {
                 this.isWebRtcActive = false;
                 if (statusEl) {
                     statusEl.textContent = 'WebCodecs Fallback';
@@ -156,13 +156,18 @@ export class WebRTCManager {
                 }
                 this.fps = total - this.lastTotalDecoded;
                 this.lastTotalDecoded = total;
+                
+                if (total > 0 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
+                    this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
+                    this.hasSentWebrtcReady = true;
+                }
             } else {
                 this.fps = this.frameCount;
             }
             this.frameCount = 0;
             this.lastFPSUpdate = now;
             const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
-            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps);
+            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight);
         }
     }
 

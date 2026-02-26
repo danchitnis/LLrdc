@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -56,11 +57,11 @@ func startHTTPServer() {
 
 			w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 			w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
-			
+
 			if filepath.Ext(filePath) == ".html" {
 				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			}
-			
+
 			http.ServeFile(w, r, filePath)
 			return
 		}
@@ -142,6 +143,22 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var pc *webrtc.PeerConnection
+
+	// Extract the host IP from the request to use as the WebRTC advertised IP
+	hostIP := r.Host
+	if host, _, err := net.SplitHostPort(r.Host); err == nil {
+		hostIP = host
+	}
+
+	// Resolve localhost or hostnames to actual IP because Pion WebRTC strictly requires an IP
+	if ips, err := net.LookupIP(hostIP); err == nil && len(ips) > 0 {
+		for _, ip := range ips {
+			if ipv4 := ip.To4(); ipv4 != nil {
+				hostIP = ipv4.String()
+				break
+			}
+		}
+	}
 
 	defer func() {
 		if pc != nil {
@@ -227,6 +244,24 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					SetFramerate(fps)
 				}
 			}
+		case "resize":
+			widthFloat, wOk := msg["width"].(float64)
+			heightFloat, hOk := msg["height"].(float64)
+			if wOk && hOk {
+				width := int(widthFloat)
+				height := int(heightFloat)
+				if SetScreenSize(width, height) {
+					// Get the actual clamped size
+					clampedW, clampedH := GetScreenSize()
+					log.Printf("Received resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
+					if os.Getenv("TEST_PATTERN") == "" {
+						if err := resizeDisplay(clampedW, clampedH); err != nil {
+							log.Printf("Resize failed: %v", err)
+						}
+					}
+					RestartForResize()
+				}
+			}
 		case "webrtc_ready":
 			log.Printf("Client WebRTC ready, stopping fallback websocket video transmission")
 			clientsMutex.Lock()
@@ -248,7 +283,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				if pc != nil {
 					pc.Close()
 				}
-				pc, err = createPeerConnection()
+				pc, err = createPeerConnection(hostIP)
 				if err != nil {
 					log.Printf("Failed to create PeerConnection: %v", err)
 					continue

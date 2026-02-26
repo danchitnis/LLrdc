@@ -1,4 +1,4 @@
-import { bandwidthSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect } from './ui';
+import { bandwidthSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, displayContainerEl } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -14,10 +14,15 @@ declare global {
     }
 }
 
+let triggerResizeUpdate: () => void = () => { };
+
 const network = new NetworkManager(
     handleBinaryMessage,
     handleJsonMessage,
-    () => { webrtc.initWebRTC(); }
+    () => {
+        webrtc.initWebRTC();
+        triggerResizeUpdate();
+    }
 );
 
 const webcodecs: WebCodecsManager = new WebCodecsManager(
@@ -57,7 +62,7 @@ function sendConfig() {
         config.quality = parseInt(qualitySlider.value, 10);
     }
     config.framerate = parseInt(framerateSelect.value, 10);
-    
+
     network.sendMsg(JSON.stringify(config));
     if (webrtc.isWebRtcActive) {
         webrtc.initWebRTC();
@@ -93,6 +98,46 @@ if (qualitySlider && qualityValue) {
 if (framerateSelect) {
     framerateSelect.addEventListener('change', sendConfig);
 }
+
+let lastResizeWidth = 0;
+let lastResizeHeight = 0;
+let resizeTimer: number | null = null;
+
+function sendResize() {
+    if (!displayContainerEl) return;
+    const rect = displayContainerEl.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    const scale = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(rect.width * scale));
+    const height = Math.max(1, Math.round(rect.height * scale));
+
+    if (width === lastResizeWidth && height === lastResizeHeight) return;
+
+    lastResizeWidth = width;
+    lastResizeHeight = height;
+    network.sendMsg(JSON.stringify({ type: 'resize', width, height }));
+}
+
+function scheduleResize() {
+    if (resizeTimer !== null) {
+        window.clearTimeout(resizeTimer);
+    }
+    resizeTimer = window.setTimeout(() => {
+        resizeTimer = null;
+        sendResize();
+    }, 100);
+}
+
+triggerResizeUpdate = scheduleResize;
+
+if (displayContainerEl && 'ResizeObserver' in window) {
+    const observer = new ResizeObserver(() => scheduleResize());
+    observer.observe(displayContainerEl);
+}
+
+window.addEventListener('resize', scheduleResize);
+window.addEventListener('orientationchange', scheduleResize);
+window.addEventListener('load', scheduleResize);
 
 function handleBinaryMessage(buffer: ArrayBuffer) {
     const dv = new DataView(buffer);

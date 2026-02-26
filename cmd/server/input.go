@@ -10,11 +10,6 @@ import (
 	"time"
 )
 
-const (
-	screenWidth  = 1280
-	screenHeight = 720
-)
-
 var keyMap = map[string]string{
 	"Control":    "Control_L",
 	"Shift":      "Shift_L",
@@ -122,8 +117,12 @@ func init() {
 }
 
 func execMouseMove(nx, ny float64, display string) {
-	x := int(math.Round(nx * screenWidth))
-	y := int(math.Round(ny * screenHeight))
+	width, height := GetScreenSize()
+	if width <= 0 || height <= 0 {
+		return
+	}
+	x := int(math.Round(nx * float64(width)))
+	y := int(math.Round(ny * float64(height)))
 	cmd := exec.Command("xdotool", "mousemove", strconv.Itoa(x), strconv.Itoa(y))
 	cmd.Env = append(os.Environ(), "DISPLAY="+display)
 	if err := cmd.Start(); err == nil {

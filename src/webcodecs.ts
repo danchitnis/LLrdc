@@ -107,7 +107,7 @@ export class WebCodecsManager {
             this.fps = this.frameCount;
             this.frameCount = 0;
             this.lastFPSUpdate = now;
-            updateStatusText(this.getIsWebRtcActive(), this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps());
+            updateStatusText(this.getIsWebRtcActive(), this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps(), displayEl.width, displayEl.height);
         }
     }
 
