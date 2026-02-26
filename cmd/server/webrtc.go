@@ -8,7 +8,11 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
-var videoTrack *webrtc.TrackLocalStaticSample
+var (
+	videoTrack      *webrtc.TrackLocalStaticSample
+	webrtcFrameChan = make(chan []byte, 300)
+	lastSampleTime  time.Time
+)
 
 func initWebRTC() {
 	var err error
@@ -18,17 +22,49 @@ func initWebRTC() {
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)
 	}
+
+	go func() {
+		for frame := range webrtcFrameChan {
+			if videoTrack != nil {
+				now := time.Now()
+				nominalDur := time.Second / time.Duration(FPS)
+
+				if lastSampleTime.IsZero() {
+					lastSampleTime = now.Add(-nominalDur)
+				}
+
+				// Target time is last + nominal
+				targetTime := lastSampleTime.Add(nominalDur)
+				
+				// Drift compensation: if we are more than 2 frames behind, jump ahead
+				if now.Sub(targetTime) > nominalDur*2 {
+					targetTime = now.Add(-nominalDur)
+				}
+				
+				duration := targetTime.Sub(lastSampleTime)
+				if duration <= 0 {
+					duration = 1 * time.Microsecond // Ensure positive
+				}
+
+				_ = videoTrack.WriteSample(media.Sample{
+					Data:     frame,
+					Duration: duration,
+				})
+				lastSampleTime = targetTime
+			}
+		}
+	}()
+}
+
+func ResetWebRTCSampleTime() {
+	lastSampleTime = time.Time{}
 }
 
 func WriteWebRTCFrame(frame []byte) {
-	if videoTrack != nil {
-		err := videoTrack.WriteSample(media.Sample{
-			Data:     frame,
-			Duration: time.Second / time.Duration(FPS),
-		})
-		if err != nil {
-			// Avoid spamming log on err
-		}
+	select {
+	case webrtcFrameChan <- frame:
+	default:
+		log.Println("WARNING: webrtcFrameChan is full, dropping frame!")
 	}
 }
 

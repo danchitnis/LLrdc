@@ -17,7 +17,11 @@ export function setupInput(sendMsg: (data: string) => void) {
     };
 
     if (overlayEl) {
+        let lastMove = 0;
         overlayEl.addEventListener('mousemove', (e: MouseEvent) => {
+            const now = Date.now();
+            if (now - lastMove < 8) return;
+            lastMove = now;
             const rect = overlayEl.getBoundingClientRect();
             if (rect.width === 0) return;
             const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));

@@ -74,6 +74,15 @@ ${outputBuffer}`));
                 });
             });
         }
+        try {
+            const containerId = execSync(`docker ps -q --filter "ancestor=danchitnis/llrdc" --filter "publish=${PORT}"`).toString().trim();
+            if (containerId) {
+                console.log(`Killing docker container ${containerId}...`);
+                execSync(`docker kill ${containerId}`);
+            }
+        } catch (e) {
+            console.error('Failed to kill docker container:', e);
+        }
         killPort(PORT);
     });
 
@@ -113,22 +122,14 @@ ${outputBuffer}`));
             await page.waitForTimeout(3000);
 
             await expect.poll(async () => {
-                return await page.evaluate(() => {
-                    const v = document.getElementById('webrtc-video') as HTMLVideoElement;
-                    return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats ? window.getStats().totalDecoded : 0);
-                });
+                return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
             }, {
-                message: 'Video should have resumed decoding frames after 15 FPS switch',
+                message: 'Video FPS should reach at least 10 after 15 FPS switch',
                 timeout: 10000,
-            }).toBeGreaterThan(framesBeforeConfig + 5);
+            }).toBeGreaterThan(10);
         });
 
         await test.step('Switch framerate to 60 FPS', async () => {
-            const framesBeforeConfig2 = await page.evaluate(() => {
-                const v = document.getElementById('webrtc-video') as HTMLVideoElement;
-                return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats().totalDecoded || 0);
-            });
-
             const selectLocator = page.locator('#framerate-select');
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
             await selectLocator.selectOption('60');
@@ -136,18 +137,80 @@ ${outputBuffer}`));
             await page.waitForTimeout(3000);
 
             await expect.poll(async () => {
-                return await page.evaluate(() => {
-                    const v = document.getElementById('webrtc-video') as HTMLVideoElement;
-                    return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats ? window.getStats().totalDecoded : 0);
-                });
+                return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
             }, {
-                message: 'Video should have resumed decoding frames after 60 FPS switch',
+                message: 'Video FPS should reach at least 45 after 60 FPS switch',
                 timeout: 10000,
-            }).toBeGreaterThan(framesBeforeConfig2 + 5);
+            }).toBeGreaterThan(45);
+        });
+
+        await test.step('Switch framerate to 90 FPS', async () => {
+            const selectLocator = page.locator('#framerate-select');
+            await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await selectLocator.selectOption('90');
+
+            await page.waitForTimeout(3000);
+
+            // Spawn xeyes and move mouse to generate load
+            await page.evaluate(() => {
+                const ws = new WebSocket(window.location.href.replace('http', 'ws'));
+                ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
+            });
+            await page.waitForTimeout(1000);
+
+            const overlayBox = await page.locator('#input-overlay').boundingBox();
+            if (overlayBox) {
+                await page.mouse.move(overlayBox.x + 100, overlayBox.y + 100);
+                await page.mouse.down();
+                await page.mouse.move(overlayBox.x + 600, overlayBox.y + 500, { steps: 100 });
+                await page.mouse.up();
+                await page.mouse.move(overlayBox.x + 200, overlayBox.y + 200, { steps: 100 });
+            }
+
+            await expect.poll(async () => {
+                return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
+            }, {
+                message: 'Video FPS should reach at least 70 after 90 FPS switch',
+                timeout: 10000,
+            }).toBeGreaterThan(70);
+        });
+
+        await test.step('Switch framerate to 120 FPS', async () => {
+            const selectLocator = page.locator('#framerate-select');
+            await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await selectLocator.selectOption('120');
+
+            await page.waitForTimeout(3000);
+
+            // Spawn xeyes and move mouse to generate load
+            await page.evaluate(() => {
+                const ws = new WebSocket(window.location.href.replace('http', 'ws'));
+                ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
+            });
+            await page.waitForTimeout(1000);
+
+            const overlayBox = await page.locator('#input-overlay').boundingBox();
+            if (overlayBox) {
+                await page.mouse.move(overlayBox.x + 100, overlayBox.y + 100);
+                await page.mouse.down();
+                await page.mouse.move(overlayBox.x + 600, overlayBox.y + 500, { steps: 100 });
+                await page.mouse.up();
+                await page.mouse.move(overlayBox.x + 200, overlayBox.y + 200, { steps: 100 });
+            }
+
+            await expect.poll(async () => {
+                return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
+            }, {
+                message: 'Video FPS should reach at least 90 after 120 FPS switch',
+                timeout: 10000,
+            }).toBeGreaterThan(90);
         });
 
         // Assert Server Output reflects the framerate change config 
         expect(outputBuffer).toContain('Target framerate changed to 15 fps, restarting ffmpeg...');
         expect(outputBuffer).toContain('Target framerate changed to 60 fps, restarting ffmpeg...');
+        expect(outputBuffer).toContain('Target framerate changed to 90 fps, restarting ffmpeg...');
+        expect(outputBuffer).toContain('Target framerate changed to 120 fps, restarting ffmpeg...');
+        expect(outputBuffer).not.toContain('WARNING: webrtcFrameChan is full');
     });
 });

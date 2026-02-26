@@ -51,6 +51,7 @@ func SetFramerate(fps int) {
 	defer ffmpegMutex.Unlock()
 
 	FPS = fps
+	ResetWebRTCSampleTime()
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
@@ -109,7 +110,7 @@ func startStreaming(onFrame func([]byte)) {
 					"-minrate", bitrateStr,
 					"-maxrate", bitrateStr,
 					"-bufsize", bufSizeStr,
-					"-crf", "10",
+					"-crf", "20",
 				)
 			} else {
 				// Quality mode: Map 10-100 to crf 50-4
@@ -136,11 +137,19 @@ func startStreaming(onFrame func([]byte)) {
 				)
 			}
 
+			// Scale cpu-used for high frame rates: max speed (8) at >=60fps
+			cpuUsed := "6"
+			if fps >= 60 {
+				cpuUsed = "8"
+			}
+
 			outputArgs = append(outputArgs,
+				"-lag-in-frames", "0",
+				"-error-resilient", "1",
 				"-rc_lookahead", "0",
 				"-g", fmt.Sprintf("%d", fps),
 				"-deadline", "realtime",
-				"-cpu-used", "6",
+				"-cpu-used", cpuUsed,
 				"-threads", "4",
 				"-speed", "8",
 				"-flush_packets", "1",
@@ -156,6 +165,9 @@ func startStreaming(onFrame func([]byte)) {
 				"-fflags", "nobuffer",
 				"-threads", "2",
 			}, inputArgs...)
+			// Add -vsync drop so ffmpeg drops frames when encoder can't keep up
+			args = append(args, "-vsync", "drop")
+			log.Printf("ffmpeg args: %v", args)
 			args = append(args, outputArgs...)
 
 			cmd := exec.Command(ffmpegPath, args...)

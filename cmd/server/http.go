@@ -20,8 +20,15 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+type Client struct {
+	conn        *websocket.Conn
+	mu          sync.Mutex
+	sendChan    chan []byte
+	webrtcReady bool
+}
+
 var clientsMutex sync.Mutex
-var clients = make(map[*websocket.Conn]bool)
+var clients = make(map[*websocket.Conn]*Client)
 
 func startHTTPServer() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -68,10 +75,10 @@ func startHTTPServer() {
 }
 
 func broadcastIVFFrame(frame []byte) {
-	// Copy frame for async WebRTC delivery so we don't block the IVF reader
+	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
 	webrtcCopy := make([]byte, len(frame))
 	copy(webrtcCopy, frame)
-	go WriteWebRTCFrame(webrtcCopy)
+	WriteWebRTCFrame(webrtcCopy)
 
 	timestamp := float64(time.Now().UnixNano()) / float64(time.Millisecond)
 	header := make([]byte, 9)
@@ -82,8 +89,15 @@ func broadcastIVFFrame(frame []byte) {
 
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
-	for client := range clients {
-		_ = client.WriteMessage(websocket.BinaryMessage, packet)
+	for _, client := range clients {
+		if client.webrtcReady {
+			continue // Skip sending heavy binary frames if WebRTC is handling it
+		}
+		select {
+		case client.sendChan <- packet:
+		default:
+			// Drop frame if client websocket buffer is full to prevent blocking ffmpeg
+		}
 	}
 }
 
@@ -97,8 +111,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Client connected from %s", r.RemoteAddr)
 
+	client := &Client{
+		conn:     conn,
+		sendChan: make(chan []byte, 300),
+	}
+
 	clientsMutex.Lock()
-	clients[conn] = true
+	clients[conn] = client
 	clientsMutex.Unlock()
 
 	defer func() {
@@ -107,11 +126,19 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		clientsMutex.Unlock()
 	}()
 
-	var connMutex sync.Mutex
+	// Background worker for non-blocking websocket writes
+	go func() {
+		for packet := range client.sendChan {
+			client.mu.Lock()
+			_ = client.conn.WriteMessage(websocket.BinaryMessage, packet)
+			client.mu.Unlock()
+		}
+	}()
+
 	writeJSON := func(v interface{}) error {
-		connMutex.Lock()
-		defer connMutex.Unlock()
-		return conn.WriteJSON(v)
+		client.mu.Lock()
+		defer client.mu.Unlock()
+		return client.conn.WriteJSON(v)
 	}
 
 	var pc *webrtc.PeerConnection
@@ -161,20 +188,52 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		case "config":
+			hasBwOrQuality := false
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
+				hasBwOrQuality = true
 				bw := int(bwFloat)
 				log.Printf("Received bandwidth config: %d Mbps", bw)
+				// If framerate is also changing, set FPS first (without kill) so the
+				// restarted ffmpeg picks up the new fps immediately.
+				if fpsFloat, ok2 := msg["framerate"].(float64); ok2 {
+					fps := int(fpsFloat)
+					log.Printf("Received framerate config: %d fps", fps)
+					ffmpegMutex.Lock()
+					FPS = fps
+					ResetWebRTCSampleTime()
+					log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
+					ffmpegMutex.Unlock()
+				}
 				SetBandwidth(bw)
 			} else if qFloat, ok := msg["quality"].(float64); ok {
+				hasBwOrQuality = true
 				q := int(qFloat)
 				log.Printf("Received quality config: %d", q)
+				if fpsFloat, ok2 := msg["framerate"].(float64); ok2 {
+					fps := int(fpsFloat)
+					log.Printf("Received framerate config: %d fps", fps)
+					ffmpegMutex.Lock()
+					FPS = fps
+					ResetWebRTCSampleTime()
+					log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
+					ffmpegMutex.Unlock()
+				}
 				SetQuality(q)
 			}
-			if fpsFloat, ok := msg["framerate"].(float64); ok {
-				fps := int(fpsFloat)
-				log.Printf("Received framerate config: %d fps", fps)
-				SetFramerate(fps)
+			if !hasBwOrQuality {
+				if fpsFloat, ok := msg["framerate"].(float64); ok {
+					fps := int(fpsFloat)
+					log.Printf("Received framerate config: %d fps", fps)
+					SetFramerate(fps)
+				}
 			}
+		case "webrtc_ready":
+			log.Printf("Client WebRTC ready, stopping fallback websocket video transmission")
+			clientsMutex.Lock()
+			if c, ok := clients[conn]; ok {
+				c.webrtcReady = true
+			}
+			clientsMutex.Unlock()
 		case "ping":
 			if ts, ok := msg["timestamp"].(float64); ok {
 				resp := map[string]interface{}{"type": "pong", "timestamp": ts}
