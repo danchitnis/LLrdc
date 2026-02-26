@@ -44,7 +44,7 @@ func startX11(displayNum string) error {
 	os.Remove(socketPath)
 
 	// Start Xvfb
-	xvfb := exec.Command("Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp", "-ac", "+extension", "RANDR")
+	xvfb := exec.Command("Xvfb", display, "-screen", "0", "3840x2160x24", "-nolisten", "tcp", "-ac", "+extension", "RANDR")
 	xvfb.Stdout = os.Stdout
 	xvfb.Stderr = os.Stderr
 	if err := xvfb.Start(); err != nil {
