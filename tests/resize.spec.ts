@@ -131,9 +131,15 @@ test('resizes desktop to match browser window', async ({ page }) => {
         timeout: 20000
     }).toBeGreaterThan(0);
 
-    const initialSizes = await getDisplaySizes(page);
-    expect(Math.abs(initialSizes.canvasW - initialSizes.expectedW)).toBeLessThanOrEqual(2);
-    expect(Math.abs(initialSizes.canvasH - initialSizes.expectedH)).toBeLessThanOrEqual(2);
+    await expect.poll(async () => {
+        const sizes = await getDisplaySizes(page);
+        const widthOk = Math.abs(sizes.canvasW - sizes.expectedW) <= 2;
+        const heightOk = Math.abs(sizes.canvasH - sizes.expectedH) <= 2;
+        return widthOk && heightOk;
+    }, {
+        message: 'Canvas size should match initial viewport',
+        timeout: 20000
+    }).toBe(true);
 
     await page.setViewportSize({ width: 900, height: 700 });
 

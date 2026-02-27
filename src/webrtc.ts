@@ -10,6 +10,7 @@ export class WebRTCManager {
     private lastVideoFrameTime = 0;
     private frameCount = 0;
     private lastTotalDecoded = 0;
+    private lastStatsTime = 0;
     private lastFPSUpdate = Date.now();
     private getLatencyMonitor: () => number;
     private lastBytesReceived = 0;
@@ -32,6 +33,7 @@ export class WebRTCManager {
         }
         this.isWebRtcActive = false;
         this.lastTotalDecoded = -1;
+        this.lastStatsTime = 0;
         this.hasSentWebrtcReady = false;
         this.rtcPeer = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -100,12 +102,16 @@ export class WebRTCManager {
         if (!this.isWebRtcActive) return;
         if (ctx && videoEl.videoWidth > 0) {
             if (metadata) {
-                if (metadata.mediaTime !== this.lastVideoFrameTime) {
-                    this.lastVideoFrameTime = metadata.mediaTime;
+                // requestVideoFrameCallback natively throttles to the video frame rate.
+                // Safari WebKit has a bug where metadata.mediaTime is always 0 for WebRTC,
+                // so we simply count every callback invocation as a new frame.
+                this.frameCount++;
+            } else {
+                // requestAnimationFrame fallback: deduplicate using currentTime
+                if (videoEl.currentTime !== this.lastVideoFrameTime) {
+                    this.lastVideoFrameTime = videoEl.currentTime;
                     this.frameCount++;
                 }
-            } else {
-                this.frameCount++;
             }
 
             if (displayEl.width !== videoEl.videoWidth || displayEl.height !== videoEl.videoHeight) {
@@ -126,10 +132,18 @@ export class WebRTCManager {
     private pollStats() {
         if (!this.isWebRtcActive || !this.rtcPeer) return;
         this.rtcPeer.getStats(null).then(stats => {
+            const now = Date.now();
+            const deltaMs = this.lastStatsTime === 0 ? 1000 : now - this.lastStatsTime;
+            this.lastStatsTime = now;
+
             let bytesReceived = 0;
+            let framesDecoded = -1;
             stats.forEach(report => {
                 if (report.type === 'inbound-rtp' && report.kind === 'video') {
                     bytesReceived = report.bytesReceived;
+                    if (report.framesDecoded !== undefined) {
+                        framesDecoded = report.framesDecoded;
+                    }
                 }
                 if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime !== undefined) {
                     this.webrtcLatency = Math.round(report.currentRoundTripTime * 1000);
@@ -139,9 +153,17 @@ export class WebRTCManager {
             if (this.lastBytesReceived > 0 && bytesReceived > this.lastBytesReceived) {
                 const deltaBytes = bytesReceived - this.lastBytesReceived;
                 const bits = deltaBytes * 8;
-                this.bandwidthMbps = bits / 1000000;
+                this.bandwidthMbps = bits / (deltaMs / 1000) / 1000000;
             }
             this.lastBytesReceived = bytesReceived;
+
+            if (framesDecoded !== -1) {
+                if (this.lastTotalDecoded !== -1) {
+                    const decodedDelta = framesDecoded - this.lastTotalDecoded;
+                    this.fps = Math.round((decodedDelta * 1000) / deltaMs);
+                }
+                this.lastTotalDecoded = framesDecoded;
+            }
         }).catch(() => {});
     }
 
@@ -149,23 +171,19 @@ export class WebRTCManager {
         const now = Date.now();
         const deltaMs = now - this.lastFPSUpdate;
         if (deltaMs >= 1000) {
-            if (videoEl && videoEl.getVideoPlaybackQuality) {
-                const total = videoEl.getVideoPlaybackQuality().totalVideoFrames;
-                if (this.lastTotalDecoded === -1) {
-                    this.lastTotalDecoded = total;
-                }
-                this.fps = total - this.lastTotalDecoded;
-                this.lastTotalDecoded = total;
-                
-                if (total > 0 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
-                    this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
-                    this.hasSentWebrtcReady = true;
-                }
-            } else {
-                this.fps = this.frameCount;
+            // Only use frameCount fallback if RTC stats haven't initialized
+            if (this.lastTotalDecoded === -1) {
+                this.fps = Math.round((this.frameCount * 1000) / deltaMs);
             }
+            
+            if (this.fps > 0 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
+                this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
+                this.hasSentWebrtcReady = true;
+            }
+            
             this.frameCount = 0;
             this.lastFPSUpdate = now;
+            
             const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
             updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight);
         }
