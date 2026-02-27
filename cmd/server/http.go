@@ -75,13 +75,14 @@ func startHTTPServer() {
 	}
 }
 
-func broadcastIVFFrame(frame []byte) {
+func broadcastIVFFrame(frame []byte, streamID uint32) {
+	captureTime := time.Now()
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
 	webrtcCopy := make([]byte, len(frame))
 	copy(webrtcCopy, frame)
-	WriteWebRTCFrame(webrtcCopy)
+	WriteWebRTCFrame(webrtcCopy, streamID, captureTime)
 
-	timestamp := float64(time.Now().UnixNano()) / float64(time.Millisecond)
+	timestamp := float64(captureTime.UnixNano()) / float64(time.Millisecond)
 	header := make([]byte, 9)
 	header[0] = 1 // Video Type
 	binary.BigEndian.PutUint64(header[1:], math.Float64bits(timestamp))
@@ -206,6 +207,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		case "config":
 			hasBwOrQuality := false
+			if vbrBool, ok := msg["vbr"].(bool); ok {
+				log.Printf("Received VBR config: %v", vbrBool)
+				SetVBR(vbrBool)
+			}
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
 				hasBwOrQuality = true
 				bw := int(bwFloat)
@@ -217,7 +222,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					log.Printf("Received framerate config: %d fps", fps)
 					ffmpegMutex.Lock()
 					FPS = fps
-					ResetWebRTCSampleTime()
 					log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
 					ffmpegMutex.Unlock()
 				}
@@ -231,7 +235,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					log.Printf("Received framerate config: %d fps", fps)
 					ffmpegMutex.Lock()
 					FPS = fps
-					ResetWebRTCSampleTime()
 					log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
 					ffmpegMutex.Unlock()
 				}

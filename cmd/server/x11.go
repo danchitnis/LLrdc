@@ -67,6 +67,16 @@ func startX11(displayNum string) error {
 	runWithEnv("xset", []string{"-dpms"}, env)
 	runWithEnv("xset", []string{"s", "noblank"}, env)
 
+	// In tests, we sometimes want a *truly static* screen so the encoder can drop
+	// identical frames. XFCE introduces periodic repaints (clock/panel/etc) which
+	// can prevent the stream from ever going idle.
+	if os.Getenv("TEST_MINIMAL_X11") != "" {
+		log.Println("TEST_MINIMAL_X11 mode: skipping xfce4-session.")
+		// Best-effort: set a solid root background if xsetroot exists.
+		_ = runWithEnv("xsetroot", []string{"-solid", "#000000"}, env)
+		return nil
+	}
+
 	// Start XFCE
 	log.Println("Starting xfce4-session...")
 	session := exec.Command("dbus-run-session", "xfce4-session")

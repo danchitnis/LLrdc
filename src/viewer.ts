@@ -1,4 +1,4 @@
-import { bandwidthSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, displayContainerEl } from './ui';
+import { bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, displayContainerEl } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -44,6 +44,7 @@ interface ConfigMessage {
     bandwidth?: number;
     quality?: number;
     framerate?: number;
+    vbr?: boolean;
 }
 
 function sendConfig() {
@@ -62,6 +63,9 @@ function sendConfig() {
         config.quality = parseInt(qualitySlider.value, 10);
     }
     config.framerate = parseInt(framerateSelect.value, 10);
+    if (vbrCheckbox) {
+        config.vbr = vbrCheckbox.checked;
+    }
 
     network.sendMsg(JSON.stringify(config));
     if (webrtc.isWebRtcActive) {
@@ -79,6 +83,7 @@ for (const radio of targetTypeRadios) {
     radio.addEventListener('change', () => {
         const isBandwidth = radio.value === 'bandwidth';
         bandwidthSelect.disabled = !isBandwidth;
+        if (vbrCheckbox) vbrCheckbox.disabled = !isBandwidth;
         qualitySlider.disabled = isBandwidth;
         sendConfig();
     });
@@ -86,6 +91,10 @@ for (const radio of targetTypeRadios) {
 
 if (bandwidthSelect) {
     bandwidthSelect.addEventListener('change', sendConfig);
+}
+
+if (vbrCheckbox) {
+    vbrCheckbox.addEventListener('change', sendConfig);
 }
 
 if (qualitySlider && qualityValue) {

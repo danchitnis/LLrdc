@@ -27,7 +27,7 @@ export class WebRTCManager {
 
     public initWebRTC() {
         if (this.statsInterval) clearInterval(this.statsInterval);
-        
+
         if (this.rtcPeer) {
             this.rtcPeer.close();
         }
@@ -149,11 +149,15 @@ export class WebRTCManager {
                     this.webrtcLatency = Math.round(report.currentRoundTripTime * 1000);
                 }
             });
-            
+
             if (this.lastBytesReceived > 0 && bytesReceived > this.lastBytesReceived) {
                 const deltaBytes = bytesReceived - this.lastBytesReceived;
                 const bits = deltaBytes * 8;
                 this.bandwidthMbps = bits / (deltaMs / 1000) / 1000000;
+            } else if (this.lastBytesReceived > 0 && bytesReceived === this.lastBytesReceived) {
+                // No new inbound video bytes since the previous sample window.
+                // Treat as 0 Mbps for UI/testing instead of holding the last non-zero value.
+                this.bandwidthMbps = 0;
             }
             this.lastBytesReceived = bytesReceived;
 
@@ -164,7 +168,7 @@ export class WebRTCManager {
                 }
                 this.lastTotalDecoded = framesDecoded;
             }
-        }).catch(() => {});
+        }).catch(() => { });
     }
 
     private updateStats() {
@@ -175,15 +179,15 @@ export class WebRTCManager {
             if (this.lastTotalDecoded === -1) {
                 this.fps = Math.round((this.frameCount * 1000) / deltaMs);
             }
-            
+
             if (this.fps > 0 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
                 this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
                 this.hasSentWebrtcReady = true;
             }
-            
+
             this.frameCount = 0;
             this.lastFPSUpdate = now;
-            
+
             const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
             updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight);
         }

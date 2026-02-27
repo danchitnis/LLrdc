@@ -15,10 +15,24 @@ var (
 	targetMode          = "bandwidth" // "bandwidth" or "quality"
 	targetBandwidthMbps = 5           // Initial default: 5 Mbps
 	targetQuality       = 70          // 10-100
+	targetVBR           = true        // Default VBR to true
 	ffmpegCmd           *exec.Cmd
 	ffmpegMutex         sync.Mutex
 	ffmpegShouldRun     = true
+	ffmpegStreamID      uint32
 )
+
+func SetVBR(vbr bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	targetVBR = vbr
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target VBR changed to %v, restarting ffmpeg...", vbr)
+		ffmpegCmd.Process.Kill()
+	}
+}
 
 func SetBandwidth(bwMbps int) {
 	ffmpegMutex.Lock()
@@ -51,7 +65,6 @@ func SetFramerate(fps int) {
 	defer ffmpegMutex.Unlock()
 
 	FPS = fps
-	ResetWebRTCSampleTime()
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
@@ -63,14 +76,13 @@ func RestartForResize() {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
 
-	ResetWebRTCSampleTime()
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Println("Screen size changed, restarting ffmpeg...")
 		ffmpegCmd.Process.Kill()
 	}
 }
 
-func startStreaming(onFrame func([]byte)) {
+func startStreaming(onFrame func([]byte, uint32)) {
 	ffmpegPath := "/app/bin/ffmpeg"
 	if _, err := os.Stat(ffmpegPath); os.IsNotExist(err) {
 		log.Println("Warning: /app/bin/ffmpeg not found, relying on system PATH")
@@ -98,19 +110,27 @@ func startStreaming(onFrame func([]byte)) {
 			bw := targetBandwidthMbps
 			quality := targetQuality
 			fps := FPS
+			vbr := targetVBR
 			ffmpegMutex.Unlock()
 
 			width, height := GetScreenSize()
 			size := fmt.Sprintf("%dx%d", width, height)
-			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-video_size", size, "-i", Display + ".0"}
+			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-draw_mouse", "1", "-video_size", size, "-i", Display + ".0"}
 			if os.Getenv("TEST_PATTERN") != "" {
 				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
 
 			outputArgs := []string{
 				"-pix_fmt", "yuv420p",
-				"-c:v", "libvpx",
 			}
+
+			if vbr {
+				// Drop near-identical frames so static screens don't waste bandwidth.
+				// max=15 ensures we keep at least ~2 fps so the WebRTC connection doesn't time out and stall.
+				outputArgs = append(outputArgs, "-vf", "mpdecimate=max=15")
+			}
+
+			outputArgs = append(outputArgs, "-c:v", "libvpx")
 
 			if mode == "bandwidth" {
 				// Format bitrate dynamically,e.g 5 Mbps = "5000k"
@@ -119,11 +139,16 @@ func startStreaming(onFrame func([]byte)) {
 				bufSizeStr := fmt.Sprintf("%dk", bw*200)
 
 				outputArgs = append(outputArgs,
+					// IMPORTANT: Do NOT force strict CBR. In practice, libvpx achieves
+					// a much more "VBR-like" behavior for remote-desktop content when
+					// using CRF (constrained-quality) and allowing the encoder to spend
+					// fewer bits on static frames.
+					// `-b:v` acts as a target/cap here.
 					"-b:v", bitrateStr,
-					"-minrate", bitrateStr,
 					"-maxrate", bitrateStr,
 					"-bufsize", bufSizeStr,
 					"-crf", "20",
+					"-static-thresh", "1000",
 				)
 			} else {
 				// Quality mode: Map 10-100 to crf 50-4
@@ -196,6 +221,8 @@ func startStreaming(onFrame func([]byte)) {
 			}
 
 			ffmpegMutex.Lock()
+			ffmpegStreamID++
+			currentStreamID := ffmpegStreamID
 			ffmpegCmd = cmd
 			ffmpegMutex.Unlock()
 
@@ -220,7 +247,9 @@ func startStreaming(onFrame func([]byte)) {
 			// Start IVF splitting in a bounded way
 			doneCh := make(chan struct{})
 			go func() {
-				splitIVF(stdout, onFrame)
+				splitIVF(stdout, func(frame []byte) {
+					onFrame(frame, currentStreamID)
+				})
 				close(doneCh)
 			}()
 

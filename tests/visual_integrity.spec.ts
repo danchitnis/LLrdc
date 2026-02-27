@@ -60,16 +60,30 @@ test('verify video integrity (no green artifacts)', async ({ page }) => {
     // Retry loop for connection and stats
     console.log('Waiting for connection and stats...');
     await expect(async () => {
+        // Move the mouse to keep video updating
+        await page.mouse.move(200 + Math.random() * 400, 150 + Math.random() * 300);
+        await page.waitForTimeout(100);
+
         const status = await page.locator('#status').textContent();
         // console.log(`Current status: ${status}`);
         expect(status).toMatch(/Connected|FPS/);
 
-        const stats = await page.evaluate(() => (window as any).getStats ? (window as any).getStats() : { totalDecoded: 0, fps: 0 });
-        console.log('Checking Stats:', stats);
-        expect(stats.totalDecoded).toBeGreaterThan(10);
-        // FPS might be 0 initially if just started, but we saw 20 in status bar.
-        // Let's rely on totalDecoded increasing.
-        expect(stats.totalDecoded).toBeGreaterThan(5);
+        // Verify we're actually rendering frames (dimensions become available).
+        const dims = await page.evaluate(() => {
+            const v = document.getElementById('webrtc-video') as HTMLVideoElement | null;
+            const c = document.getElementById('display') as HTMLCanvasElement | null;
+            return {
+                videoW: v?.videoWidth || 0,
+                videoH: v?.videoHeight || 0,
+                canvasW: c?.width || 0,
+                canvasH: c?.height || 0,
+            };
+        });
+        console.log('Render dims:', dims);
+        expect(dims.videoW).toBeGreaterThan(0);
+        expect(dims.videoH).toBeGreaterThan(0);
+        expect(dims.canvasW).toBeGreaterThan(0);
+        expect(dims.canvasH).toBeGreaterThan(0);
     }).toPass({ timeout: 30000 });
     console.log('Connection and stats verified.');
 

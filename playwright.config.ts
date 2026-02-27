@@ -2,20 +2,17 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true,
+  // Run tests serially to avoid multiple concurrent Docker containers.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  // Always run with a single worker to ensure one test file at a time.
+  workers: 1,
+  // Use a CLI reporter so the test run exits cleanly (no HTML report server).
+  reporter: 'line',
   use: {
     trace: 'on-first-retry',
     video: 'on',
-  },
-  webServer: {
-    command: 'npm start',
-    url: 'http://127.0.0.1:8080',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
   },
   projects: [
     {
