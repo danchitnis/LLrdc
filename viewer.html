@@ -15,33 +15,62 @@
         <div id="config-container">
             <button id="config-btn">⚙️ Config</button>
             <div id="config-dropdown" class="hidden">
-                <div class="config-group">
-                    <label><input type="radio" name="target-type" value="bandwidth" checked> Target Bandwidth</label>
-                    <select id="bandwidth-select">
-                        <option value="1">1 Mbps</option>
-                        <option value="5" selected>5 Mbps</option>
-                        <option value="10">10 Mbps</option>
-                        <option value="20">20 Mbps</option>
-                        <option value="50">50 Mbps</option>
-                    </select>
+                <div class="config-tabs">
+                    <button class="config-tab-btn active" data-tab="tab-bandwidth">Bandwidth</button>
+                    <button class="config-tab-btn" data-tab="tab-cpu">CPU</button>
+                    <button class="config-tab-btn" data-tab="tab-mouse">Mouse</button>
                 </div>
-                <div class="config-group" style="padding-top: 5px;">
-                    <label><input type="checkbox" id="vbr-checkbox" checked> Enable Variable Bitrate (VBR)</label>
+                <div id="tab-bandwidth" class="config-tab-content active">
+                    <div class="config-group">
+                        <label><input type="radio" name="target-type" value="bandwidth" checked> Target Bandwidth</label>
+                        <select id="bandwidth-select">
+                            <option value="1">1 Mbps</option>
+                            <option value="5" selected>5 Mbps</option>
+                            <option value="10">10 Mbps</option>
+                            <option value="20">20 Mbps</option>
+                            <option value="50">50 Mbps</option>
+                        </select>
+                    </div>
+                    <div class="config-group" style="padding-top: 5px;">
+                        <label><input type="checkbox" id="vbr-checkbox" checked> Enable Variable Bitrate (VBR)</label>
+                    </div>
+                    <div class="config-group">
+                        <label><input type="radio" name="target-type" value="quality"> Target Quality</label>
+                        <input type="range" id="quality-slider" min="10" max="100" value="70" disabled>
+                        <span id="quality-value">70</span>
+                    </div>
+                    <div class="config-group">
+                        <label>Frame Rate</label>
+                        <select id="framerate-select">
+                            <option value="15">15 FPS</option>
+                            <option value="30" selected>30 FPS</option>
+                            <option value="60">60 FPS</option>
+                            <option value="90">90 FPS</option>
+                            <option value="120">120 FPS</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="config-group">
-                    <label><input type="radio" name="target-type" value="quality"> Target Quality</label>
-                    <input type="range" id="quality-slider" min="10" max="100" value="70" disabled>
-                    <span id="quality-value">70</span>
+                <div id="tab-cpu" class="config-tab-content" style="display: none;">
+                    <div class="config-group">
+                        <label>CPU Effort</label>
+                        <input type="range" id="cpu-effort-slider" min="0" max="8" value="6">
+                        <span id="cpu-effort-value">6</span>
+                    </div>
+                    <div class="config-group">
+                        <label>CPU Threads</label>
+                        <select id="cpu-threads-select">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="4" selected>4</option>
+                            <option value="8">8</option>
+                            <option value="16">16</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="config-group">
-                    <label>Frame Rate</label>
-                    <select id="framerate-select">
-                        <option value="15">15 FPS</option>
-                        <option value="30" selected>30 FPS</option>
-                        <option value="60">60 FPS</option>
-                        <option value="90">90 FPS</option>
-                        <option value="120">120 FPS</option>
-                    </select>
+                <div id="tab-mouse" class="config-tab-content" style="display: none;">
+                    <div class="config-group">
+                        <label><input type="checkbox" id="desktop-mouse-checkbox" checked> Enable Desktop Mouse</label>
+                    </div>
                 </div>
             </div>
         </div>

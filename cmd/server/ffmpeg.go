@@ -16,11 +16,50 @@ var (
 	targetBandwidthMbps = 5           // Initial default: 5 Mbps
 	targetQuality       = 70          // 10-100
 	targetVBR           = true        // Default VBR to true
+	targetCpuEffort     = 6           // Default: 6
+	targetCpuThreads    = 4           // Default: 4
+	targetDrawMouse     = true        // Default: true
 	ffmpegCmd           *exec.Cmd
 	ffmpegMutex         sync.Mutex
 	ffmpegShouldRun     = true
 	ffmpegStreamID      uint32
 )
+
+func SetCpuEffort(effort int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	targetCpuEffort = effort
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target CPU effort changed to %d, restarting ffmpeg...", effort)
+		ffmpegCmd.Process.Kill()
+	}
+}
+
+func SetCpuThreads(threads int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	targetCpuThreads = threads
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target CPU threads changed to %d, restarting ffmpeg...", threads)
+		ffmpegCmd.Process.Kill()
+	}
+}
+
+func SetDrawMouse(draw bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	targetDrawMouse = draw
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target draw mouse changed to %v, restarting ffmpeg...", draw)
+		ffmpegCmd.Process.Kill()
+	}
+}
 
 func SetVBR(vbr bool) {
 	ffmpegMutex.Lock()
@@ -111,11 +150,20 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			quality := targetQuality
 			fps := FPS
 			vbr := targetVBR
+			cpuEffort := targetCpuEffort
+			cpuThreads := targetCpuThreads
+			drawMouse := targetDrawMouse
 			ffmpegMutex.Unlock()
 
 			width, height := GetScreenSize()
 			size := fmt.Sprintf("%dx%d", width, height)
-			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-draw_mouse", "1", "-video_size", size, "-i", Display + ".0"}
+			
+			drawMouseStr := "0"
+			if drawMouse {
+				drawMouseStr = "1"
+			}
+			
+			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-draw_mouse", drawMouseStr, "-video_size", size, "-i", Display + ".0"}
 			if os.Getenv("TEST_PATTERN") != "" {
 				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
@@ -175,11 +223,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				)
 			}
 
-			// Scale cpu-used for high frame rates: max speed (8) at >=60fps
-			cpuUsed := "6"
-			if fps >= 60 {
-				cpuUsed = "8"
-			}
+			cpuUsedStr := fmt.Sprintf("%d", cpuEffort)
 
 			outputArgs = append(outputArgs,
 				"-lag-in-frames", "0",
@@ -187,8 +231,8 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				"-rc_lookahead", "0",
 				"-g", fmt.Sprintf("%d", fps),
 				"-deadline", "realtime",
-				"-cpu-used", cpuUsed,
-				"-threads", "4",
+				"-cpu-used", cpuUsedStr,
+				"-threads", fmt.Sprintf("%d", cpuThreads),
 				"-speed", "8",
 				"-flush_packets", "1",
 				"-f", "ivf",

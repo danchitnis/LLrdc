@@ -1,4 +1,4 @@
-import { bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, displayContainerEl } from './ui';
+import { bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -45,6 +45,9 @@ interface ConfigMessage {
     quality?: number;
     framerate?: number;
     vbr?: boolean;
+    cpu_effort?: number;
+    cpu_threads?: number;
+    enable_desktop_mouse?: boolean;
 }
 
 function sendConfig() {
@@ -65,6 +68,15 @@ function sendConfig() {
     config.framerate = parseInt(framerateSelect.value, 10);
     if (vbrCheckbox) {
         config.vbr = vbrCheckbox.checked;
+    }
+    if (cpuEffortSlider) {
+        config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
+    }
+    if (cpuThreadsSelect) {
+        config.cpu_threads = parseInt(cpuThreadsSelect.value, 10);
+    }
+    if (desktopMouseCheckbox) {
+        config.enable_desktop_mouse = desktopMouseCheckbox.checked;
     }
 
     network.sendMsg(JSON.stringify(config));
@@ -106,6 +118,45 @@ if (qualitySlider && qualityValue) {
 
 if (framerateSelect) {
     framerateSelect.addEventListener('change', sendConfig);
+}
+
+if (configTabBtns) {
+    configTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Remove active class from all buttons and content
+            configTabBtns.forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.config-tab-content').forEach(c => {
+                (c as HTMLElement).style.display = 'none';
+                c.classList.remove('active');
+            });
+
+            // Add active class to clicked button and target content
+            btn.classList.add('active');
+            const targetId = btn.getAttribute('data-tab');
+            if (targetId) {
+                const targetContent = document.getElementById(targetId);
+                if (targetContent) {
+                    targetContent.style.display = 'flex';
+                    targetContent.classList.add('active');
+                }
+            }
+        });
+    });
+}
+
+if (cpuEffortSlider && cpuEffortValue) {
+    cpuEffortSlider.addEventListener('input', (e) => {
+        cpuEffortValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    cpuEffortSlider.addEventListener('change', sendConfig);
+}
+
+if (cpuThreadsSelect) {
+    cpuThreadsSelect.addEventListener('change', sendConfig);
+}
+
+if (desktopMouseCheckbox) {
+    desktopMouseCheckbox.addEventListener('change', sendConfig);
 }
 
 let lastResizeWidth = 0;

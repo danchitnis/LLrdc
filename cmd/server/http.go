@@ -211,6 +211,20 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Received VBR config: %v", vbrBool)
 				SetVBR(vbrBool)
 			}
+			if effortFloat, ok := msg["cpu_effort"].(float64); ok {
+				effort := int(effortFloat)
+				log.Printf("Received CPU effort config: %d", effort)
+				SetCpuEffort(effort)
+			}
+			if threadsFloat, ok := msg["cpu_threads"].(float64); ok {
+				threads := int(threadsFloat)
+				log.Printf("Received CPU threads config: %d", threads)
+				SetCpuThreads(threads)
+			}
+			if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
+				log.Printf("Received Enable Desktop Mouse config: %v", mouseBool)
+				SetDrawMouse(mouseBool)
+			}
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
 				hasBwOrQuality = true
 				bw := int(bwFloat)

@@ -8,10 +8,16 @@ export const vbrCheckbox = document.getElementById('vbr-checkbox') as HTMLInputE
 
 export const configBtn = document.getElementById('config-btn') as HTMLButtonElement;
 export const configDropdown = document.getElementById('config-dropdown') as HTMLDivElement;
+export const configTabBtns = document.querySelectorAll('.config-tab-btn') as NodeListOf<HTMLButtonElement>;
 export const targetTypeRadios = document.getElementsByName('target-type') as NodeListOf<HTMLInputElement>;
 export const qualitySlider = document.getElementById('quality-slider') as HTMLInputElement;
 export const qualityValue = document.getElementById('quality-value') as HTMLSpanElement;
 export const framerateSelect = document.getElementById('framerate-select') as HTMLSelectElement;
+
+export const cpuEffortSlider = document.getElementById('cpu-effort-slider') as HTMLInputElement;
+export const cpuEffortValue = document.getElementById('cpu-effort-value') as HTMLSpanElement;
+export const cpuThreadsSelect = document.getElementById('cpu-threads-select') as HTMLSelectElement;
+export const desktopMouseCheckbox = document.getElementById('desktop-mouse-checkbox') as HTMLInputElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
 
