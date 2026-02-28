@@ -1,4 +1,4 @@
-import { bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox } from './ui';
+import { bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -120,6 +120,10 @@ if (framerateSelect) {
     framerateSelect.addEventListener('change', sendConfig);
 }
 
+if (maxResSelect) {
+    maxResSelect.addEventListener('change', scheduleResize);
+}
+
 if (configTabBtns) {
     configTabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -168,8 +172,17 @@ function sendResize() {
     const rect = displayContainerEl.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) return;
     const scale = window.devicePixelRatio || 1;
-    const width = Math.max(1, Math.round(rect.width * scale));
-    const height = Math.max(1, Math.round(rect.height * scale));
+    let width = Math.max(1, Math.round(rect.width * scale));
+    let height = Math.max(1, Math.round(rect.height * scale));
+
+    if (maxResSelect) {
+        const maxCap = parseInt(maxResSelect.value, 10);
+        if (maxCap > 0 && height > maxCap) {
+            const ratio = maxCap / height;
+            height = maxCap;
+            width = Math.round(width * ratio);
+        }
+    }
 
     if (width === lastResizeWidth && height === lastResizeHeight) return;
 

@@ -133,9 +133,26 @@ ${outputBuffer}`));
             await page.waitForTimeout(3000);
         });
 
+        await test.step('Switch to Bandwidth tab and adjust Max Resolution to 720p', async () => {
+            const bandwidthTabLocator = page.locator('.config-tab-btn[data-tab="tab-bandwidth"]');
+            await bandwidthTabLocator.click();
+
+            const maxResLocator = page.locator('#max-res-select');
+            await maxResLocator.waitFor({ state: 'visible', timeout: 10000 });
+            
+            // Increase viewport to ensure 720p cap triggers a resize
+            await page.setViewportSize({ width: 1920, height: 1080 });
+            await page.waitForTimeout(1000);
+
+            await maxResLocator.selectOption('720');
+
+            await page.waitForTimeout(3000);
+        });
+
         // Assert Server Output reflects the config changes
         expect(outputBuffer).toContain('Target CPU effort changed to 8, restarting ffmpeg...');
         expect(outputBuffer).toContain('Target CPU threads changed to 8, restarting ffmpeg...');
         expect(outputBuffer).toContain('Target draw mouse changed to false, restarting ffmpeg...');
+        expect(outputBuffer).toMatch(/Received resize: \d+x\d+ \(clamped to \d+x720\)/);
     });
 });
