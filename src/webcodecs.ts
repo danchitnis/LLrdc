@@ -4,6 +4,7 @@ export class WebCodecsManager {
     public totalDecoded = 0;
     public fps = 0;
     public latencyMonitor = 0;
+    public videoCodec = 'vp8';
 
     private frameCount = 0;
     private lastFPSUpdate = Date.now();
@@ -32,8 +33,13 @@ export class WebCodecsManager {
         }
 
         if (!('VideoDecoder' in window)) {
-            log('WebCodecs API not supported. Use Chrome or Edge.');
-            if (statusEl) statusEl.textContent = 'WebCodecs Not Supported';
+            if (!(window as any).isSecureContext) {
+                log('WebCodecs API requires a Secure Context (HTTPS or localhost). Falling back to WebRTC (if available)...');
+                if (!this.getIsWebRtcActive() && statusEl) statusEl.textContent = 'WebCodecs: Requires HTTPS/localhost';
+            } else {
+                log('WebCodecs API not supported by this browser. Use Chrome or Edge.');
+                if (!this.getIsWebRtcActive() && statusEl) statusEl.textContent = 'WebCodecs Not Supported';
+            }
             this.isInitializing = false;
             return;
         }
@@ -50,27 +56,34 @@ export class WebCodecsManager {
             this.decoder = new VideoDecoder({
                 output: (frame) => this.handleFrame(frame),
                 error: (e: Error) => {
-                    log(`Decoder Error: ${e.message}`);
-                    console.error('VideoDecoder Error Details:', e);
-                    if (statusEl) statusEl.textContent = `Decoder Err: ${e.message}`;
+                    log(`WebCodecs Decoder Error: ${e.message}`);
+                    // Only show on UI if we aren't using WebRTC
+                    if (!this.getIsWebRtcActive() && statusEl) {
+                        statusEl.textContent = `Decoder Err: ${e.message}`;
+                    }
 
                     if (this.decoderInitTimeout === null) {
                         this.decoderInitTimeout = setTimeout(() => {
                             this.decoderInitTimeout = null;
                             this.initDecoder();
-                        }, 100);
+                        }, 2000); // Wait longer before retry
                     }
                 }
             });
 
-            this.decoder.configure({
-                codec: 'vp8',
-                optimizeForLatency: true,
-                hardwareAcceleration: 'prefer-software'
-            });
+            const isH264 = this.videoCodec.startsWith('h264');
+            // avc1.42E01F is Baseline profile, level 3.1 - very compatible
+            const codecStr = isH264 ? 'avc1.42E01F' : 'vp8';
 
+            const config: VideoDecoderConfig = {
+                codec: codecStr,
+                optimizeForLatency: true,
+                hardwareAcceleration: isH264 ? 'prefer-hardware' : 'prefer-software'
+            };
+
+            this.decoder.configure(config);
             window.hasReceivedKeyFrame = false;
-            log('Decoder initialized (vp8). Waiting for Keyframe...');
+            log(`Decoder configured (${this.videoCodec}: ${codecStr}). Waiting for Keyframe...`);
         } catch (e: unknown) {
             log('Failed to initialize decoder: ' + (e as Error).message);
             if (statusEl) statusEl.textContent = 'Decoder Init Error';
@@ -107,7 +120,7 @@ export class WebCodecsManager {
             this.fps = this.frameCount;
             this.frameCount = 0;
             this.lastFPSUpdate = now;
-            updateStatusText(this.getIsWebRtcActive(), this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps(), displayEl.width, displayEl.height);
+            updateStatusText(this.getIsWebRtcActive(), this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps(), displayEl.width, displayEl.height, this.videoCodec);
         }
     }
 

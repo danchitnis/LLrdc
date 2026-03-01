@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"math"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -54,9 +53,6 @@ func startHTTPServer() {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
-
-			w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-			w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
 
 			if filepath.Ext(filePath) == ".html" {
 				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -143,23 +139,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return client.conn.WriteJSON(v)
 	}
 
+	// Send initial codec and config to client
+	initialConfig := map[string]interface{}{
+		"type":       "config",
+		"videoCodec": VideoCodec,
+		"framerate":  FPS,
+		"bandwidth":  targetBandwidthMbps,
+		"quality":    targetQuality,
+		"vbr":        targetVBR,
+	}
+	_ = writeJSON(initialConfig)
+
 	var pc *webrtc.PeerConnection
-
-	// Extract the host IP from the request to use as the WebRTC advertised IP
-	hostIP := r.Host
-	if host, _, err := net.SplitHostPort(r.Host); err == nil {
-		hostIP = host
-	}
-
-	// Resolve localhost or hostnames to actual IP because Pion WebRTC strictly requires an IP
-	if ips, err := net.LookupIP(hostIP); err == nil && len(ips) > 0 {
-		for _, ip := range ips {
-			if ipv4 := ip.To4(); ipv4 != nil {
-				hostIP = ipv4.String()
-				break
-			}
-		}
-	}
 
 	defer func() {
 		if pc != nil {
@@ -292,15 +283,20 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				writeJSON(resp)
 			}
 		case "webrtc_offer":
+			log.Println("Received webrtc_offer")
 			if sdpMap, ok := msg["sdp"].(map[string]interface{}); ok {
 				b, _ := json.Marshal(sdpMap)
 				var sdp webrtc.SessionDescription
-				json.Unmarshal(b, &sdp)
+				err := json.Unmarshal(b, &sdp)
+				if err != nil {
+					log.Printf("webrtc_offer json unmarshal error: %v", err)
+					continue
+				}
 
 				if pc != nil {
 					pc.Close()
 				}
-				pc, err = createPeerConnection(hostIP)
+				pc, err = createPeerConnection()
 				if err != nil {
 					log.Printf("Failed to create PeerConnection: %v", err)
 					continue
@@ -332,10 +328,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
+				log.Println("Sending webrtc_answer")
 				writeJSON(map[string]interface{}{
 					"type": "webrtc_answer",
 					"sdp":  pc.LocalDescription(),
 				})
+			} else {
+				log.Println("webrtc_offer missing 'sdp' map")
 			}
 		case "webrtc_ice":
 			if candidateMap, ok := msg["candidate"].(map[string]interface{}); ok {

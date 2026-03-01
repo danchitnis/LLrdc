@@ -28,7 +28,6 @@ export class NetworkManager {
             log('WebSocket Connected');
             if (statusEl) {
                 statusEl.textContent = 'Connected, Negotiating WebRTC...';
-                statusEl.style.color = '#4f4';
             }
             setInterval(() => this.sendPing(), 1000);
             setInterval(() => this.updateBandwidth(), 1000);

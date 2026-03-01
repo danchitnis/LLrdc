@@ -36,7 +36,13 @@ Once built, start the container using the run script:
 ./docker-run.sh
 ```
 
-This will run the desktop container mapping port `8080` internally to port `8080` on the host. The script will automatically detect the number of host CPUs and explicitly map them to the container.
+To enable GPU acceleration (NVENC) on NVIDIA systems, add the `--gpu` flag:
+
+```bash
+./docker-run.sh --gpu
+```
+
+The script will automatically detect and map CUDA/NVCC paths and switch to `h264_nvenc` encoding for high-performance streaming.
 
 ### 3. Connect
 
@@ -53,5 +59,12 @@ You should see your XFCE4 desktop session running and ready for interaction.
 You can pass environment variables to `docker-run.sh` to override the defaults:
 
 ```bash
-PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=vp8 ./docker-run.sh
+PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 ```
+
+Available environment variables:
+- `PORT`: Server internal port (default: 8080)
+- `HOST_PORT`: Port exposed to the host (default: 8080)
+- `FPS`: Target frames per second (default: 30)
+- `VIDEO_CODEC`: `vp8` (default), `h264`, or `h264_nvenc`
+- `DISPLAY_NUM`: X11 display number (default: 99)

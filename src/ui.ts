@@ -26,9 +26,26 @@ export function log(msg: string) {
     console.log(msg);
 }
 
-export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMonitor: number, networkLatency: number, bandwidthMbps: number = 0, width: number = 0, height: number = 0) {
+export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMonitor: number, networkLatency: number, bandwidthMbps: number = 0, width: number = 0, height: number = 0, codec: string = 'vp8') {
     if (!statusEl) return;
-    const codecInfo = isWebRtcActive ? '[WebRTC VP8]' : '[WebCodecs VP8]';
+    
+    // Clean up codec name for display and check for GPU
+    const isGpu = codec.includes('nvenc');
+    const displayCodec = codec.replace('_nvenc', '');
+    const gpuTag = isGpu ? ' 🚀 GPU' : '';
+    
+    const transportInfo = isWebRtcActive ? `[WebRTC ${displayCodec}${gpuTag}]` : `[WebCodecs ${displayCodec}${gpuTag}]`;
     const resInfo = (width > 0 && height > 0) ? ` | Res: ${width}x${height}` : '';
-    statusEl.textContent = `${codecInfo}${resInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms | BW: ${bandwidthMbps.toFixed(2)} Mbps`;
+    
+    // Change color based on latency
+    let color = '#4f4'; // Green
+    if (latencyMonitor > 150 || networkLatency > 100) {
+        color = '#fa4'; // Orange
+    }
+    if (latencyMonitor > 300 || networkLatency > 200) {
+        color = '#f44'; // Red
+    }
+    
+    statusEl.style.color = color;
+    statusEl.textContent = `${transportInfo}${resInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms | BW: ${bandwidthMbps.toFixed(2)} Mbps`;
 }

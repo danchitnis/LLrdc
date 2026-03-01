@@ -10,6 +10,7 @@ var (
 	FPS        int
 	DisplayNum string
 	Display    string
+	VideoCodec string
 )
 
 func initConfig() {
@@ -21,6 +22,11 @@ func initConfig() {
 	FPS = 30
 	if f, err := strconv.Atoi(os.Getenv("FPS")); err == nil {
 		FPS = f
+	}
+
+	VideoCodec = os.Getenv("VIDEO_CODEC")
+	if VideoCodec == "" {
+		VideoCodec = "vp8"
 	}
 
 	DisplayNum = os.Getenv("DISPLAY_NUM")

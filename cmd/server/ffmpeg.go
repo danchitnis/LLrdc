@@ -174,72 +174,80 @@ func startStreaming(onFrame func([]byte, uint32)) {
 
 			if vbr {
 				// Drop near-identical frames so static screens don't waste bandwidth.
-				// max=15 ensures we keep at least ~2 fps so the WebRTC connection doesn't time out and stall.
 				outputArgs = append(outputArgs, "-vf", "mpdecimate=max=15")
 			}
 
-			outputArgs = append(outputArgs, "-c:v", "libvpx")
+			useH264 := VideoCodec == "h264" || VideoCodec == "h264_nvenc"
+
+			if useH264 {
+				if VideoCodec == "h264_nvenc" {
+					outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull", "-zerolatency", "1", "-aud", "1")
+				} else {
+					outputArgs = append(outputArgs, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-x264-params", "aud=1")
+				}
+			} else {
+				outputArgs = append(outputArgs, "-c:v", "libvpx")
+			}
 
 			if mode == "bandwidth" {
-				// Format bitrate dynamically,e.g 5 Mbps = "5000k"
 				bitrateStr := fmt.Sprintf("%dk", bw*1000)
-				// keep bufsize very small for low latency (e.g., 0.2s buffer)
 				bufSizeStr := fmt.Sprintf("%dk", bw*200)
 
 				outputArgs = append(outputArgs,
-					// IMPORTANT: Do NOT force strict CBR. In practice, libvpx achieves
-					// a much more "VBR-like" behavior for remote-desktop content when
-					// using CRF (constrained-quality) and allowing the encoder to spend
-					// fewer bits on static frames.
-					// `-b:v` acts as a target/cap here.
 					"-b:v", bitrateStr,
 					"-maxrate", bitrateStr,
 					"-bufsize", bufSizeStr,
-					"-crf", "20",
-					"-static-thresh", "1000",
 				)
+				if useH264 {
+					outputArgs = append(outputArgs, "-g", fmt.Sprintf("%d", fps*2))
+				} else {
+					outputArgs = append(outputArgs, "-crf", "20", "-static-thresh", "1000")
+				}
 			} else {
-				// Quality mode: Map 10-100 to crf 50-4
-				crf := 50 - (quality-10)*46/90
-				if crf < 4 {
-					crf = 4
+				if useH264 {
+					// H.264 quality mode (CRF)
+					crf := 51 - (quality-10)*33/90 // Map 10-100 to 51-18
+					outputArgs = append(outputArgs, "-crf", fmt.Sprintf("%d", crf))
+				} else {
+					crf := 50 - (quality-10)*46/90
+					if crf < 4 {
+						crf = 4
+					}
+					if crf > 63 {
+						crf = 63
+					}
+					outputArgs = append(outputArgs, "-crf", fmt.Sprintf("%d", crf), "-qmin", fmt.Sprintf("%d", crf))
 				}
-				if crf > 63 {
-					crf = 63
-				}
-				// Scale maxrate with quality to give high quality more headroom
-				// Quality 10 -> 2 Mbps, Quality 100 -> 20 Mbps
 				maxKbps := 2000 + (quality-10)*18000/90
 				maxrateStr := fmt.Sprintf("%dk", maxKbps)
-				// Small buffer for low latency
 				bufsizeStr := fmt.Sprintf("%dk", maxKbps/5)
+				outputArgs = append(outputArgs, "-maxrate", maxrateStr, "-bufsize", bufsizeStr)
+			}
 
+			if useH264 {
 				outputArgs = append(outputArgs,
-					"-b:v", maxrateStr,
-					"-maxrate", maxrateStr,
-					"-bufsize", bufsizeStr,
-					"-crf", fmt.Sprintf("%d", crf),
-					"-qmin", fmt.Sprintf("%d", crf),
+					"-g", fmt.Sprintf("%d", fps*2),
+					"-f", "h264",
+					"pipe:1",
+				)
+			} else {
+				cpuUsedStr := fmt.Sprintf("%d", cpuEffort)
+				outputArgs = append(outputArgs,
+					"-lag-in-frames", "0",
+					"-error-resilient", "1",
+					"-rc_lookahead", "0",
+					"-g", fmt.Sprintf("%d", fps),
+					"-deadline", "realtime",
+					"-cpu-used", cpuUsedStr,
+					"-threads", fmt.Sprintf("%d", cpuThreads),
+					"-speed", "8",
+					"-flush_packets", "1",
+					"-f", "ivf",
+					"pipe:1",
 				)
 			}
 
-			cpuUsedStr := fmt.Sprintf("%d", cpuEffort)
-
-			outputArgs = append(outputArgs,
-				"-lag-in-frames", "0",
-				"-error-resilient", "1",
-				"-rc_lookahead", "0",
-				"-g", fmt.Sprintf("%d", fps),
-				"-deadline", "realtime",
-				"-cpu-used", cpuUsedStr,
-				"-threads", fmt.Sprintf("%d", cpuThreads),
-				"-speed", "8",
-				"-flush_packets", "1",
-				"-f", "ivf",
-				"pipe:1",
-			)
-
-			log.Printf("Starting ffmpeg capture (VP8) from %s at %s target...", Display, mode)
+			log.Printf("Starting ffmpeg capture (%s) from %s at %s target...", VideoCodec, Display, mode)
 
 			args := append([]string{
 				"-probesize", "32",
@@ -288,16 +296,22 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				}
 			}()
 
-			// Start IVF splitting in a bounded way
+			// Start frame splitting in a bounded way
 			doneCh := make(chan struct{})
 			go func() {
-				splitIVF(stdout, func(frame []byte) {
-					onFrame(frame, currentStreamID)
-				})
+				if useH264 {
+					splitH264AnnexB(stdout, func(frame []byte) {
+						onFrame(frame, currentStreamID)
+					})
+				} else {
+					splitIVF(stdout, func(frame []byte) {
+						onFrame(frame, currentStreamID)
+					})
+				}
 				close(doneCh)
 			}()
 
-			// Wait for IVF splitter to finish reading pipeline to avoid Wait closing stdout prematurely
+			// Wait for splitter to finish reading pipeline to avoid Wait closing stdout prematurely
 			<-doneCh
 
 			err = cmd.Wait()
@@ -313,6 +327,67 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			time.Sleep(1 * time.Second)
 		}
 	}()
+}
+
+func splitH264AnnexB(reader io.Reader, onFrame func([]byte)) {
+	buffer := make([]byte, 0, 1024*1024)
+	temp := make([]byte, 16384)
+	
+	// AUD (Access Unit Delimiter) NAL unit start: 00 00 00 01 09
+	// We use this as a frame boundary because we enabled -aud 1 in ffmpeg
+	aud := []byte{0x00, 0x00, 0x00, 0x01, 0x09}
+
+	for {
+		n, err := reader.Read(temp)
+		if n > 0 {
+			buffer = append(buffer, temp[:n]...)
+			for {
+				// Find next AUD, but skip the one at the very beginning of our buffer
+				if len(buffer) < 10 {
+					break
+				}
+				
+				// Search for next AUD starting from index 5
+				nextIdx := -1
+				for i := 5; i <= len(buffer)-len(aud); i++ {
+					match := true
+					for j := 0; j < len(aud); j++ {
+						if buffer[i+j] != aud[j] {
+							match = false
+							break
+						}
+					}
+					if match {
+						nextIdx = i
+						break
+					}
+				}
+
+				if nextIdx != -1 {
+					frame := make([]byte, nextIdx)
+					copy(frame, buffer[:nextIdx])
+					onFrame(frame)
+					
+					// Move remaining data to front
+					newBuf := make([]byte, len(buffer)-nextIdx)
+					copy(newBuf, buffer[nextIdx:])
+					buffer = newBuf
+				} else {
+					break
+				}
+			}
+		}
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("Error reading H264 stream: %v", err)
+			}
+			// Flush remaining buffer as the last frame
+			if len(buffer) > 0 {
+				onFrame(buffer)
+			}
+			return
+		}
+	}
 }
 
 func splitIVF(reader io.Reader, onFrame func([]byte)) {

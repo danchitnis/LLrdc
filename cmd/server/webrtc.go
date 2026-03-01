@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"os"
 	"time"
 
@@ -24,8 +25,14 @@ var (
 
 func initWebRTC() {
 	var err error
+	mimeType := webrtc.MimeTypeVP8
+	if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
+		mimeType = webrtc.MimeTypeH264
+	}
+	log.Printf("Initializing WebRTC with %s track", mimeType)
+
 	videoTrack, err = webrtc.NewTrackLocalStaticSample(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", "pion",
+		webrtc.RTPCodecCapability{MimeType: mimeType}, "video", "pion",
 	)
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)
@@ -87,15 +94,20 @@ func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time) {
 	}
 }
 
-func createPeerConnection(hostIP string) (*webrtc.PeerConnection, error) {
+func createPeerConnection() (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
 	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
 
+	// Optionally allow overriding the public IP (e.g., if behind a strict NAT)
 	publicIP := os.Getenv("WEBRTC_PUBLIC_IP")
-	if publicIP == "" {
-		publicIP = hostIP
+	if publicIP != "" {
+		if net.ParseIP(publicIP) != nil {
+			s.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
+			log.Printf("WebRTC Setting NAT1To1IPs to %s", publicIP)
+		} else {
+			log.Printf("Warning: WEBRTC_PUBLIC_IP '%s' is not a valid IP. Ignoring.", publicIP)
+		}
 	}
-	s.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
 

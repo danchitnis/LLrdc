@@ -1,4 +1,4 @@
-import { bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -25,13 +25,15 @@ const network = new NetworkManager(
     }
 );
 
+let webrtc: WebRTCManager;
+
 const webcodecs: WebCodecsManager = new WebCodecsManager(
-    () => webrtc.isWebRtcActive,
+    () => webrtc ? webrtc.isWebRtcActive : false,
     () => network.networkLatency,
     () => network.wsBandwidthMbps
 );
 
-const webrtc: WebRTCManager = new WebRTCManager(
+webrtc = new WebRTCManager(
     (data) => network.sendMsg(data),
     () => network.networkLatency,
     () => webcodecs.latencyMonitor
@@ -223,20 +225,46 @@ function handleBinaryMessage(buffer: ArrayBuffer) {
         const now = Date.now();
         webcodecs.latencyMonitor = Math.round(Math.abs(now - timestamp));
 
-        const isKey = (chunkData[0] & 0x01) === 0;
+        let isKey = false;
+        if (webcodecs.videoCodec.startsWith('h264')) {
+            // H.264 Annex B keyframe detection
+            // Look for NAL unit type 5 (IDR) or 7 (SPS)
+            for (let i = 0; i < chunkData.length - 4; i++) {
+                if (chunkData[i] === 0 && chunkData[i + 1] === 0 && chunkData[i + 2] === 0 && chunkData[i + 3] === 1) {
+                    const nalType = chunkData[i + 4] & 0x1F;
+                    if (nalType === 5 || nalType === 7) {
+                        isKey = true;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // VP8 keyframe detection
+            isKey = (chunkData[0] & 0x01) === 0;
+        }
+
         if (isKey) {
             window.hasReceivedKeyFrame = true;
         }
 
         if (!window.hasReceivedKeyFrame) return;
-        if (webrtc.isWebRtcActive) return;
+        if (webrtc && webrtc.isWebRtcActive) return;
 
         webcodecs.decodeChunk(isKey, timestamp, chunkData);
     }
 }
 
 function handleJsonMessage(msg: Record<string, unknown>) {
-    if (msg.type === 'webrtc_answer') {
+    if (msg.type === 'config') {
+        if (msg.videoCodec && typeof msg.videoCodec === 'string') {
+            log(`Server codec: ${msg.videoCodec}`);
+            if (webcodecs.videoCodec !== msg.videoCodec) {
+                webcodecs.videoCodec = msg.videoCodec;
+                webrtc.videoCodec = msg.videoCodec;
+                webcodecs.initDecoder();
+            }
+        }
+    } else if (msg.type === 'webrtc_answer') {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);
     } else if (msg.type === 'webrtc_ice' && msg.candidate) {
         webrtc.handleIce(msg.candidate as RTCIceCandidateInit);

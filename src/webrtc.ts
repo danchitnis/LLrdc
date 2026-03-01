@@ -4,6 +4,7 @@ export class WebRTCManager {
     public rtcPeer: RTCPeerConnection | null = null;
     public isWebRtcActive = false;
     public fps = 0;
+    public videoCodec = 'vp8';
 
     private sendWs: (data: string) => void;
     private getNetworkLatencyVal: () => number;
@@ -58,7 +59,6 @@ export class WebRTCManager {
                 this.isWebRtcActive = true;
                 if (statusEl) {
                     statusEl.textContent = 'WebRTC Connected';
-                    statusEl.style.color = '#4bf';
                 }
                 this.startVideoCanvasLoop(0);
             }).catch((err: unknown) => {
@@ -73,7 +73,6 @@ export class WebRTCManager {
                 this.isWebRtcActive = false;
                 if (statusEl) {
                     statusEl.textContent = 'WebCodecs Fallback';
-                    statusEl.style.color = '#fa4';
                 }
             }
         };
@@ -87,6 +86,7 @@ export class WebRTCManager {
             return this.rtcPeer!.setLocalDescription(offer);
         }).then(() => {
             if (this.rtcPeer!.localDescription) {
+                log('Sending WebRTC offer...');
                 this.sendWs(JSON.stringify({
                     type: 'webrtc_offer',
                     sdp: {
@@ -95,6 +95,9 @@ export class WebRTCManager {
                     }
                 }));
             }
+        }).catch((err: unknown) => {
+            log('WebRTC createOffer/setLocalDescription error: ' + (err as Error).message);
+            console.error('WebRTC Error:', err);
         });
     }
 
@@ -189,7 +192,7 @@ export class WebRTCManager {
             this.lastFPSUpdate = now;
 
             const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
-            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight);
+            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
         }
     }
 

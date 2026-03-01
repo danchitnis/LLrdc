@@ -8,16 +8,6 @@ RUN go mod download
 COPY cmd/ ./cmd/
 RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server
 
-# Download ffmpeg static binary during the Golang build stage
-RUN apt-get update && apt-get install -y xz-utils && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /app/bin /tmp/ffmpeg-dl \
-  && curl -fsSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
-  -o /tmp/ffmpeg.tar.xz \
-  && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg-dl --strip-components=1 \
-  && mv /tmp/ffmpeg-dl/ffmpeg /app/bin/ffmpeg \
-  && chmod +x /app/bin/ffmpeg \
-  && rm -rf /tmp/ffmpeg-dl /tmp/ffmpeg.tar.xz
-
 FROM node:22-alpine AS node-builder
 WORKDIR /app
 COPY package*.json ./
@@ -32,6 +22,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── System dependencies ──────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
+  # Media
+  ffmpeg \
   # X11 / Virtual framebuffer
   xvfb \
   x11-xserver-utils \
@@ -106,9 +98,6 @@ RUN mkdir -p /usr/share/icons/default \
 
 # ── App directory ─────────────────────────────────────────────────────────────
 WORKDIR /app
-
-# Copy FFMPEG
-COPY --from=builder /app/bin/ffmpeg /app/bin/ffmpeg
 
 # Copy public assets from node builder
 COPY --from=node-builder /app/public/ ./public/
