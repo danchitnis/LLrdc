@@ -169,12 +169,13 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			}
 
 			outputArgs := []string{
+				"-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
 				"-pix_fmt", "yuv420p",
 			}
 
 			if vbr {
 				// Drop near-identical frames so static screens don't waste bandwidth.
-				outputArgs = append(outputArgs, "-vf", "mpdecimate=max=15")
+				outputArgs = append(outputArgs, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,mpdecimate=max=15")
 			}
 
 			useH264 := VideoCodec == "h264" || VideoCodec == "h264_nvenc"
