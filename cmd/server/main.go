@@ -38,8 +38,7 @@ func main() {
 	initWebRTC()
 
 	// 3. Start ffmpeg streaming
-	startStreaming(broadcastIVFFrame)
-
+	startStreaming(broadcastVideoFrame)
 	// 4. Start HTTP & WebSocket server (blocks)
 	startHTTPServer()
 }

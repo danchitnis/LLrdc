@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execSync } from 'child_process';
 import path from 'path';
 
 let serverProcess: ChildProcess;
@@ -27,7 +27,7 @@ test.beforeAll(async () => {
     // Kill background processes that cause noise/EMFILE
     try {
         const killCmd = "pkill -f 'xfdesktop|tracker|tumblerd|xfce4-panel|gvfsd'";
-        require('child_process').execSync(killCmd, { stdio: 'ignore' });
+        execSync(killCmd, { stdio: 'ignore' });
         console.log('Killed background processes.');
     } catch (e) {
         // ignore if processes not found
@@ -89,19 +89,34 @@ test('verify video integrity (no green artifacts)', async ({ page }) => {
 
     // Capture Server-Side Screenshot to debug Xvfb/Green Screen
     console.log('Capturing server-side screenshot...');
-    const ffmpegBin = path.resolve('bin/ffmpeg');
-    const screenshotProc = spawn(ffmpegBin, [
-        '-y',
-        '-f', 'x11grab',
-        '-video_size', '1280x720',
-        '-i', ':101',
-        '-vframes', '1',
-        'test-results/server_screenshot.png'
-    ]);
-    screenshotProc.stderr?.on('data', d => console.log(`[Screenshot]: ${d}`));
-    await new Promise(r => screenshotProc.on('close', r));
-    console.log('Server-side screenshot captured.');
-
+    try {
+        const containerId = execSync('docker ps -q --filter ancestor=danchitnis/llrdc:latest | head -n 1').toString().trim();
+        if (containerId) {
+            const displayNum = (PORT + 100).toString();
+            const screenshotProc = spawn('docker', [
+                'exec',
+                containerId,
+                'ffmpeg',
+                '-y',
+                '-f', 'x11grab',
+                '-video_size', '1280x670',
+                '-i', `:${displayNum}`,
+                '-vframes', '1',
+                '/tmp/server_screenshot.png'
+            ]);
+            screenshotProc.stderr?.on('data', d => console.log(`[Screenshot]: ${d}`));
+            await new Promise(r => screenshotProc.on('close', r));
+            
+            // Extract the screenshot from the container
+            execSync(`docker cp ${containerId}:/tmp/server_screenshot.png test-results/server_screenshot.png`, { stdio: 'ignore' });
+            console.log('Server-side screenshot captured and copied to test-results.');
+        } else {
+            console.log('No running llrdc container found for screenshot.');
+        }
+    } catch (e) {
+        console.log('Failed to capture server screenshot:', e);
+    }
+    
     // Pixel Analysis Loop
     console.log('Starting pixel analysis...');
     await expect(async () => {

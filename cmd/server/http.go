@@ -71,7 +71,7 @@ func startHTTPServer() {
 	}
 }
 
-func broadcastIVFFrame(frame []byte, streamID uint32) {
+func broadcastVideoFrame(frame []byte, streamID uint32) {
 	captureTime := time.Now()
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
 	webrtcCopy := make([]byte, len(frame))
@@ -283,70 +283,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				writeJSON(resp)
 			}
 		case "webrtc_offer":
-			log.Println("Received webrtc_offer")
-			if sdpMap, ok := msg["sdp"].(map[string]interface{}); ok {
-				b, _ := json.Marshal(sdpMap)
-				var sdp webrtc.SessionDescription
-				err := json.Unmarshal(b, &sdp)
-				if err != nil {
-					log.Printf("webrtc_offer json unmarshal error: %v", err)
-					continue
-				}
-
-				if pc != nil {
-					pc.Close()
-				}
-				pc, err = createPeerConnection()
-				if err != nil {
-					log.Printf("Failed to create PeerConnection: %v", err)
-					continue
-				}
-
-				pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-					if candidate != nil {
-						cJSON := candidate.ToJSON()
-						writeJSON(map[string]interface{}{
-							"type":      "webrtc_ice",
-							"candidate": cJSON,
-						})
-					}
-				})
-
-				if err := pc.SetRemoteDescription(sdp); err != nil {
-					log.Printf("SetRemoteDescription error: %v", err)
-					continue
-				}
-
-				answer, err := pc.CreateAnswer(nil)
-				if err != nil {
-					log.Printf("CreateAnswer error: %v", err)
-					continue
-				}
-
-				if err := pc.SetLocalDescription(answer); err != nil {
-					log.Printf("SetLocalDescription error: %v", err)
-					continue
-				}
-
-				log.Println("Sending webrtc_answer")
-				writeJSON(map[string]interface{}{
-					"type": "webrtc_answer",
-					"sdp":  pc.LocalDescription(),
-				})
-			} else {
-				log.Println("webrtc_offer missing 'sdp' map")
-			}
+			handleWebRTCOffer(msg, &pc, writeJSON)
 		case "webrtc_ice":
-			if candidateMap, ok := msg["candidate"].(map[string]interface{}); ok {
-				if pc != nil {
-					b, _ := json.Marshal(candidateMap)
-					var ice webrtc.ICECandidateInit
-					json.Unmarshal(b, &ice)
-					if err := pc.AddICECandidate(ice); err != nil {
-						log.Printf("AddICECandidate error: %v", err)
-					}
-				}
-			}
+			handleWebRTCICE(msg, pc)
 		}
 	}
 }
