@@ -71,8 +71,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ── Non-root user ────────────────────────────────────────────────────────────
 # Create user 'remote' with a home directory and add to sudo group (no password).
+# Ubuntu 24.04 includes a default 'ubuntu' user at UID 1000. We remove it to reuse UID 1000.
 # Must come before any step that writes to /home/remote.
-RUN useradd -m -s /bin/bash remote \
+ARG UID=1000
+RUN userdel -r ubuntu || true \
+  && useradd -m -s /bin/bash -u ${UID} remote \
   && echo 'remote ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/remote \
   && chmod 0440 /etc/sudoers.d/remote
 
@@ -106,9 +109,10 @@ COPY --from=node-builder /app/public/ ./public/
 COPY --from=builder /app/llrdc /app/llrdc
 
 # ── Housekeeping ──────────────────────────────────────────────────────────────
-# Hand /app ownership to 'remote' and switch to that user for runtime.
+# Ensure app ownership and add entrypoint script
 RUN chown -R remote:remote /app
-USER remote
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose the WebSocket / HTTP port
 EXPOSE 8080
@@ -116,4 +120,5 @@ EXPOSE 8080
 # Graceful-shutdown: forward SIGTERM to go binary
 STOPSIGNAL SIGTERM
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/app/llrdc"]

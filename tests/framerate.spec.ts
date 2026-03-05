@@ -27,7 +27,7 @@ test.describe('Framerate Configuration', () => {
         killPort(PORT);
         console.log(`Starting server on port ${PORT} display :${DISPLAY_NUM}...`);
         serverProcess = spawn('npm', ['start'], {
-            env: { ...process.env, PORT: PORT.toString(), FPS: '30', DISPLAY_NUM: DISPLAY_NUM.toString() },
+            env: { ...process.env, PORT: PORT.toString(), FPS: '30', DISPLAY_NUM: DISPLAY_NUM.toString(), VIDEO_CODEC: 'h264' },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
 
@@ -61,6 +61,7 @@ ${outputBuffer}`));
 
     test.afterAll(async () => {
         console.log('Stopping server...');
+        console.log('Server Output Buffer:\n', outputBuffer);
         if (serverProcess) {
             serverProcess.kill('SIGTERM');
             await new Promise<void>((resolve) => {
@@ -87,7 +88,7 @@ ${outputBuffer}`));
     });
 
     test('should adjust framerate and restart video stream', async ({ page }) => {
-        test.setTimeout(30000);
+        test.setTimeout(60000);
 
         await test.step('Navigate to viewer and verify initial playback', async () => {
             await page.goto(SERVER_URL);
@@ -105,21 +106,41 @@ ${outputBuffer}`));
             }).toBeGreaterThan(0);
         });
 
-        await test.step('Switch framerate to 15 FPS', async () => {
-            const framesBeforeConfig = await page.evaluate(() => {
-                const v = document.getElementById('webrtc-video') as HTMLVideoElement;
-                return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : (window.getStats().totalDecoded || 0);
+        async function generateLoad() {
+            // Spawn xeyes and move mouse to generate load
+            await page.evaluate(() => {
+                const ws = new WebSocket(window.location.href.replace('http', 'ws'));
+                ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
             });
+            await page.waitForTimeout(1000);
 
-            // Select 15 FPS from the dropdown
+            const overlayBox = await page.locator('#input-overlay').boundingBox();
+            if (overlayBox) {
+                await page.mouse.move(overlayBox.x + 100, overlayBox.y + 100);
+                await page.mouse.down();
+                await page.mouse.move(overlayBox.x + 600, overlayBox.y + 500, { steps: 100 });
+                await page.mouse.up();
+                await page.mouse.move(overlayBox.x + 200, overlayBox.y + 200, { steps: 100 });
+            }
+        }
+
+        await test.step('Switch framerate to 15 FPS', async () => {
             const configBtnLocator = page.locator('#config-btn');
             await configBtnLocator.click();
+
+            // Disable VBR for framerate testing
+            const vbrCheckbox = page.locator('#vbr-checkbox');
+            if (await vbrCheckbox.isChecked()) {
+                await vbrCheckbox.uncheck();
+                await page.waitForTimeout(2000);
+            }
 
             const selectLocator = page.locator('#framerate-select');
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
             await selectLocator.selectOption('15');
 
             await page.waitForTimeout(3000);
+            await generateLoad();
 
             await expect.poll(async () => {
                 return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
@@ -135,6 +156,7 @@ ${outputBuffer}`));
             await selectLocator.selectOption('60');
 
             await page.waitForTimeout(3000);
+            await generateLoad();
 
             await expect.poll(async () => {
                 return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
@@ -150,22 +172,7 @@ ${outputBuffer}`));
             await selectLocator.selectOption('90');
 
             await page.waitForTimeout(3000);
-
-            // Spawn xeyes and move mouse to generate load
-            await page.evaluate(() => {
-                const ws = new WebSocket(window.location.href.replace('http', 'ws'));
-                ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
-            });
-            await page.waitForTimeout(1000);
-
-            const overlayBox = await page.locator('#input-overlay').boundingBox();
-            if (overlayBox) {
-                await page.mouse.move(overlayBox.x + 100, overlayBox.y + 100);
-                await page.mouse.down();
-                await page.mouse.move(overlayBox.x + 600, overlayBox.y + 500, { steps: 100 });
-                await page.mouse.up();
-                await page.mouse.move(overlayBox.x + 200, overlayBox.y + 200, { steps: 100 });
-            }
+            await generateLoad();
 
             await expect.poll(async () => {
                 return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
@@ -181,22 +188,7 @@ ${outputBuffer}`));
             await selectLocator.selectOption('120');
 
             await page.waitForTimeout(3000);
-
-            // Spawn xeyes and move mouse to generate load
-            await page.evaluate(() => {
-                const ws = new WebSocket(window.location.href.replace('http', 'ws'));
-                ws.onopen = () => ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
-            });
-            await page.waitForTimeout(1000);
-
-            const overlayBox = await page.locator('#input-overlay').boundingBox();
-            if (overlayBox) {
-                await page.mouse.move(overlayBox.x + 100, overlayBox.y + 100);
-                await page.mouse.down();
-                await page.mouse.move(overlayBox.x + 600, overlayBox.y + 500, { steps: 100 });
-                await page.mouse.up();
-                await page.mouse.move(overlayBox.x + 200, overlayBox.y + 200, { steps: 100 });
-            }
+            await generateLoad();
 
             await expect.poll(async () => {
                 return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);

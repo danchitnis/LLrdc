@@ -96,4 +96,5 @@ docker run \
   --env VIDEO_CODEC="${SERVER_VIDEO_CODEC}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP}" \
+  --env HOST_UID=$(id -u) \
   "${IMAGE_NAME}:${IMAGE_TAG}"

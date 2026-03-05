@@ -166,34 +166,55 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
 
-			outputArgs := []string{
-				"-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-				"-pix_fmt", "yuv420p",
-			}
-
+			useNVENC := VideoCodec == "h264_nvenc"
+			
+			var filterStr string
 			if vbr {
-				// Drop near-identical frames so static screens don't waste bandwidth.
-				outputArgs = append(outputArgs, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,mpdecimate=max=15")
+				filterStr = "mpdecimate=max=15,settb=1/1000"
+			} else {
+				filterStr = "settb=1/1000"
 			}
 
-			useH264 := VideoCodec == "h264" || VideoCodec == "h264_nvenc"
+			outputArgs := []string{}
+			if useNVENC {
+				if filterStr != "" {
+					filterStr += ","
+				}
+				// For NVENC, move the 'even-dimension' scale to GPU after format conversion to NV12
+				filterStr += "format=nv12,hwupload_cuda,scale_cuda=w=trunc(iw/2)*2:h=trunc(ih/2)*2"
+				outputArgs = append(outputArgs, "-vf", filterStr)
+			} else {
+				if filterStr != "" {
+					filterStr += ","
+				}
+				filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p"
+				outputArgs = append(outputArgs, "-vf", filterStr)
+			}
+
+			useH264 := VideoCodec == "h264" || useNVENC
 
 			if useH264 {
 				outputArgs = append(outputArgs, buildH264Args(mode, bw, quality, fps, vbr)...)
 			} else {
-				outputArgs = append(outputArgs, buildVP8Args(mode, bw, quality, fps, cpuEffort, cpuThreads)...)
+				outputArgs = append(outputArgs, buildVP8Args(mode, bw, quality, fps, cpuEffort, cpuThreads, vbr)...)
 			}
 
 			log.Printf("Starting ffmpeg capture (%s) from %s at %s target...", VideoCodec, Display, mode)
 
-			args := append([]string{
+			initialArgs := []string{
 				"-probesize", "32",
 				"-analyzeduration", "0",
 				"-fflags", "nobuffer",
 				"-threads", "2",
-			}, inputArgs...)
-			// Add -vsync drop so ffmpeg drops frames when encoder can't keep up
-			args = append(args, "-vsync", "drop")
+			}
+			if useNVENC {
+				initialArgs = append(initialArgs, "-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu")
+			}
+
+			args := append(initialArgs, inputArgs...)
+			if vbr {
+				args = append(args, "-fps_mode", "vfr")
+			}
 			log.Printf("ffmpeg args: %v", args)
 			args = append(args, outputArgs...)
 

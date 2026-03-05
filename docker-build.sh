@@ -11,6 +11,7 @@ echo "▶ Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "  Context: ${SCRIPT_DIR}"
 
 docker build \
+  --build-arg UID=$(id -u) \
   --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
   "${SCRIPT_DIR}"
 

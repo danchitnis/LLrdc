@@ -31,8 +31,13 @@ func initWebRTC() {
 	}
 	log.Printf("Initializing WebRTC with %s track", mimeType)
 
+	capability := webrtc.RTPCodecCapability{MimeType: mimeType}
+	if mimeType == webrtc.MimeTypeH264 {
+		capability.SDPFmtpLine = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42E034"
+	}
+
 	videoTrack, err = webrtc.NewTrackLocalStaticSample(
-		webrtc.RTPCodecCapability{MimeType: mimeType}, "video", "pion",
+		capability, "video", "pion",
 	)
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)

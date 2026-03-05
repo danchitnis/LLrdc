@@ -10,31 +10,45 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool) []string
 	var outputArgs []string
 
 	if VideoCodec == "h264_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull", "-zerolatency", "1", "-aud", "1")
+	        outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull", "-zerolatency", "1", "-aud", "1", "-level", "6.0")
 	} else {
-		outputArgs = append(outputArgs, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-x264-params", "aud=1")
+			x264Params := fmt.Sprintf("aud=1:fps=%d", fps)
+	        outputArgs = append(outputArgs, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-x264-params", x264Params, "-level", "6.0")
 	}
-
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
-		bufSizeStr := fmt.Sprintf("%dk", bw*200)
+		// Use a 2 second buffer (bw*2000) to prevent VBV underflows at high framerates with large I-frames
+		bufSizeStr := fmt.Sprintf("%dk", bw*2000)
 
 		outputArgs = append(outputArgs,
 			"-b:v", bitrateStr,
 			"-maxrate", bitrateStr,
 			"-bufsize", bufSizeStr,
-			"-g", fmt.Sprintf("%d", fps*2),
 		)
+		if VideoCodec == "h264_nvenc" {
+			outputArgs = append(outputArgs, "-rc", "vbr")
+		}
 	} else {
-		crf := 51 - (quality-10)*33/90 // Map 10-100 to 51-18
-		outputArgs = append(outputArgs, "-crf", fmt.Sprintf("%d", crf))
+		val := 51 - (quality-10)*33/90 // Map 10-100 to 51-18
+		if VideoCodec == "h264_nvenc" {
+			outputArgs = append(outputArgs, "-rc", "vbr", "-cq", fmt.Sprintf("%d", val))
+		} else {
+			outputArgs = append(outputArgs, "-crf", fmt.Sprintf("%d", val))
+		}
+		
 		maxKbps := 2000 + (quality-10)*18000/90
+		// Use a 2 second buffer
 		maxrateStr := fmt.Sprintf("%dk", maxKbps)
-		bufsizeStr := fmt.Sprintf("%dk", maxKbps/5)
+		bufsizeStr := fmt.Sprintf("%dk", maxKbps*2)
 		outputArgs = append(outputArgs, "-maxrate", maxrateStr, "-bufsize", bufsizeStr)
 	}
 
+	if !vbr {
+		outputArgs = append(outputArgs, "-r", fmt.Sprintf("%d", fps))
+	}
+
 	outputArgs = append(outputArgs,
+		"-max_muxing_queue_size", "1024",
 		"-g", fmt.Sprintf("%d", fps*2),
 		"-f", "h264",
 		"pipe:1",

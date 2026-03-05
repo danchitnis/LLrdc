@@ -20,6 +20,10 @@ func initScreenSize(width, height int) {
 }
 
 func setScreenSize(width, height int) {
+	// Ensure even dimensions
+	width = (width / 2) * 2
+	height = (height / 2) * 2
+
 	if width < minScreenWidth {
 		width = minScreenWidth
 	}
@@ -42,6 +46,10 @@ func SetScreenSize(width, height int) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
+	// Ensure even dimensions
+	width = (width / 2) * 2
+	height = (height / 2) * 2
+
 	if width < minScreenWidth {
 		width = minScreenWidth
 	}

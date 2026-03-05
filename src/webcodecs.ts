@@ -72,8 +72,8 @@ export class WebCodecsManager {
             });
 
             const isH264 = this.videoCodec.startsWith('h264');
-            // avc1.42E01F is Baseline profile, level 3.1 - very compatible
-            const codecStr = isH264 ? 'avc1.42E01F' : 'vp8';
+            // avc1.42E034 is Baseline profile, level 5.2 - supports 4K @ 120fps
+            const codecStr = isH264 ? 'avc1.42E034' : 'vp8';
 
             const config: VideoDecoderConfig = {
                 codec: codecStr,
