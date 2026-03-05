@@ -1,4 +1,4 @@
-import { log, statusEl, displayEl, ctx, updateStatusText } from './ui';
+import { log, statusEl, displayEl, ctx, updateStatusText, clientGpuCheckbox } from './ui';
 
 export class WebCodecsManager {
     public totalDecoded = 0;
@@ -78,7 +78,7 @@ export class WebCodecsManager {
             const config: VideoDecoderConfig = {
                 codec: codecStr,
                 optimizeForLatency: true,
-                hardwareAcceleration: isH264 ? 'prefer-hardware' : 'prefer-software'
+                hardwareAcceleration: clientGpuCheckbox && clientGpuCheckbox.checked ? 'prefer-hardware' : 'prefer-software'
             };
 
             this.decoder.configure(config);

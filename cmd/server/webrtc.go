@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -18,12 +19,16 @@ type WebRTCFrame struct {
 
 var (
 	videoTrack      *webrtc.TrackLocalStaticSample
+	videoTrackMutex sync.RWMutex
 	webrtcFrameChan = make(chan WebRTCFrame, 300)
 	lastSampleTime  time.Time
 	currentStreamID uint32
 )
 
-func initWebRTC() {
+func initWebRTCTrack() {
+	videoTrackMutex.Lock()
+	defer videoTrackMutex.Unlock()
+
 	var err error
 	mimeType := webrtc.MimeTypeVP8
 	if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
@@ -42,12 +47,20 @@ func initWebRTC() {
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)
 	}
+}
+
+func initWebRTC() {
+	initWebRTCTrack()
 
 	go func() {
 		var bufferedFrame *WebRTCFrame
 
 		for frame := range webrtcFrameChan {
-			if videoTrack == nil {
+			videoTrackMutex.RLock()
+			vt := videoTrack
+			videoTrackMutex.RUnlock()
+
+			if vt == nil {
 				continue
 			}
 
@@ -61,7 +74,7 @@ func initWebRTC() {
 
 			// If stream ID changed, flush old buffer with a small duration, start new buffer
 			if frame.StreamID != currentStreamID {
-				_ = videoTrack.WriteSample(media.Sample{
+				_ = vt.WriteSample(media.Sample{
 					Data:     bufferedFrame.Data,
 					Duration: time.Second / time.Duration(FPS),
 				})
@@ -79,7 +92,7 @@ func initWebRTC() {
 			}
 
 			// Send the buffered frame with the exact time elapsed until the next frame
-			_ = videoTrack.WriteSample(media.Sample{
+			_ = vt.WriteSample(media.Sample{
 				Data:     bufferedFrame.Data,
 				Duration: duration,
 			})
@@ -129,7 +142,11 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 		return nil, err
 	}
 
-	if _, err = pc.AddTrack(videoTrack); err != nil {
+	videoTrackMutex.RLock()
+	vt := videoTrack
+	videoTrackMutex.RUnlock()
+
+	if _, err = pc.AddTrack(vt); err != nil {
 		return nil, err
 	}
 

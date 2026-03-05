@@ -141,12 +141,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial codec and config to client
 	initialConfig := map[string]interface{}{
-		"type":       "config",
-		"videoCodec": VideoCodec,
-		"framerate":  FPS,
-		"bandwidth":  targetBandwidthMbps,
-		"quality":    targetQuality,
-		"vbr":        targetVBR,
+		"type":         "config",
+		"videoCodec":   VideoCodec,
+		"gpuAvailable": UseGPU,
+		"framerate":    FPS,
+		"bandwidth":    targetBandwidthMbps,
+		"quality":      targetQuality,
+		"vbr":          targetVBR,
 	}
 	_ = writeJSON(initialConfig)
 
@@ -198,6 +199,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		case "config":
 			hasBwOrQuality := false
+			if vCodec, ok := msg["video_codec"].(string); ok {
+				log.Printf("Received Video Codec config: %s", vCodec)
+				SetVideoCodec(vCodec)
+			}
 			if vbrBool, ok := msg["vbr"].(bool); ok {
 				log.Printf("Received VBR config: %v", vbrBool)
 				SetVBR(vbrBool)

@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -50,6 +50,7 @@ interface ConfigMessage {
     cpu_effort?: number;
     cpu_threads?: number;
     enable_desktop_mouse?: boolean;
+    video_codec?: string;
 }
 
 function sendConfig() {
@@ -79,6 +80,16 @@ function sendConfig() {
     }
     if (desktopMouseCheckbox) {
         config.enable_desktop_mouse = desktopMouseCheckbox.checked;
+    }
+
+    if (videoCodecSelect) {
+        config.video_codec = videoCodecSelect.value;
+        
+        if (webcodecs.videoCodec !== config.video_codec) {
+            webcodecs.videoCodec = config.video_codec;
+            webrtc.videoCodec = config.video_codec;
+            webcodecs.initDecoder();
+        }
     }
 
     network.sendMsg(JSON.stringify(config));
@@ -163,6 +174,16 @@ if (cpuThreadsSelect) {
 
 if (desktopMouseCheckbox) {
     desktopMouseCheckbox.addEventListener('change', sendConfig);
+}
+
+if (videoCodecSelect) {
+    videoCodecSelect.addEventListener('change', sendConfig);
+}
+
+if (clientGpuCheckbox) {
+    clientGpuCheckbox.addEventListener('change', () => {
+        webcodecs.initDecoder();
+    });
 }
 
 let lastResizeWidth = 0;
@@ -262,6 +283,17 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                 webcodecs.videoCodec = msg.videoCodec;
                 webrtc.videoCodec = msg.videoCodec;
                 webcodecs.initDecoder();
+            }
+
+            if (msg.gpuAvailable !== undefined) {
+                (window as any).gpuAvailable = msg.gpuAvailable;
+                if (codecOptGpu) {
+                    codecOptGpu.style.display = msg.gpuAvailable ? '' : 'none';
+                }
+            }
+
+            if (videoCodecSelect) {
+                videoCodecSelect.value = msg.videoCodec as string;
             }
         }
     } else if (msg.type === 'webrtc_answer') {

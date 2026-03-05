@@ -11,6 +11,7 @@ var (
 	DisplayNum string
 	Display    string
 	VideoCodec string
+	UseGPU     bool
 )
 
 func initConfig() {
@@ -28,6 +29,8 @@ func initConfig() {
 	if VideoCodec == "" {
 		VideoCodec = "vp8"
 	}
+
+	UseGPU = os.Getenv("USE_GPU") == "true"
 
 	DisplayNum = os.Getenv("DISPLAY_NUM")
 	if DisplayNum == "" {

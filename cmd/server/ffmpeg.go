@@ -23,6 +23,25 @@ var (
 	ffmpegStreamID      uint32
 )
 
+func SetVideoCodec(codec string) {
+	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" {
+		log.Printf("Invalid video codec: %s", codec)
+		return
+	}
+
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	VideoCodec = codec
+	log.Printf("Target video codec changed to %s, reinitializing WebRTC track and restarting ffmpeg...", codec)
+	
+	initWebRTCTrack() // Re-create track
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		ffmpegCmd.Process.Kill()
+	}
+}
+
 func SetCpuEffort(effort int) {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()

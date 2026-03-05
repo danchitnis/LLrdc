@@ -94,6 +94,7 @@ docker run \
   --env FPS="${SERVER_FPS}" \
   --env DISPLAY_NUM="${SERVER_DISPLAY_NUM}" \
   --env VIDEO_CODEC="${SERVER_VIDEO_CODEC}" \
+  --env USE_GPU="${USE_GPU}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP}" \
   --env HOST_UID=$(id -u) \

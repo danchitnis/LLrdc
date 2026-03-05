@@ -149,10 +149,31 @@ ${outputBuffer}`));
             await page.waitForTimeout(3000);
         });
 
+        await test.step('Switch to CPU tab and adjust Video Codec', async () => {
+            const cpuTabLocator = page.locator('.config-tab-btn[data-tab="tab-cpu"]');
+            await cpuTabLocator.click();
+
+            const codecLocator = page.locator('#video-codec-select');
+            await codecLocator.waitFor({ state: 'visible', timeout: 10000 });
+            
+            // Wait for WebRTC to re-initialize before spamming
+            await codecLocator.selectOption('h264');
+            await page.waitForTimeout(4000);
+
+            await codecLocator.selectOption('vp8');
+            await page.waitForTimeout(4000);
+
+            const clientGpuCheckbox = page.locator('#client-gpu-checkbox');
+            await clientGpuCheckbox.check();
+            await page.waitForTimeout(1000);
+        });
+
         // Assert Server Output reflects the config changes
         expect(outputBuffer).toContain('Target CPU effort changed to 8, restarting ffmpeg...');
         expect(outputBuffer).toContain('Target CPU threads changed to 8, restarting ffmpeg...');
         expect(outputBuffer).toContain('Target draw mouse changed to false, restarting ffmpeg...');
         expect(outputBuffer).toMatch(/Received resize: \d+x\d+ \(clamped to \d+x720\)/);
+        expect(outputBuffer).toContain('Target video codec changed to h264, reinitializing WebRTC track and restarting ffmpeg...');
+        expect(outputBuffer).toContain('Target video codec changed to vp8, reinitializing WebRTC track and restarting ffmpeg...');
     });
 });
