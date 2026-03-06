@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -47,6 +47,7 @@ interface ConfigMessage {
     quality?: number;
     framerate?: number;
     vbr?: boolean;
+    mpdecimate?: boolean;
     cpu_effort?: number;
     cpu_threads?: number;
     enable_desktop_mouse?: boolean;
@@ -71,6 +72,9 @@ function sendConfig() {
     config.framerate = parseInt(framerateSelect.value, 10);
     if (vbrCheckbox) {
         config.vbr = vbrCheckbox.checked;
+    }
+    if (mpdecimateCheckbox) {
+        config.mpdecimate = mpdecimateCheckbox.checked;
     }
     if (cpuEffortSlider) {
         config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
@@ -120,6 +124,10 @@ if (bandwidthSelect) {
 
 if (vbrCheckbox) {
     vbrCheckbox.addEventListener('change', sendConfig);
+}
+
+if (mpdecimateCheckbox) {
+    mpdecimateCheckbox.addEventListener('change', sendConfig);
 }
 
 if (qualitySlider && qualityValue) {
@@ -295,6 +303,14 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             if (videoCodecSelect) {
                 videoCodecSelect.value = msg.videoCodec as string;
             }
+        }
+        
+        if (msg.vbr !== undefined && vbrCheckbox) {
+            vbrCheckbox.checked = msg.vbr as boolean;
+        }
+        
+        if (msg.mpdecimate !== undefined && mpdecimateCheckbox) {
+            mpdecimateCheckbox.checked = msg.mpdecimate as boolean;
         }
     } else if (msg.type === 'webrtc_answer') {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);

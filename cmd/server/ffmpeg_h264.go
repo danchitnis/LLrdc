@@ -20,13 +20,30 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool) []string
 		// Use a 2 second buffer (bw*2000) to prevent VBV underflows at high framerates with large I-frames
 		bufSizeStr := fmt.Sprintf("%dk", bw*2000)
 
-		outputArgs = append(outputArgs,
-			"-b:v", bitrateStr,
-			"-maxrate", bitrateStr,
-			"-bufsize", bufSizeStr,
-		)
-		if VideoCodec == "h264_nvenc" {
-			outputArgs = append(outputArgs, "-rc", "vbr")
+		if vbr {
+			if VideoCodec == "h264_nvenc" {
+				outputArgs = append(outputArgs,
+					"-rc", "vbr",
+					"-cq", "30",
+					"-maxrate", bitrateStr,
+					"-bufsize", bufSizeStr,
+				)
+			} else {
+				outputArgs = append(outputArgs,
+					"-crf", "30",
+					"-maxrate", bitrateStr,
+					"-bufsize", bufSizeStr,
+				)
+			}
+		} else {
+			outputArgs = append(outputArgs,
+				"-b:v", bitrateStr,
+				"-maxrate", bitrateStr,
+				"-bufsize", bufSizeStr,
+			)
+			if VideoCodec == "h264_nvenc" {
+				outputArgs = append(outputArgs, "-rc", "cbr")
+			}
 		}
 	} else {
 		val := 51 - (quality-10)*33/90 // Map 10-100 to 51-18

@@ -186,6 +186,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"bandwidth":    targetBandwidthMbps,
 		"quality":      targetQuality,
 		"vbr":          targetVBR,
+		"mpdecimate":   targetMpdecimate,
 	}
 	_ = writeJSON(initialConfig)
 
@@ -244,6 +245,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if vbrBool, ok := msg["vbr"].(bool); ok {
 				log.Printf("Received VBR config: %v", vbrBool)
 				SetVBR(vbrBool)
+			}
+			if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
+				log.Printf("Received mpdecimate config: %v", mpdecimateBool)
+				SetMpdecimate(mpdecimateBool)
 			}
 			if effortFloat, ok := msg["cpu_effort"].(float64); ok {
 				effort := int(effortFloat)

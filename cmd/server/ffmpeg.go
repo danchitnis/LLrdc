@@ -14,6 +14,7 @@ var (
 	targetBandwidthMbps = 5           // Initial default: 5 Mbps
 	targetQuality       = 70          // 10-100
 	targetVBR           = true        // Default VBR to true
+	targetMpdecimate    = false       // Default mpdecimate to false
 	targetCpuEffort     = 6           // Default: 6
 	targetCpuThreads    = 4           // Default: 4
 	targetDrawMouse     = true        // Default: true
@@ -38,6 +39,18 @@ func SetVideoCodec(codec string) {
 	initWebRTCTrack() // Re-create track
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		ffmpegCmd.Process.Kill()
+	}
+}
+
+func SetMpdecimate(mpdecimate bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	targetMpdecimate = mpdecimate
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target mpdecimate changed to %v, restarting ffmpeg...", mpdecimate)
 		ffmpegCmd.Process.Kill()
 	}
 }
@@ -167,6 +180,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			quality := targetQuality
 			fps := FPS
 			vbr := targetVBR
+			mpdecimate := targetMpdecimate
 			cpuEffort := targetCpuEffort
 			cpuThreads := targetCpuThreads
 			drawMouse := targetDrawMouse
@@ -188,7 +202,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			useNVENC := VideoCodec == "h264_nvenc"
 			
 			var filterStr string
-			if vbr && fps <= 60 {
+			if mpdecimate {
 				filterStr = "mpdecimate=max=15,settb=1/1000"
 			} else {
 				filterStr = "settb=1/1000"

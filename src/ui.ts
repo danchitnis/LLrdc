@@ -5,6 +5,7 @@ export const videoEl = document.getElementById('webrtc-video') as HTMLVideoEleme
 export const overlayEl = document.getElementById('input-overlay') as HTMLDivElement;
 export const bandwidthSelect = document.getElementById('bandwidth-select') as HTMLSelectElement;
 export const vbrCheckbox = document.getElementById('vbr-checkbox') as HTMLInputElement;
+export const mpdecimateCheckbox = document.getElementById('mpdecimate-checkbox') as HTMLInputElement;
 
 export const configBtn = document.getElementById('config-btn') as HTMLButtonElement;
 export const configDropdown = document.getElementById('config-dropdown') as HTMLDivElement;
