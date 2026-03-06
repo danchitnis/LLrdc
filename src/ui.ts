@@ -29,6 +29,12 @@ export function log(msg: string) {
     console.log(msg);
 }
 
+export let serverFfmpegCpu = 0;
+
+export function setServerFfmpegCpu(cpu: number) {
+    serverFfmpegCpu = cpu;
+}
+
 export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMonitor: number, networkLatency: number, bandwidthMbps: number = 0, width: number = 0, height: number = 0, codec: string = 'vp8') {
     if (!statusEl) return;
     
@@ -50,5 +56,5 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     }
     
     statusEl.style.color = color;
-    statusEl.textContent = `${transportInfo}${resInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms | BW: ${bandwidthMbps.toFixed(2)} Mbps`;
+    statusEl.textContent = `${transportInfo}${resInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms | BW: ${bandwidthMbps.toFixed(2)} Mbps | FFmpeg CPU: ${Math.round(serverFfmpegCpu)}%`;
 }

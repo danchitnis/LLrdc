@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -300,6 +300,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);
     } else if (msg.type === 'webrtc_ice' && msg.candidate) {
         webrtc.handleIce(msg.candidate as RTCIceCandidateInit);
+    } else if (msg.type === 'stats') {
+        if (typeof msg.ffmpegCpu === 'number') {
+            setServerFfmpegCpu(msg.ffmpegCpu);
+        }
     }
 }
 

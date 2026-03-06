@@ -7,8 +7,10 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +33,42 @@ var clientsMutex sync.Mutex
 var clients = make(map[*websocket.Conn]*Client)
 
 func startHTTPServer() {
+	go func() {
+		for {
+			time.Sleep(2 * time.Second)
+			
+			ffmpegMutex.Lock()
+			cmd := ffmpegCmd
+			ffmpegMutex.Unlock()
+
+			var cpuUsage float64 = 0
+
+			if cmd != nil && cmd.Process != nil {
+				pid := cmd.Process.Pid
+				out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "%cpu=").Output()
+				if err == nil {
+					valStr := strings.TrimSpace(string(out))
+					if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+						cpuUsage = val
+					}
+				}
+			}
+
+			statsMsg := map[string]interface{}{
+				"type": "stats",
+				"ffmpegCpu": cpuUsage,
+			}
+
+			clientsMutex.Lock()
+			for _, client := range clients {
+				client.mu.Lock()
+				_ = client.conn.WriteJSON(statsMsg)
+				client.mu.Unlock()
+			}
+			clientsMutex.Unlock()
+		}
+	}()
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if websocket.IsWebSocketUpgrade(r) {
 			wsHandler(w, r)

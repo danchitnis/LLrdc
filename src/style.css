@@ -12,11 +12,19 @@ body {
 
 #top-bar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: space-between;
   align-items: center;
   background-color: #111;
   padding: 10px 20px;
   border-bottom: 1px solid #333;
+}
+
+#top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
 #brand {
@@ -46,7 +54,7 @@ body {
 #config-dropdown {
   position: absolute;
   top: 100%;
-  right: 0;
+  left: 0;
   margin-top: 10px;
   background-color: #222;
   border: 1px solid #444;
