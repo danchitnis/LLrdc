@@ -188,7 +188,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			useNVENC := VideoCodec == "h264_nvenc"
 			
 			var filterStr string
-			if vbr {
+			if vbr && fps <= 60 {
 				filterStr = "mpdecimate=max=15,settb=1/1000"
 			} else {
 				filterStr = "settb=1/1000"
@@ -199,8 +199,8 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				if filterStr != "" {
 					filterStr += ","
 				}
-				// For NVENC, move the 'even-dimension' scale to GPU after format conversion to NV12
-				filterStr += "format=nv12,hwupload_cuda,scale_cuda=w=trunc(iw/2)*2:h=trunc(ih/2)*2"
+				// For NVENC, ensure even dimensions on CPU (mostly no-op), then upload to GPU and let NVENC do format conversion
+				filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,hwupload_cuda"
 				outputArgs = append(outputArgs, "-vf", filterStr)
 			} else {
 				if filterStr != "" {
