@@ -26,7 +26,7 @@ var (
 )
 
 func SetVideoCodec(codec string) {
-	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" {
+	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "av1" && codec != "av1_nvenc" {
 		log.Printf("Invalid video codec: %s", codec)
 		return
 	}
@@ -218,7 +218,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
 
-			useNVENC := VideoCodec == "h264_nvenc"
+			useNVENC := VideoCodec == "h264_nvenc" || VideoCodec == "av1_nvenc"
 			
 			var filterStr string
 			if mpdecimate {
@@ -243,10 +243,13 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				outputArgs = append(outputArgs, "-vf", filterStr)
 			}
 
-			useH264 := VideoCodec == "h264" || useNVENC
+			useH264 := VideoCodec == "h264" || VideoCodec == "h264_nvenc"
+			useAV1 := VideoCodec == "av1" || VideoCodec == "av1_nvenc"
 
 			if useH264 {
 				outputArgs = append(outputArgs, buildH264Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
+			} else if useAV1 {
+				outputArgs = append(outputArgs, buildAV1Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
 			} else {
 				outputArgs = append(outputArgs, buildVP8Args(mode, bw, quality, fps, cpuEffort, cpuThreads, vbr, keyframeInterval)...)
 			}
@@ -317,6 +320,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 						onFrame(frame, currentStreamID)
 					})
 				} else {
+					// Both VP8 and AV1 use IVF splitter
 					splitIVF(stdout, func(frame []byte) {
 						onFrame(frame, currentStreamID)
 					})

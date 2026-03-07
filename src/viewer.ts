@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -280,6 +280,26 @@ function handleBinaryMessage(buffer: ArrayBuffer) {
                     }
                 }
             }
+        } else if (webcodecs.videoCodec.startsWith('av1')) {
+            // AV1 keyframe detection
+            // An AV1 keyframe (IDR) must contain a Sequence Header OBU (Type 1).
+            // It often starts with a Temporal Delimiter OBU (Type 2).
+            let pos = 0;
+            while (pos < chunkData.length && pos < 100) { // Check first 100 bytes
+                const obuType = (chunkData[pos] >> 3) & 0x0F;
+                if (obuType === 1) { // Sequence Header
+                    isKey = true;
+                    break;
+                }
+                // Skip OBU header (1 byte) + extension header (optional 1 byte) + size (leb128)
+                // This is complex to do fully, so we just check if the first or second OBU is Seq Header.
+                // Most encoders put Temporal Delimiter (2 bytes usually: 0x12 0x00) then Seq Header.
+                if (obuType === 2) { // Temporal Delimiter
+                   pos += 2; // Usually 2 bytes
+                   continue;
+                }
+                break;
+            }
         } else {
             // VP8 keyframe detection
             isKey = (chunkData[0] & 0x01) === 0;
@@ -308,8 +328,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
             if (msg.gpuAvailable !== undefined) {
                 (window as any).gpuAvailable = msg.gpuAvailable;
-                if (codecOptGpu) {
-                    codecOptGpu.style.display = msg.gpuAvailable ? '' : 'none';
+                if (codecGpuOpts) {
+                    codecGpuOpts.forEach(opt => {
+                        opt.style.display = msg.gpuAvailable ? '' : 'none';
+                    });
                 }
             }
 

@@ -72,8 +72,16 @@ export class WebCodecsManager {
             });
 
             const isH264 = this.videoCodec.startsWith('h264');
-            // avc1.42E034 is Baseline profile, level 5.2 - supports 4K @ 120fps
-            const codecStr = isH264 ? 'avc1.42E034' : 'vp8';
+            const isAV1 = this.videoCodec.startsWith('av1');
+            
+            let codecStr = 'vp8';
+            if (isH264) {
+                // avc1.42E034 is Baseline profile, level 5.2 - supports 4K @ 120fps
+                codecStr = 'avc1.42E034';
+            } else if (isAV1) {
+                // av01.0.08M.08 - Main profile, level 4.0, Main tier, 8-bit
+                codecStr = 'av01.0.08M.08';
+            }
 
             const config: VideoDecoderConfig = {
                 codec: codecStr,

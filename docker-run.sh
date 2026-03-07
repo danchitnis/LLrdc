@@ -65,7 +65,7 @@ echo "▶ Starting container: ${CONTAINER_NAME}"
 echo "  Image : ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "  Port  : ${HOST_PORT} → ${CONTAINER_PORT}"
 echo "  CPUs  : ${NUM_CPUS} (cores ${CPU_LIST})"
-if [ "$USE_DEBUG" = "true" ]; then
+if [ "${USE_DEBUG:-false}" = "true" ]; then
   echo "  FPS   : ${SERVER_FPS}"
 fi
 if [ "$USE_GPU" = "true" ]; then

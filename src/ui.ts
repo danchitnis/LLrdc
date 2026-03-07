@@ -22,7 +22,7 @@ export const cpuEffortValue = document.getElementById('cpu-effort-value') as HTM
 export const cpuThreadsSelect = document.getElementById('cpu-threads-select') as HTMLSelectElement;
 export const desktopMouseCheckbox = document.getElementById('desktop-mouse-checkbox') as HTMLInputElement;
 export const videoCodecSelect = document.getElementById('video-codec-select') as HTMLSelectElement;
-export const codecOptGpu = document.getElementById('codec-opt-gpu') as HTMLOptionElement;
+export const codecGpuOpts = document.querySelectorAll('.codec-opt-gpu') as NodeListOf<HTMLOptionElement>;
 export const clientGpuCheckbox = document.getElementById('client-gpu-checkbox') as HTMLInputElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
