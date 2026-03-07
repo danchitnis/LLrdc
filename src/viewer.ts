@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecOptGpu, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -48,6 +48,7 @@ interface ConfigMessage {
     framerate?: number;
     vbr?: boolean;
     mpdecimate?: boolean;
+    keyframe_interval?: number;
     cpu_effort?: number;
     cpu_threads?: number;
     enable_desktop_mouse?: boolean;
@@ -75,6 +76,9 @@ function sendConfig() {
     }
     if (mpdecimateCheckbox) {
         config.mpdecimate = mpdecimateCheckbox.checked;
+    }
+    if (keyframeIntervalSelect) {
+        config.keyframe_interval = parseInt(keyframeIntervalSelect.value, 10);
     }
     if (cpuEffortSlider) {
         config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
@@ -128,6 +132,10 @@ if (vbrCheckbox) {
 
 if (mpdecimateCheckbox) {
     mpdecimateCheckbox.addEventListener('change', sendConfig);
+}
+
+if (keyframeIntervalSelect) {
+    keyframeIntervalSelect.addEventListener('change', sendConfig);
 }
 
 if (qualitySlider && qualityValue) {
@@ -185,7 +193,12 @@ if (desktopMouseCheckbox) {
 }
 
 if (videoCodecSelect) {
-    videoCodecSelect.addEventListener('change', sendConfig);
+    videoCodecSelect.addEventListener('change', () => {
+        if (cpuEffortSlider) {
+            cpuEffortSlider.disabled = videoCodecSelect.value !== 'vp8';
+        }
+        sendConfig();
+    });
 }
 
 if (clientGpuCheckbox) {
@@ -302,6 +315,9 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
             if (videoCodecSelect) {
                 videoCodecSelect.value = msg.videoCodec as string;
+                if (cpuEffortSlider) {
+                    cpuEffortSlider.disabled = videoCodecSelect.value !== 'vp8';
+                }
             }
         }
         
@@ -311,6 +327,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         
         if (msg.mpdecimate !== undefined && mpdecimateCheckbox) {
             mpdecimateCheckbox.checked = msg.mpdecimate as boolean;
+        }
+        
+        if (msg.keyframe_interval !== undefined && keyframeIntervalSelect) {
+            keyframeIntervalSelect.value = (msg.keyframe_interval as number).toString();
         }
     } else if (msg.type === 'webrtc_answer') {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);

@@ -95,12 +95,12 @@ ${outputBuffer}`));
             }).toBeGreaterThan(0);
         });
 
-        await test.step('Switch to CPU tab and adjust effort to 8', async () => {
+        await test.step('Switch to Performance tab and adjust effort to 8', async () => {
             const configBtnLocator = page.locator('#config-btn');
             await configBtnLocator.click();
 
-            const cpuTabLocator = page.locator('.config-tab-btn[data-tab="tab-cpu"]');
-            await cpuTabLocator.click();
+            const performanceTabLocator = page.locator('.config-tab-btn[data-tab="tab-performance"]');
+            await performanceTabLocator.click();
 
             const cpuEffortLocator = page.locator('#cpu-effort-slider');
             await cpuEffortLocator.waitFor({ state: 'visible', timeout: 10000 });
@@ -133,9 +133,9 @@ ${outputBuffer}`));
             await page.waitForTimeout(3000);
         });
 
-        await test.step('Switch to Bandwidth tab and adjust Max Resolution to 720p', async () => {
-            const bandwidthTabLocator = page.locator('.config-tab-btn[data-tab="tab-bandwidth"]');
-            await bandwidthTabLocator.click();
+        await test.step('Switch to Stream tab and adjust Max Resolution to 720p', async () => {
+            const streamTabLocator = page.locator('.config-tab-btn[data-tab="tab-stream"]');
+            await streamTabLocator.click();
 
             const maxResLocator = page.locator('#max-res-select');
             await maxResLocator.waitFor({ state: 'visible', timeout: 10000 });
@@ -149,9 +149,9 @@ ${outputBuffer}`));
             await page.waitForTimeout(3000);
         });
 
-        await test.step('Switch to CPU tab and adjust Video Codec', async () => {
-            const cpuTabLocator = page.locator('.config-tab-btn[data-tab="tab-cpu"]');
-            await cpuTabLocator.click();
+        await test.step('Switch to Stream tab and adjust Video Codec', async () => {
+            const streamTabLocator = page.locator('.config-tab-btn[data-tab="tab-stream"]');
+            await streamTabLocator.click();
 
             const codecLocator = page.locator('#video-codec-select');
             await codecLocator.waitFor({ state: 'visible', timeout: 10000 });

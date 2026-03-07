@@ -129,11 +129,17 @@ ${outputBuffer}`));
             await configBtnLocator.click();
 
             // Disable VBR for framerate testing
+            const qualityTabLocator = page.locator('.config-tab-btn[data-tab="tab-quality"]');
+            await qualityTabLocator.click();
+
             const vbrCheckbox = page.locator('#vbr-checkbox');
             if (await vbrCheckbox.isChecked()) {
                 await vbrCheckbox.uncheck();
                 await page.waitForTimeout(2000);
             }
+
+            const streamTabLocator = page.locator('.config-tab-btn[data-tab="tab-stream"]');
+            await streamTabLocator.click();
 
             const selectLocator = page.locator('#framerate-select');
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });

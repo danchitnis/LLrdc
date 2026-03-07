@@ -6,7 +6,7 @@ import (
 	"log"
 )
 
-func buildH264Args(mode string, bw int, quality int, fps int, vbr bool) []string {
+func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, keyframeInterval int) []string {
 	var outputArgs []string
 
 	if VideoCodec == "h264_nvenc" {
@@ -52,7 +52,7 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool) []string
 		} else {
 			outputArgs = append(outputArgs, "-crf", fmt.Sprintf("%d", val))
 		}
-		
+
 		maxKbps := 2000 + (quality-10)*18000/90
 		// Use a 2 second buffer
 		maxrateStr := fmt.Sprintf("%dk", maxKbps)
@@ -66,9 +66,8 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool) []string
 
 	outputArgs = append(outputArgs,
 		"-max_muxing_queue_size", "1024",
-		"-g", fmt.Sprintf("%d", fps*2),
-		"-f", "h264",
-		"pipe:1",
+		"-g", fmt.Sprintf("%d", fps*keyframeInterval),
+		"-f", "h264",		"pipe:1",
 	)
 
 	return outputArgs

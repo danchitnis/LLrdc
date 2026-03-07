@@ -12,6 +12,8 @@ var (
 	Display    string
 	VideoCodec string
 	UseGPU     bool
+	UseDebugX11    bool
+	UseDebugFFmpeg bool
 )
 
 func initConfig() {
@@ -31,6 +33,8 @@ func initConfig() {
 	}
 
 	UseGPU = os.Getenv("USE_GPU") == "true"
+	UseDebugX11 = os.Getenv("USE_DEBUG_X11") == "true"
+	UseDebugFFmpeg = os.Getenv("USE_DEBUG_FFMPEG") == "true"
 
 	DisplayNum = os.Getenv("DISPLAY_NUM")
 	if DisplayNum == "" {

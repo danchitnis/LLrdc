@@ -6,6 +6,7 @@ export const overlayEl = document.getElementById('input-overlay') as HTMLDivElem
 export const bandwidthSelect = document.getElementById('bandwidth-select') as HTMLSelectElement;
 export const vbrCheckbox = document.getElementById('vbr-checkbox') as HTMLInputElement;
 export const mpdecimateCheckbox = document.getElementById('mpdecimate-checkbox') as HTMLInputElement;
+export const keyframeIntervalSelect = document.getElementById('keyframe-interval-select') as HTMLSelectElement;
 
 export const configBtn = document.getElementById('config-btn') as HTMLButtonElement;
 export const configDropdown = document.getElementById('config-dropdown') as HTMLDivElement;
@@ -54,6 +55,10 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     }
     if (latencyMonitor > 300 || networkLatency > 200) {
         color = '#f44'; // Red
+    }
+    
+    if (keyframeIntervalSelect) {
+        keyframeIntervalSelect.disabled = !isWebRtcActive;
     }
     
     statusEl.style.color = color;

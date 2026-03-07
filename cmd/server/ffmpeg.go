@@ -13,15 +13,16 @@ var (
 	targetMode          = "bandwidth" // "bandwidth" or "quality"
 	targetBandwidthMbps = 5           // Initial default: 5 Mbps
 	targetQuality       = 70          // 10-100
-	targetVBR           = true        // Default VBR to true
-	targetMpdecimate    = false       // Default mpdecimate to false
-	targetCpuEffort     = 6           // Default: 6
-	targetCpuThreads    = 4           // Default: 4
-	targetDrawMouse     = true        // Default: true
-	ffmpegCmd           *exec.Cmd
-	ffmpegMutex         sync.Mutex
-	ffmpegShouldRun     = true
-	ffmpegStreamID      uint32
+	targetVBR              = true        // Default VBR to true
+	targetMpdecimate       = false       // Default mpdecimate to false
+	targetCpuEffort        = 6           // Default: 6
+	targetCpuThreads       = 4           // Default: 4
+	targetDrawMouse        = true        // Default: true
+	targetKeyframeInterval = 2           // Default: 2 seconds
+	ffmpegCmd              *exec.Cmd
+	ffmpegMutex            sync.Mutex
+	ffmpegShouldRun        = true
+	ffmpegStreamID         uint32
 )
 
 func SetVideoCodec(codec string) {
@@ -39,6 +40,23 @@ func SetVideoCodec(codec string) {
 	initWebRTCTrack() // Re-create track
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		ffmpegCmd.Process.Kill()
+	}
+}
+
+func SetKeyframeInterval(interval int) {
+	if interval < 1 {
+		interval = 1
+	} else if interval > 10 {
+		interval = 10
+	}
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	targetKeyframeInterval = interval
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Target keyframe interval changed to %d, restarting ffmpeg...", interval)
 		ffmpegCmd.Process.Kill()
 	}
 }
@@ -184,6 +202,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			cpuEffort := targetCpuEffort
 			cpuThreads := targetCpuThreads
 			drawMouse := targetDrawMouse
+			keyframeInterval := targetKeyframeInterval
 			ffmpegMutex.Unlock()
 
 			width, height := GetScreenSize()
@@ -227,9 +246,9 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			useH264 := VideoCodec == "h264" || useNVENC
 
 			if useH264 {
-				outputArgs = append(outputArgs, buildH264Args(mode, bw, quality, fps, vbr)...)
+				outputArgs = append(outputArgs, buildH264Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
 			} else {
-				outputArgs = append(outputArgs, buildVP8Args(mode, bw, quality, fps, cpuEffort, cpuThreads, vbr)...)
+				outputArgs = append(outputArgs, buildVP8Args(mode, bw, quality, fps, cpuEffort, cpuThreads, vbr, keyframeInterval)...)
 			}
 
 			log.Printf("Starting ffmpeg capture (%s) from %s at %s target...", VideoCodec, Display, mode)
@@ -239,6 +258,9 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				"-analyzeduration", "0",
 				"-fflags", "nobuffer",
 				"-threads", "2",
+			}
+			if !UseDebugFFmpeg {
+				initialArgs = append(initialArgs, "-nostats")
 			}
 			if useNVENC {
 				initialArgs = append(initialArgs, "-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu")

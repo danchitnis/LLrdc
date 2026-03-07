@@ -17,30 +17,21 @@
                 <button id="config-btn">⚙️ Config</button>
                 <div id="config-dropdown" class="hidden">
                 <div class="config-tabs">
-                    <button class="config-tab-btn active" data-tab="tab-bandwidth">Bandwidth</button>
-                    <button class="config-tab-btn" data-tab="tab-cpu">CPU</button>
+                    <button class="config-tab-btn active" data-tab="tab-stream">Stream</button>
+                    <button class="config-tab-btn" data-tab="tab-quality">Quality</button>
+                    <button class="config-tab-btn" data-tab="tab-performance">Performance</button>
                     <button class="config-tab-btn" data-tab="tab-mouse">Mouse</button>
                 </div>
-                <div id="tab-bandwidth" class="config-tab-content active">
+
+                <!-- TAB 1: STREAM SETTINGS -->
+                <div id="tab-stream" class="config-tab-content active">
                     <div class="config-group">
-                        <label><input type="radio" name="target-type" value="bandwidth" checked> Target Bandwidth</label>
-                        <select id="bandwidth-select">
-                            <option value="1">1 Mbps</option>
-                            <option value="5" selected>5 Mbps</option>
-                            <option value="10">10 Mbps</option>
-                            <option value="20">20 Mbps</option>
-                            <option value="50">50 Mbps</option>
+                        <label>Server Video Codec</label>
+                        <select id="video-codec-select">
+                            <option value="vp8">VP8</option>
+                            <option value="h264">H.264 (CPU)</option>
+                            <option value="h264_nvenc" id="codec-opt-gpu" style="display: none;">H.264 (GPU - NVENC)</option>
                         </select>
-                    </div>
-                    <div class="config-group" style="padding-top: 5px;">
-                        <label><input type="checkbox" id="vbr-checkbox" checked> Enable Variable Bitrate (VBR)</label>
-                        <br>
-                        <label><input type="checkbox" id="mpdecimate-checkbox"> Enable Drop Duplicate Frames (mpdecimate)</label>
-                    </div>
-                    <div class="config-group">
-                        <label><input type="radio" name="target-type" value="quality"> Target Quality</label>
-                        <input type="range" id="quality-slider" min="10" max="100" value="70" disabled>
-                        <span id="quality-value">70</span>
                     </div>
                     <div class="config-group">
                         <label>Frame Rate</label>
@@ -62,21 +53,48 @@
                             <option value="2160">4K</option>
                         </select>
                     </div>
-                </div>
-                <div id="tab-cpu" class="config-tab-content" style="display: none;">
-                    <div class="config-group">
-                        <label>Server Video Codec</label>
-                        <select id="video-codec-select">
-                            <option value="vp8">VP8</option>
-                            <option value="h264">H.264 (CPU)</option>
-                            <option value="h264_nvenc" id="codec-opt-gpu" style="display: none;">H.264 (GPU - NVENC)</option>
-                        </select>
-                    </div>
                     <div class="config-group">
                         <label><input type="checkbox" id="client-gpu-checkbox"> Enable Client GPU Decoding</label>
                     </div>
+                </div>
+
+                <!-- TAB 2: QUALITY & BANDWIDTH -->
+                <div id="tab-quality" class="config-tab-content" style="display: none;">
                     <div class="config-group">
-                        <label>CPU Effort</label>
+                        <label><input type="radio" name="target-type" value="bandwidth" checked> Target Bandwidth</label>
+                        <select id="bandwidth-select">
+                            <option value="1">1 Mbps</option>
+                            <option value="5" selected>5 Mbps</option>
+                            <option value="10">10 Mbps</option>
+                            <option value="20">20 Mbps</option>
+                            <option value="50">50 Mbps</option>
+                        </select>
+                    </div>
+                    <div class="config-group">
+                        <label><input type="radio" name="target-type" value="quality"> Target Quality</label>
+                        <input type="range" id="quality-slider" min="10" max="100" value="70" disabled>
+                        <span id="quality-value">70</span>
+                    </div>
+                    <div class="config-group" style="padding-top: 5px; flex-direction: column; align-items: flex-start;">
+                        <label title="Allow encoder to use less bandwidth during static scenes"><input type="checkbox" id="vbr-checkbox" checked> Enable Variable Bitrate (VBR)</label>
+                        <label title="Completely drop duplicate frames to save CPU and bandwidth"><input type="checkbox" id="mpdecimate-checkbox"> Enable Drop Duplicate Frames (mpdecimate)</label>
+                    </div>
+                    <div class="config-group">
+                        <label title="How often a full frame is sent (WebRTC only)">Keyframe Interval</label>
+                        <select id="keyframe-interval-select">
+                            <option value="1">1 second</option>
+                            <option value="2" selected>2 seconds</option>
+                            <option value="3">3 seconds</option>
+                            <option value="5">5 seconds</option>
+                            <option value="10">10 seconds</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- TAB 3: PERFORMANCE -->
+                <div id="tab-performance" class="config-tab-content" style="display: none;">
+                    <div class="config-group">
+                        <label title="Lower is faster but lower quality (libvpx only)">CPU Effort</label>
                         <input type="range" id="cpu-effort-slider" min="0" max="8" value="6">
                         <span id="cpu-effort-value">6</span>
                     </div>
@@ -91,6 +109,8 @@
                         </select>
                     </div>
                 </div>
+
+                <!-- TAB 4: INPUT -->
                 <div id="tab-mouse" class="config-tab-content" style="display: none;">
                     <div class="config-group">
                         <label><input type="checkbox" id="desktop-mouse-checkbox" checked> Enable Desktop Mouse</label>

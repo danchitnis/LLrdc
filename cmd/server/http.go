@@ -182,11 +182,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"type":         "config",
 		"videoCodec":   VideoCodec,
 		"gpuAvailable": UseGPU,
-		"framerate":    FPS,
-		"bandwidth":    targetBandwidthMbps,
-		"quality":      targetQuality,
-		"vbr":          targetVBR,
-		"mpdecimate":   targetMpdecimate,
+		"framerate":          FPS,
+		"bandwidth":          targetBandwidthMbps,
+		"quality":            targetQuality,
+		"vbr":                targetVBR,
+		"mpdecimate":         targetMpdecimate,
+		"keyframe_interval":  targetKeyframeInterval,
 	}
 	_ = writeJSON(initialConfig)
 
@@ -249,6 +250,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
 				log.Printf("Received mpdecimate config: %v", mpdecimateBool)
 				SetMpdecimate(mpdecimateBool)
+			}
+			if keyframeFloat, ok := msg["keyframe_interval"].(float64); ok {
+				interval := int(keyframeFloat)
+				log.Printf("Received keyframe interval config: %d", interval)
+				SetKeyframeInterval(interval)
 			}
 			if effortFloat, ok := msg["cpu_effort"].(float64); ok {
 				effort := int(effortFloat)

@@ -108,6 +108,9 @@ test.describe('Bandwidth Configuration', () => {
             const configBtnLocator = page.locator('#config-btn');
             await configBtnLocator.click();
 
+            const qualityTabLocator = page.locator('.config-tab-btn[data-tab="tab-quality"]');
+            await qualityTabLocator.click();
+
             const selectLocator = page.locator('#bandwidth-select');
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
             await selectLocator.selectOption('1');

@@ -45,8 +45,10 @@ func startX11(displayNum string) error {
 
 	// Start Xvfb
 	xvfb := exec.Command("Xvfb", display, "-screen", "0", "3840x2160x24", "-nolisten", "tcp", "-ac", "+extension", "RANDR")
-	xvfb.Stdout = os.Stdout
-	xvfb.Stderr = os.Stderr
+	if UseDebugX11 {
+		xvfb.Stdout = os.Stdout
+		xvfb.Stderr = os.Stderr
+	}
 	if err := xvfb.Start(); err != nil {
 		return fmt.Errorf("failed to start Xvfb: %v", err)
 	}
@@ -81,8 +83,10 @@ func startX11(displayNum string) error {
 	log.Println("Starting xfce4-session...")
 	session := exec.Command("dbus-run-session", "xfce4-session")
 	session.Env = env
-	session.Stdout = os.Stdout
-	session.Stderr = os.Stderr
+	if UseDebugX11 {
+		session.Stdout = os.Stdout
+		session.Stderr = os.Stderr
+	}
 	if err := session.Start(); err != nil {
 		return fmt.Errorf("failed to start xfce4-session: %v", err)
 	}

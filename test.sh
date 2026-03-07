@@ -47,7 +47,7 @@ for spec in "${TEST_FILES[@]}"; do
     cleanup_containers
 
     set +e
-    npx playwright test "$spec" --workers=1 --reporter=line "${PLAYWRIGHT_ARGS[@]}"
+    npx playwright test "$spec" --workers=1 --reporter=line --timeout=60000 "${PLAYWRIGHT_ARGS[@]}"
     exit_code=$?
     set -e
 

@@ -16,9 +16,18 @@ HOST_PORT="${HOST_PORT:-8080}"
 CONTAINER_PORT="${CONTAINER_PORT:-$SERVER_PORT}"
 
 USE_GPU="${USE_GPU:-false}"
+USE_DEBUG_X11="false"
+USE_DEBUG_FFMPEG="false"
 for arg in "$@"; do
   if [ "$arg" == "--gpu" ]; then
     USE_GPU="true"
+  elif [ "$arg" == "--debug-x11" ]; then
+    USE_DEBUG_X11="true"
+  elif [ "$arg" == "--debug-ffmpeg" ]; then
+    USE_DEBUG_FFMPEG="true"
+  elif [ "$arg" == "--debug" ]; then
+    USE_DEBUG_X11="true"
+    USE_DEBUG_FFMPEG="true"
   fi
 done
 
@@ -56,6 +65,9 @@ echo "▶ Starting container: ${CONTAINER_NAME}"
 echo "  Image : ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "  Port  : ${HOST_PORT} → ${CONTAINER_PORT}"
 echo "  CPUs  : ${NUM_CPUS} (cores ${CPU_LIST})"
+if [ "$USE_DEBUG" = "true" ]; then
+  echo "  FPS   : ${SERVER_FPS}"
+fi
 if [ "$USE_GPU" = "true" ]; then
   echo "  GPU   : Enabled (Codec: ${SERVER_VIDEO_CODEC})"
 fi
@@ -97,5 +109,7 @@ docker run \
   --env USE_GPU="${USE_GPU}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP}" \
+  --env USE_DEBUG_X11="${USE_DEBUG_X11}" \
+  --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env HOST_UID=$(id -u) \
   "${IMAGE_NAME}:${IMAGE_TAG}"

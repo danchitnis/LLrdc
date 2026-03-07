@@ -7,7 +7,7 @@ import (
 	"log"
 )
 
-func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuThreads int, vbr bool) []string {
+func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuThreads int, vbr bool, keyframeInterval int) []string {
 	var outputArgs []string
 
 	outputArgs = append(outputArgs, "-c:v", "libvpx")
@@ -48,7 +48,7 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 		"-lag-in-frames", "0",
 		"-error-resilient", "1",
 		"-rc_lookahead", "0",
-		"-g", fmt.Sprintf("%d", fps),
+		"-g", fmt.Sprintf("%d", fps*keyframeInterval),
 		"-deadline", "realtime",
 		"-cpu-used", cpuUsedStr,
 		"-threads", fmt.Sprintf("%d", cpuThreads),

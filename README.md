@@ -44,6 +44,15 @@ To enable GPU acceleration (NVENC) on NVIDIA systems, add the `--gpu` flag:
 
 The script will automatically detect and map CUDA/NVCC paths and switch to `h264_nvenc` encoding for high-performance streaming.
 
+To see verbose debug logs, you can use the following flags:
+- `--debug-ffmpeg`: Shows real-time ffmpeg frame rate and encoder reports.
+- `--debug-x11`: Shows X11 keyboard warnings and XFCE session startup errors.
+- `--debug`: Enables both ffmpeg and X11 debug logging.
+
+```bash
+./docker-run.sh --debug
+```
+
 ### 3. Connect
 
 Open your browser and navigate to:
@@ -68,3 +77,6 @@ Available environment variables:
 - `FPS`: Target frames per second (default: 30)
 - `VIDEO_CODEC`: `vp8` (default), `h264`, or `h264_nvenc`
 - `DISPLAY_NUM`: X11 display number (default: 99)
+- `USE_DEBUG_FFMPEG`: Set to `true` to enable ffmpeg debug logging (equivalent to `--debug-ffmpeg` flag)
+- `USE_DEBUG_X11`: Set to `true` to enable X11 debug logging (equivalent to `--debug-x11` flag)
+- `USE_GPU`: Set to `true` to enable GPU acceleration (equivalent to `--gpu` flag)

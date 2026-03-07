@@ -17,8 +17,11 @@ RUN npm run build
 
 FROM ubuntu:24.04
 
-# Avoid interactive prompts during apt installs
 ENV DEBIAN_FRONTEND=noninteractive
+ENV NO_AT_BRIDGE=1
+ENV GTK_A11Y=none
+ENV GVFS_DISABLE_FUSE=1
+ENV LIBOVERLAY_SCROLLBAR=0
 
 # ── System dependencies ──────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -69,6 +72,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   sudo \
   && rm -rf /var/lib/apt/lists/*
 
+# ── Silencing XFCE warnings ───────────────────────────────────────────────────
+# Create a dummy pm-is-supported script to prevent xfce4-session from complaining.
+RUN printf '#!/bin/sh\nexit 1\n' > /usr/bin/pm-is-supported \
+  && chmod +x /usr/bin/pm-is-supported
+
+# Create X11 and ICE socket directories to prevent permission errors
+RUN mkdir -p /tmp/.X11-unix /tmp/.ICE-unix \
+  && chmod 1777 /tmp/.X11-unix /tmp/.ICE-unix
+
+# Silence xkbcomp warnings
+RUN mv /usr/bin/xkbcomp /usr/bin/xkbcomp.real \
+  && printf '#!/bin/sh\nexec /usr/bin/xkbcomp.real -w 0 "$@"\n' > /usr/bin/xkbcomp \
+  && chmod +x /usr/bin/xkbcomp
+
 # ── Non-root user ────────────────────────────────────────────────────────────
 # Create user 'remote' with a home directory and add to sudo group (no password).
 # Ubuntu 24.04 includes a default 'ubuntu' user at UID 1000. We remove it to reuse UID 1000.
@@ -97,6 +114,14 @@ RUN mkdir -p /usr/share/icons/default \
   '  </property>' \
   '</channel>' \
   > /home/remote/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml \
+  && printf '%s\n' \
+  '<?xml version="1.0" encoding="UTF-8"?>' \
+  '<channel name="xfce4-desktop" version="1.0">' \
+  '  <property name="desktop-icons" type="empty">' \
+  '    <property name="show-thumbnails" type="bool" value="false"/>' \
+  '  </property>' \
+  '</channel>' \
+  > /home/remote/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml \
   && chown -R remote:remote /home/remote
 
 # ── App directory ─────────────────────────────────────────────────────────────
