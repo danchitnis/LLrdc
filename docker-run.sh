@@ -49,10 +49,10 @@ if [ "$USE_GPU" = "true" ]; then
   NVCC_PATH=$(command -v nvcc || true)
   if [ -n "$NVCC_PATH" ]; then
     CUDA_DIR=$(dirname $(dirname "$NVCC_PATH"))
-    GPU_ARGS="--gpus all -v $CUDA_DIR:$CUDA_DIR -v $NVCC_PATH:$NVCC_PATH"
+    GPU_ARGS="--gpus all -v $CUDA_DIR:$CUDA_DIR -v $NVCC_PATH:$NVCC_PATH -e NVIDIA_DRIVER_CAPABILITIES=all"
   else
     echo "Warning: nvcc not found, but GPU was requested."
-    GPU_ARGS="--gpus all"
+    GPU_ARGS="--gpus all -e NVIDIA_DRIVER_CAPABILITIES=all"
   fi
 fi
 
