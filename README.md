@@ -49,8 +49,16 @@ To see verbose debug logs, you can use the following flags:
 - `--debug-x11`: Shows X11 keyboard warnings and XFCE session startup errors.
 - `--debug`: Enables both ffmpeg and X11 debug logging.
 
+### Network and WebRTC Configuration
+
+By default, the server auto-detects your primary IP address for WebRTC. If you have multiple network interfaces (e.g., Tailscale, VPNs, or multiple LANs), you can use the following flags to control which interfaces are used for the stream:
+
+- `--iface <name>` or `-i <name>`: Only allow WebRTC to use the specified interface (e.g., `eth0`).
+- `--exclude-iface <name>` or `-x <name>`: Prevent WebRTC from using the specified interface (e.g., `tailscale0`).
+
 ```bash
-./docker-run.sh --debug
+# Example: Exclude Tailscale and use real IP
+./docker-run.sh -x tailscale0
 ```
 
 ### 3. Connect
@@ -80,3 +88,6 @@ Available environment variables:
 - `USE_DEBUG_FFMPEG`: Set to `true` to enable ffmpeg debug logging (equivalent to `--debug-ffmpeg` flag)
 - `USE_DEBUG_X11`: Set to `true` to enable X11 debug logging (equivalent to `--debug-x11` flag)
 - `USE_GPU`: Set to `true` to enable GPU acceleration (equivalent to `--gpu` flag)
+- `WEBRTC_INTERFACES`: Comma-separated list of allowed interfaces (equivalent to `-i`)
+- `WEBRTC_EXCLUDE_INTERFACES`: Comma-separated list of excluded interfaces (equivalent to `-x`)
+- `WEBRTC_PUBLIC_IP`: Manually override the IP address advertised to the client

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -127,6 +128,35 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 		} else {
 			log.Printf("Warning: WEBRTC_PUBLIC_IP '%s' is not a valid IP. Ignoring.", publicIP)
 		}
+	}
+
+	webrtcInterfaces := os.Getenv("WEBRTC_INTERFACES")
+	webrtcExcludeInterfaces := os.Getenv("WEBRTC_EXCLUDE_INTERFACES")
+	if webrtcInterfaces != "" || webrtcExcludeInterfaces != "" {
+		interfaces := strings.Split(webrtcInterfaces, ",")
+		excludeInterfaces := strings.Split(webrtcExcludeInterfaces, ",")
+		s.SetInterfaceFilter(func(i string) bool {
+			// Check exclusions first
+			if webrtcExcludeInterfaces != "" {
+				for _, excl := range excludeInterfaces {
+					if i == excl || strings.HasPrefix(i, excl) {
+						return false
+					}
+				}
+			}
+			// If allowed interfaces are specified, check those
+			if webrtcInterfaces != "" {
+				for _, iface := range interfaces {
+					if i == iface {
+						return true
+					}
+				}
+				return false
+			}
+			// Otherwise allow
+			return true
+		})
+		log.Printf("WebRTC Setting InterfaceFilter: allow=%v, exclude=%v", interfaces, excludeInterfaces)
 	}
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))

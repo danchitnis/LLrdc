@@ -18,17 +18,50 @@ CONTAINER_PORT="${CONTAINER_PORT:-$SERVER_PORT}"
 USE_GPU="${USE_GPU:-false}"
 USE_DEBUG_X11="false"
 USE_DEBUG_FFMPEG="false"
-for arg in "$@"; do
-  if [ "$arg" == "--gpu" ]; then
-    USE_GPU="true"
-  elif [ "$arg" == "--debug-x11" ]; then
-    USE_DEBUG_X11="true"
-  elif [ "$arg" == "--debug-ffmpeg" ]; then
-    USE_DEBUG_FFMPEG="true"
-  elif [ "$arg" == "--debug" ]; then
-    USE_DEBUG_X11="true"
-    USE_DEBUG_FFMPEG="true"
-  fi
+WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
+WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --gpu)
+      USE_GPU="true"
+      shift
+      ;;
+    --debug-x11)
+      USE_DEBUG_X11="true"
+      shift
+      ;;
+    --debug-ffmpeg)
+      USE_DEBUG_FFMPEG="true"
+      shift
+      ;;
+    --debug)
+      USE_DEBUG_X11="true"
+      USE_DEBUG_FFMPEG="true"
+      shift
+      ;;
+    --iface|-i)
+      if [ -n "${2:-}" ]; then
+        WEBRTC_INTERFACES="$2"
+        shift 2
+      else
+        echo "Error: --iface requires an argument."
+        exit 1
+      fi
+      ;;
+    --exclude-iface|-x)
+      if [ -n "${2:-}" ]; then
+        WEBRTC_EXCLUDE_INTERFACES="$2"
+        shift 2
+      else
+        echo "Error: --exclude-iface requires an argument."
+        exit 1
+      fi
+      ;;
+    *)
+      shift
+      ;;
+  esac
 done
 
 GPU_ARGS=""
@@ -77,19 +110,22 @@ if [ -t 0 ]; then
   INTERACTIVE_ARGS="--interactive --tty"
 fi
 
-# Try to automatically determine the host's Tailscale or external IP for WebRTC
-# so it works through Docker NAT without requiring the user to set it.
-DETECTED_IP=""
-if command -v tailscale >/dev/null 2>&1; then
-  DETECTED_IP=$(tailscale ip -4 2>/dev/null || true)
-fi
-if [ -z "$DETECTED_IP" ]; then
-  # Fallback: get the primary non-loopback IPv4 address
-  DETECTED_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' || true)
+# Detect IP for WebRTC. 
+# WEBRTC_PUBLIC_IP is what Pion will put in the ICE candidates.
+# If the user provides one, use it.
+if [ -z "${WEBRTC_PUBLIC_IP:-}" ]; then
+  # If we have an explicit interface preference, use that IP
+  if [ -n "${WEBRTC_INTERFACES:-}" ]; then
+    WEBRTC_PUBLIC_IP=$(ip -4 addr show "${WEBRTC_INTERFACES%%,*}" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 || true)
+  fi
+  
+  # Fallback to general detection
+  if [ -z "$WEBRTC_PUBLIC_IP" ]; then
+    WEBRTC_PUBLIC_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' || true)
+  fi
 fi
 
-export WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP:-$DETECTED_IP}"
-echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP} (auto-detected)"
+echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP:-none} (auto-detected)"
 
 docker run \
   $GPU_ARGS \
@@ -109,6 +145,8 @@ docker run \
   --env USE_GPU="${USE_GPU}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP}" \
+  --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}" \
+  --env WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}" \
   --env USE_DEBUG_X11="${USE_DEBUG_X11}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env HOST_UID=$(id -u) \
