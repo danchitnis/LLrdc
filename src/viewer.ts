@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -361,6 +361,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
     } else if (msg.type === 'stats') {
         if (typeof msg.ffmpegCpu === 'number') {
             setServerFfmpegCpu(msg.ffmpegCpu);
+        }
+    } else if (msg.type === 'cursor_shape') {
+        if (overlayEl && typeof msg.dataURL === 'string' && typeof msg.xhot === 'number' && typeof msg.yhot === 'number') {
+            overlayEl.style.cursor = `url(${msg.dataURL}) ${msg.xhot} ${msg.yhot}, auto`;
         }
     }
 }

@@ -30,6 +30,7 @@ func main() {
 		if err := startX11(DisplayNum); err != nil {
 			log.Fatalf("Failed to initialize X11: %v", err)
 		}
+		startCursorWatcher(Display)
 	} else {
 		log.Println("TEST_PATTERN mode: skipping X11 setup.")
 	}

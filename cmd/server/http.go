@@ -109,6 +109,16 @@ func startHTTPServer() {
 	}
 }
 
+func broadcastJSON(msg interface{}) {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+	for _, client := range clients {
+		client.mu.Lock()
+		_ = client.conn.WriteJSON(msg)
+		client.mu.Unlock()
+	}
+}
+
 func broadcastVideoFrame(frame []byte, streamID uint32) {
 	captureTime := time.Now()
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
@@ -190,6 +200,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"keyframe_interval":  targetKeyframeInterval,
 	}
 	_ = writeJSON(initialConfig)
+
+	cursorMutex.Lock()
+	if cachedCursorMsg != nil {
+		_ = writeJSON(cachedCursorMsg)
+	}
+	cursorMutex.Unlock()
 
 	var pc *webrtc.PeerConnection
 
