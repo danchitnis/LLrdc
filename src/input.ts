@@ -1,16 +1,179 @@
-import { overlayEl, videoEl, displayEl } from './ui';
+import { overlayEl, videoEl, displayEl, clipboardArea } from './ui';
+
+export let pendingClipboard: string | null = null;
+export function setPendingClipboard(text: string) {
+    pendingClipboard = text;
+}
+
+let clipboardEnabled = true;
+export function setClipboardEnabled(enabled: boolean) {
+    clipboardEnabled = enabled;
+    console.log(`>>> [Input] Clipboard ${enabled ? 'enabled' : 'disabled'}`);
+}
+
+function processPendingClipboard() {
+    if (!clipboardEnabled) return;
+    if (pendingClipboard !== null) {
+        if (clipboardArea) {
+            clipboardArea.value = pendingClipboard;
+            clipboardArea.select();
+            try {
+                document.execCommand('copy');
+            } catch {
+                // ignore
+            }
+        }
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(pendingClipboard).catch(() => {});
+        }
+        pendingClipboard = null;
+    }
+}
 
 export function setupInput(sendMsg: (data: string) => void) {
+    let withheldKey: string | null = null;
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
+    const sentModifiers = {
+        Control: false,
+        Shift: false,
+        Alt: false,
+        Meta: false
+    };
+
+    const sendMsgWrapped = (msgObj: { type: string; key?: string; text?: string; x?: number | null; y?: number | null; button?: number | null; paste?: boolean }) => {
+        if (msgObj.type === 'keydown' || msgObj.type === 'keyup') {
+            const isDown = msgObj.type === 'keydown';
+            if (msgObj.key === 'Control') sentModifiers.Control = isDown;
+            if (msgObj.key === 'Shift') sentModifiers.Shift = isDown;
+            if (msgObj.key === 'Alt') sentModifiers.Alt = isDown;
+            if (msgObj.key === 'Meta') sentModifiers.Meta = isDown;
+        }
+        sendMsg(JSON.stringify(msgObj));
+    };
+
+    let pointerOverCanvas = false;
+
+    const focusClipboard = () => {
+        // Only steal focus when clipboard is enabled AND pointer is on the canvas
+        if (!clipboardEnabled || !pointerOverCanvas) {
+            return;
+        }
+        if (clipboardArea) {
+            clipboardArea.focus({ preventScroll: true });
+        }
+    };
+
+    // Periodically focus the textarea for clipboard capture
+    setInterval(focusClipboard, 1000);
+
+    const syncModifiers = (event: KeyboardEvent | MouseEvent) => {
+        const check = (isPressed: boolean, name: keyof typeof sentModifiers) => {
+            if (!isPressed && sentModifiers[name]) {
+                console.log(`>>> [Input] Modifier Sync: Auto-releasing ${name}`);
+                sendMsgWrapped({ type: 'keyup', key: name });
+            }
+        };
+
+        // On Mac, we map Meta to Control on the remote side
+        const remoteCtrl = event.ctrlKey || (isMac && event.metaKey);
+        check(remoteCtrl, 'Control');
+        check(event.shiftKey, 'Shift');
+        check(event.altKey, 'Alt');
+        // If not Mac, Meta is just Meta (Super)
+        if (!isMac) {
+            check(event.metaKey, 'Meta');
+        }
+    };
+
+    const releaseModifiers = () => {
+        console.log('>>> [Input] Guard: Releasing all modifiers');
+        sendMsgWrapped({ type: 'keyup', key: 'Control' });
+        sendMsgWrapped({ type: 'keyup', key: 'Shift' });
+        sendMsgWrapped({ type: 'keyup', key: 'Alt' });
+        sendMsgWrapped({ type: 'keyup', key: 'Meta' });
+    };
+
+    window.addEventListener('blur', () => {
+        withheldKey = null;
+        releaseModifiers();
+    });
+
+    window.addEventListener('mousedown', (event: MouseEvent) => {
+        // Modifier sync on click to prevent stuck keys from tab-switching
+        syncModifiers(event);
+        focusClipboard();
+    });
+
     window.addEventListener('keydown', (event: KeyboardEvent) => {
+        syncModifiers(event);
+        
+        const isV = event.key.toLowerCase() === 'v' || event.code === 'KeyV';
+        const isC = event.key.toLowerCase() === 'c' || event.code === 'KeyC';
+        const isA = event.key.toLowerCase() === 'a' || event.code === 'KeyA';
+        const hasMod = event.ctrlKey || event.metaKey;
+
+        // Habit translation for Mac users (Cmd -> Ctrl) and standard Ctrl support
+        if (hasMod && isV) {
+            console.log('>>> [Input] Intercepted Paste shortcut');
+            withheldKey = event.key;
+            focusClipboard();
+            return;
+        }
+        // Process pending clipboard AFTER paste check so we don't overwrite
+        // the host clipboard right before a paste operation
+        processPendingClipboard();
+        if (hasMod && isC) {
+            console.log('>>> [Input] Intercepted Copy shortcut');
+            sendMsgWrapped({ type: 'key', key: 'ctrl+c' });
+            return;
+        }
+        if (hasMod && isA) {
+            console.log('>>> [Input] Intercepted Select-All shortcut');
+            sendMsgWrapped({ type: 'key', key: 'ctrl+a' });
+            return;
+        }
+
         if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Backspace', 'Enter', 'Escape', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'].includes(event.code) || event.key === ' ') {
             event.preventDefault();
         }
-        sendMsg(JSON.stringify({ type: 'keydown', key: event.key }));
+
+        let key = event.key;
+        // General mapping for other shortcuts (Cmd+S, etc)
+        // Check both 'Meta' key name and 'OS' (older browsers)
+        if (isMac && (key === 'Meta' || key === 'OS')) {
+            key = 'Control';
+        }
+
+        sendMsgWrapped({ type: 'keydown', key });
     });
 
     window.addEventListener('keyup', (event: KeyboardEvent) => {
-        sendMsg(JSON.stringify({ type: 'keyup', key: event.key }));
+        if (withheldKey && (withheldKey.toLowerCase() === event.key.toLowerCase() || withheldKey === event.code)) {
+            withheldKey = null;
+            return;
+        }
+
+        let key = event.key;
+        if (isMac && (key === 'Meta' || key === 'OS')) {
+            key = 'Control';
+        }
+        sendMsgWrapped({ type: 'keyup', key });
     });
+
+    if (clipboardArea) {
+        clipboardArea.addEventListener('paste', (event: ClipboardEvent) => {
+            if (!clipboardEnabled) return;
+            const text = event.clipboardData?.getData('text');
+            console.log(`>>> [Input] Browser Paste Event: ${text?.length || 0} chars`);
+            if (text) {
+                sendMsgWrapped({ type: 'clipboard_set', text, paste: true });
+            }
+            withheldKey = null;
+            if (clipboardArea) clipboardArea.value = '';
+        });
+    }
 
     const sendMouse = (type: string, x: number | null, y: number | null, button: number | null) => {
         sendMsg(JSON.stringify({ type, x, y, button }));
@@ -18,6 +181,9 @@ export function setupInput(sendMsg: (data: string) => void) {
 
     if (overlayEl) {
         let lastMove = 0;
+
+        overlayEl.addEventListener('mouseenter', () => { pointerOverCanvas = true; });
+        overlayEl.addEventListener('mouseleave', () => { pointerOverCanvas = false; });
 
         const getNormalizedPos = (e: MouseEvent): { x: number, y: number } | null => {
             const rect = overlayEl.getBoundingClientRect();
@@ -87,6 +253,8 @@ export function setupInput(sendMsg: (data: string) => void) {
         });
 
         overlayEl.addEventListener('mousedown', (e: MouseEvent) => {
+            processPendingClipboard();
+            focusClipboard();
             const pos = getNormalizedPos(e);
             if (pos) {
                 // Optional: Update position right before click
@@ -111,3 +279,4 @@ export function setupInput(sendMsg: (data: string) => void) {
         });
     }
 }
+

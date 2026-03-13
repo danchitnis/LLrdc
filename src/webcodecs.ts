@@ -32,8 +32,8 @@ export class WebCodecsManager {
             this.decoderInitTimeout = null;
         }
 
-        if (!('VideoDecoder' in window)) {
-            if (!(window as any).isSecureContext) {
+        if (typeof VideoDecoder === 'undefined') {
+            if (!isSecureContext) {
                 log('WebCodecs API requires a Secure Context (HTTPS or localhost). Falling back to WebRTC (if available)...');
                 if (!this.getIsWebRtcActive() && statusEl) statusEl.textContent = 'WebCodecs: Requires HTTPS/localhost';
             } else {

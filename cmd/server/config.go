@@ -18,6 +18,7 @@ var (
 	UseDebugFFmpeg          bool
 	TestPattern             bool
 	TestMinimalX11          bool
+	EnableClipboard         bool
 	Wallpaper               string
 	WebRTCPublicIP          string
 	WebRTCInterfaces        string
@@ -46,6 +47,7 @@ func initConfig() {
 	defaultUseDebugFFmpeg := os.Getenv("USE_DEBUG_FFMPEG") == "true"
 	defaultTestPattern := os.Getenv("TEST_PATTERN") != ""
 	defaultTestMinimalX11 := os.Getenv("TEST_MINIMAL_X11") != ""
+	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
 
 	defaultDisplayNum := os.Getenv("DISPLAY_NUM")
 	if defaultDisplayNum == "" {
@@ -75,6 +77,7 @@ func initConfig() {
 		printFlag(os.Stderr, "webrtc-public-ip", "Public IP for WebRTC", WebRTCPublicIP)
 		printFlag(os.Stderr, "webrtc-interfaces", "Comma-separated allowed network interfaces for WebRTC", WebRTCInterfaces)
 		printFlag(os.Stderr, "webrtc-exclude-interfaces", "Comma-separated excluded network interfaces for WebRTC", WebRTCExcludeInterfaces)
+		printFlag(os.Stderr, "enable-clipboard", "Enable clipboard synchronization", EnableClipboard)
 
 		fmt.Fprintf(os.Stderr, "\nTesting Flags:\n")
 		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of X11", TestPattern)
@@ -95,6 +98,7 @@ func initConfig() {
 	flag.StringVar(&WebRTCPublicIP, "webrtc-public-ip", defaultWebRTCPublicIP, "Public IP for WebRTC")
 	flag.StringVar(&WebRTCInterfaces, "webrtc-interfaces", defaultWebRTCInterfaces, "Comma-separated allowed network interfaces for WebRTC")
 	flag.StringVar(&WebRTCExcludeInterfaces, "webrtc-exclude-interfaces", defaultWebRTCExcludeInterfaces, "Comma-separated excluded network interfaces for WebRTC")
+	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
 
 	flag.Parse()
 

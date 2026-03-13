@@ -142,13 +142,18 @@ func execTask(task inputTask) {
 			return
 		}
 		mode := "keydown"
-		if task.Action == "keyup" {
-			mode = "keyup"
+		if task.Action == "keyup" || task.Action == "key" {
+			mode = task.Action
 		}
-		cmd := exec.Command("xdotool", mode, xKey)
+		
+		var cmd *exec.Cmd
+		// Use --clearmodifiers for all discrete key actions to prevent interference from held keys
+		cmd = exec.Command("xdotool", mode, "--clearmodifiers", xKey)
 		cmd.Env = append(os.Environ(), "DISPLAY="+task.Display)
 		if err := cmd.Start(); err == nil {
-			go cmd.Wait()
+			_ = cmd.Wait()
+			// Small sleep after any key action to allow X11 to keep up
+			time.Sleep(50 * time.Millisecond)
 		}
 
 	case "mousebtn":

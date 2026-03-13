@@ -69,6 +69,8 @@ func startHTTPServer() {
 		}
 	}()
 
+	startClipboardPoller(Display, broadcastJSON)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if websocket.IsWebSocketUpgrade(r) {
 			wsHandler(w, r)
@@ -189,15 +191,16 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial codec and config to client
 	initialConfig := map[string]interface{}{
-		"type":         "config",
-		"videoCodec":   VideoCodec,
-		"gpuAvailable": UseGPU,
-		"framerate":          FPS,
-		"bandwidth":          targetBandwidthMbps,
-		"quality":            targetQuality,
-		"vbr":                targetVBR,
-		"mpdecimate":         targetMpdecimate,
-		"keyframe_interval":  targetKeyframeInterval,
+		"type":             "config",
+		"videoCodec":       VideoCodec,
+		"gpuAvailable":     UseGPU,
+		"framerate":        FPS,
+		"bandwidth":        targetBandwidthMbps,
+		"quality":          targetQuality,
+		"vbr":              targetVBR,
+		"mpdecimate":       targetMpdecimate,
+		"keyframe_interval": targetKeyframeInterval,
+		"enableClipboard":  EnableClipboard,
 	}
 	_ = writeJSON(initialConfig)
 
@@ -229,7 +232,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		msgType, _ := msg["type"].(string)
 
 		switch msgType {
-		case "keydown", "keyup":
+		case "keydown", "keyup", "key":
 			if key, ok := msg["key"].(string); ok {
 				injectKey(key, msgType, Display)
 			}
@@ -352,6 +355,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				resp := map[string]interface{}{"type": "pong", "timestamp": ts}
 				writeJSON(resp)
 			}
+		case "clipboard_set":
+			handleClipboardSet(msg, Display)
 		case "webrtc_offer":
 			handleWebRTCOffer(msg, &pc, writeJSON)
 		case "webrtc_ice":

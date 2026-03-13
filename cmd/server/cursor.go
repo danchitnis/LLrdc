@@ -22,34 +22,58 @@ var cachedCursorMsg map[string]interface{}
 
 func startCursorWatcher(display string) {
 	go func() {
-		// Wait a bit for X11 to start fully
-		time.Sleep(5 * time.Second)
+		var X *xgb.Conn
+		var err error
 
-		X, err := xgb.NewConnDisplay(display)
+		// Retry connecting to X and initializing xfixes
+		for i := 0; i < 10; i++ {
+			time.Sleep(2 * time.Second)
+			X, err = xgb.NewConnDisplay(display)
+			if err != nil {
+				log.Printf("Cursor watcher attempt %d: failed to connect to X: %v", i+1, err)
+				continue
+			}
+
+			err = xfixes.Init(X)
+			if err != nil {
+				log.Printf("Cursor watcher attempt %d: failed to init xfixes: %v", i+1, err)
+				X.Close()
+				continue
+			}
+
+			// Check version
+			v, err := xfixes.QueryVersion(X, 5, 0).Reply()
+			if err != nil {
+				log.Printf("Cursor watcher attempt %d: failed to query xfixes version: %v", i+1, err)
+				X.Close()
+				continue
+			}
+			log.Printf("XFixes version: %d.%d", v.MajorVersion, v.MinorVersion)
+
+			setup := xproto.Setup(X)
+			if len(setup.Roots) == 0 {
+				log.Printf("Cursor watcher attempt %d: no roots found", i+1)
+				X.Close()
+				continue
+			}
+			root := setup.Roots[0].Root
+
+			err = xfixes.SelectCursorInputChecked(X, root, xfixes.CursorNotifyMaskDisplayCursor).Check()
+			if err != nil {
+				log.Printf("Cursor watcher attempt %d: failed to select cursor input: %v", i+1, err)
+				X.Close()
+				continue
+			}
+
+			log.Printf("Cursor watcher successfully initialized on %s", display)
+			break
+		}
+
 		if err != nil {
-			log.Printf("Cursor watcher failed to connect to X: %v", err)
+			log.Printf("Cursor watcher failed to initialize after retries")
 			return
 		}
 		defer X.Close()
-
-		err = xfixes.Init(X)
-		if err != nil {
-			log.Printf("Cursor watcher failed to init xfixes: %v", err)
-			return
-		}
-
-		setup := xproto.Setup(X)
-		if len(setup.Roots) == 0 {
-			log.Printf("Cursor watcher: no roots found")
-			return
-		}
-		root := setup.Roots[0].Root
-
-		err = xfixes.SelectCursorInputChecked(X, root, xfixes.CursorNotifyMaskDisplayCursor).Check()
-		if err != nil {
-			log.Printf("Cursor watcher failed to select cursor input: %v", err)
-			return
-		}
 
 		log.Println("Cursor watcher started successfully")
 

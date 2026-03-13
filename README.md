@@ -71,6 +71,28 @@ http://localhost:8080
 
 You should see your XFCE4 desktop session running and ready for interaction.
 
+## Clipboard
+
+LLrdc supports bidirectional clipboard synchronization between the host browser and the remote desktop.
+
+### Copy & Paste from Host to Remote
+
+- **Keyboard shortcut (Cmd+V / Ctrl+V)**: Works immediately. When you paste, the browser captures the clipboard text, sends it to the remote, and injects Ctrl+V into the active remote application.
+- **Context menu paste in remote apps**: After pasting once via Cmd+V, the remote clipboard is synced. Subsequent context menu paste operations in remote applications (e.g., mousepad → right-click → Paste) will use the synced text.
+
+### Copy from Remote to Host
+
+Text copied in the remote desktop (e.g., via Ctrl+C in a terminal) is automatically synced to the host browser clipboard within ~1 second.
+
+### Disabling Clipboard
+
+Clipboard synchronization can be disabled if it impacts performance or is not needed:
+
+- **At runtime**: Uncheck "Enable Clipboard Sync" in the config panel (Input tab).
+- **At startup**: Set `ENABLE_CLIPBOARD=false` or use `--enable-clipboard=false`.
+
+When disabled, all clipboard polling, sync, and focus management are turned off.
+
 ## Configuration Options
 
 LLrdc can be configured using command-line flags (when running the binary directly in a custom container) or environment variables (when using `docker-run.sh`).
@@ -91,6 +113,7 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 - `--webrtc-public-ip`: Manually set the public IP for ICE candidates.
 - `--webrtc-interfaces`: Comma-separated allowlist of network interfaces.
 - `--webrtc-exclude-interfaces`: Comma-separated blocklist of network interfaces.
+- `--enable-clipboard`: Enable clipboard synchronization (default: `true`).
 
 #### Testing Flags
 - `--test-pattern`: Run with an FFmpeg `testsrc` pattern instead of capturing the X11 desktop.
@@ -116,3 +139,4 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `TEST_PATTERN` | Use FFmpeg test pattern | `--test-pattern` |
 | `TEST_MINIMAL_X11` | Skip XFCE startup | `--test-minimal-x11` |
 | `WALLPAPER` | Custom wallpaper path | `--wallpaper` |
+| `ENABLE_CLIPBOARD` | Enable clipboard sync | `--enable-clipboard` |

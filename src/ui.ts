@@ -3,6 +3,7 @@ export const displayContainerEl = document.getElementById('display-container') a
 export const displayEl = document.getElementById('display') as HTMLCanvasElement;
 export const videoEl = document.getElementById('webrtc-video') as HTMLVideoElement;
 export const overlayEl = document.getElementById('input-overlay') as HTMLDivElement;
+export const clipboardArea = document.getElementById('clipboard-area') as HTMLTextAreaElement;
 export const bandwidthSelect = document.getElementById('bandwidth-select') as HTMLSelectElement;
 export const vbrCheckbox = document.getElementById('vbr-checkbox') as HTMLInputElement;
 export const mpdecimateCheckbox = document.getElementById('mpdecimate-checkbox') as HTMLInputElement;
@@ -24,6 +25,7 @@ export const desktopMouseCheckbox = document.getElementById('desktop-mouse-check
 export const videoCodecSelect = document.getElementById('video-codec-select') as HTMLSelectElement;
 export const codecGpuOpts = document.querySelectorAll('.codec-opt-gpu') as NodeListOf<HTMLOptionElement>;
 export const clientGpuCheckbox = document.getElementById('client-gpu-checkbox') as HTMLInputElement;
+export const clipboardCheckbox = document.getElementById('clipboard-checkbox') as HTMLInputElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
 

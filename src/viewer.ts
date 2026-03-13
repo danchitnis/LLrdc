@@ -1,8 +1,8 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, setServerFfmpegCpu } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, clipboardCheckbox, setServerFfmpegCpu } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
-import { setupInput } from './input';
+import { setupInput, setPendingClipboard, setClipboardEnabled } from './input';
 
 export { };
 
@@ -11,21 +11,23 @@ declare global {
         getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; };
         hasReceivedKeyFrame: boolean;
         rtcPeer: RTCPeerConnection | null;
+        gpuAvailable: boolean;
     }
 }
 
 let triggerResizeUpdate: () => void = () => { };
 
+// eslint-disable-next-line prefer-const
+let webrtc: WebRTCManager;
+
 const network = new NetworkManager(
     handleBinaryMessage,
     handleJsonMessage,
     () => {
-        webrtc.initWebRTC();
+        if (webrtc) webrtc.initWebRTC();
         triggerResizeUpdate();
     }
 );
-
-let webrtc: WebRTCManager;
 
 const webcodecs: WebCodecsManager = new WebCodecsManager(
     () => webrtc ? webrtc.isWebRtcActive : false,
@@ -192,6 +194,12 @@ if (desktopMouseCheckbox) {
     desktopMouseCheckbox.addEventListener('change', sendConfig);
 }
 
+if (clipboardCheckbox) {
+    clipboardCheckbox.addEventListener('change', () => {
+        setClipboardEnabled(clipboardCheckbox.checked);
+    });
+}
+
 if (videoCodecSelect) {
     videoCodecSelect.addEventListener('change', () => {
         if (cpuEffortSlider) {
@@ -327,7 +335,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             }
 
             if (msg.gpuAvailable !== undefined) {
-                (window as any).gpuAvailable = msg.gpuAvailable;
+                window.gpuAvailable = msg.gpuAvailable as boolean;
                 if (codecGpuOpts) {
                     codecGpuOpts.forEach(opt => {
                         opt.style.display = msg.gpuAvailable ? '' : 'none';
@@ -353,6 +361,15 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         
         if (msg.keyframe_interval !== undefined && keyframeIntervalSelect) {
             keyframeIntervalSelect.value = (msg.keyframe_interval as number).toString();
+        }
+
+        if (msg.enableClipboard !== undefined && clipboardCheckbox) {
+            clipboardCheckbox.checked = msg.enableClipboard as boolean;
+            setClipboardEnabled(msg.enableClipboard as boolean);
+        }
+    } else if (msg.type === 'clipboard_get') {
+        if (typeof msg.text === 'string') {
+            setPendingClipboard(msg.text);
         }
     } else if (msg.type === 'webrtc_answer') {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);
