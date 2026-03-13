@@ -26,7 +26,7 @@ func main() {
 	}()
 
 	// 1. Start X11 unless TEST_PATTERN is set
-	if os.Getenv("TEST_PATTERN") == "" {
+	if !TestPattern {
 		if err := startX11(DisplayNum); err != nil {
 			log.Fatalf("Failed to initialize X11: %v", err)
 		}

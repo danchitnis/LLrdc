@@ -72,7 +72,7 @@ func startX11(displayNum string) error {
 	// In tests, we sometimes want a *truly static* screen so the encoder can drop
 	// identical frames. XFCE introduces periodic repaints (clock/panel/etc) which
 	// can prevent the stream from ever going idle.
-	if os.Getenv("TEST_MINIMAL_X11") != "" {
+	if TestMinimalX11 {
 		log.Println("TEST_MINIMAL_X11 mode: skipping xfce4-session.")
 		// Best-effort: set a solid root background if xsetroot exists.
 		_ = runWithEnv("xsetroot", []string{"-solid", "#000000"}, env)
@@ -140,7 +140,7 @@ func setWallpaper(baseEnv []string, displayNum string) {
 	}
 
 	env := append(baseEnv, "DBUS_SESSION_BUS_ADDRESS="+dbusAddr)
-	wallpaper := os.Getenv("WALLPAPER")
+	wallpaper := Wallpaper
 	if wallpaper == "" {
 		wallpaper = "/usr/share/backgrounds/xfce/xfce-shapes.svg"
 	}

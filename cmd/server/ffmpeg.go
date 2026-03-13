@@ -214,7 +214,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			}
 
 			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-draw_mouse", drawMouseStr, "-video_size", size, "-i", Display + ".0"}
-			if os.Getenv("TEST_PATTERN") != "" {
+			if TestPattern {
 				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
 

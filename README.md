@@ -73,21 +73,46 @@ You should see your XFCE4 desktop session running and ready for interaction.
 
 ## Configuration Options
 
-You can pass environment variables to `docker-run.sh` to override the defaults:
+LLrdc can be configured using command-line flags (when running the binary directly in a custom container) or environment variables (when using `docker-run.sh`).
+
+### Command-Line Flags
+
+The `llrdc` binary supports the following flags, categorized by their primary use case:
+
+#### User Flags
+- `--port`: Port for both HTTP and WebRTC UDP (default: `8080`).
+- `--fps`: Target frames per second (default: `30`).
+- `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `av1`, or `av1_nvenc`.
+- `--use-gpu`: Enable GPU acceleration for NVENC codecs.
+- `--use-debug-ffmpeg`: Enable verbose FFmpeg logging.
+- `--use-debug-x11`: Enable verbose X11/XFCE session logging.
+- `--display-num`: X11 display number inside the container (default: `99`).
+- `--wallpaper`: Path to a custom wallpaper image.
+- `--webrtc-public-ip`: Manually set the public IP for ICE candidates.
+- `--webrtc-interfaces`: Comma-separated allowlist of network interfaces.
+- `--webrtc-exclude-interfaces`: Comma-separated blocklist of network interfaces.
+
+#### Testing Flags
+- `--test-pattern`: Run with an FFmpeg `testsrc` pattern instead of capturing the X11 desktop.
+- `--test-minimal-x11`: Start a bare X11 session without the full XFCE desktop environment (useful for automated UI tests).
+
+### Environment Variables
+
+When using `docker-run.sh`, you can pass these environment variables to override defaults:
 
 ```bash
 PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 ```
 
-Available environment variables:
-- `PORT`: Server internal port (default: 8080)
-- `HOST_PORT`: Port exposed to the host (default: 8080)
-- `FPS`: Target frames per second (default: 30)
-- `VIDEO_CODEC`: `vp8` (default), `h264`, or `h264_nvenc`
-- `DISPLAY_NUM`: X11 display number (default: 99)
-- `USE_DEBUG_FFMPEG`: Set to `true` to enable ffmpeg debug logging (equivalent to `--debug-ffmpeg` flag)
-- `USE_DEBUG_X11`: Set to `true` to enable X11 debug logging (equivalent to `--debug-x11` flag)
-- `USE_GPU`: Set to `true` to enable GPU acceleration (equivalent to `--gpu` flag)
-- `WEBRTC_INTERFACES`: Comma-separated list of allowed interfaces (equivalent to `-i`)
-- `WEBRTC_EXCLUDE_INTERFACES`: Comma-separated list of excluded interfaces (equivalent to `-x`)
-- `WEBRTC_PUBLIC_IP`: Manually override the IP address advertised to the client
+| Variable | Description | Flag Equivalent |
+| :--- | :--- | :--- |
+| `PORT` | Server internal port | `--port` |
+| `FPS` | Target frames per second | `--fps` |
+| `VIDEO_CODEC` | Encoder selection | `--video-codec` |
+| `USE_GPU` | Enable GPU acceleration | `--use-gpu` |
+| `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
+| `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
+| `WEBRTC_PUBLIC_IP` | Public IP override | `--webrtc-public-ip` |
+| `TEST_PATTERN` | Use FFmpeg test pattern | `--test-pattern` |
+| `TEST_MINIMAL_X11` | Skip XFCE startup | `--test-minimal-x11` |
+| `WALLPAPER` | Custom wallpaper path | `--wallpaper` |

@@ -316,7 +316,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					// Get the actual clamped size
 					clampedW, clampedH := GetScreenSize()
 					log.Printf("Received resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
-					if os.Getenv("TEST_PATTERN") == "" {
+					if !TestPattern {
 						if err := resizeDisplay(clampedW, clampedH); err != nil {
 							log.Printf("Resize failed: %v", err)
 						}

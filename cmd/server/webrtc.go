@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -120,7 +119,7 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
 
 	// Optionally allow overriding the public IP (e.g., if behind a strict NAT)
-	publicIP := os.Getenv("WEBRTC_PUBLIC_IP")
+	publicIP := WebRTCPublicIP
 	if publicIP != "" {
 		if net.ParseIP(publicIP) != nil {
 			s.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
@@ -130,8 +129,8 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 		}
 	}
 
-	webrtcInterfaces := os.Getenv("WEBRTC_INTERFACES")
-	webrtcExcludeInterfaces := os.Getenv("WEBRTC_EXCLUDE_INTERFACES")
+	webrtcInterfaces := WebRTCInterfaces
+	webrtcExcludeInterfaces := WebRTCExcludeInterfaces
 	if webrtcInterfaces != "" || webrtcExcludeInterfaces != "" {
 		interfaces := strings.Split(webrtcInterfaces, ",")
 		excludeInterfaces := strings.Split(webrtcExcludeInterfaces, ",")
