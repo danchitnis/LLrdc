@@ -5,6 +5,7 @@ export class WebCodecsManager {
     public fps = 0;
     public latencyMonitor = 0;
     public videoCodec = 'vp8';
+    public chroma = '420';
 
     private frameCount = 0;
     private lastFPSUpdate = Date.now();
@@ -76,11 +77,21 @@ export class WebCodecsManager {
             
             let codecStr = 'vp8';
             if (isH264) {
-                // avc1.42E034 is Baseline profile, level 5.2 - supports 4K @ 120fps
-                codecStr = 'avc1.42E034';
+                if (this.chroma === '444') {
+                    // avc1.F40034 is High 4:4:4 Predictive profile, level 5.2
+                    codecStr = 'avc1.F40034';
+                } else {
+                    // avc1.42E034 is Baseline profile, level 5.2 - supports 4K @ 120fps
+                    codecStr = 'avc1.42E034';
+                }
             } else if (isAV1) {
-                // av01.0.08M.08 - Main profile, level 4.0, Main tier, 8-bit
-                codecStr = 'av01.0.08M.08';
+                if (this.chroma === '444') {
+                    // av01.1.08M.08 - High profile, level 4.0, Main tier, 8-bit
+                    codecStr = 'av01.1.08M.08';
+                } else {
+                    // av01.0.08M.08 - Main profile, level 4.0, Main tier, 8-bit
+                    codecStr = 'av01.0.08M.08';
+                }
             }
 
             const config: VideoDecoderConfig = {
@@ -91,7 +102,7 @@ export class WebCodecsManager {
 
             this.decoder.configure(config);
             window.hasReceivedKeyFrame = false;
-            log(`Decoder configured (${this.videoCodec}: ${codecStr}). Waiting for Keyframe...`);
+            log(`Decoder configured (${this.videoCodec}: ${codecStr}, chroma: ${this.chroma}). Waiting for Keyframe...`);
         } catch (e: unknown) {
             log('Failed to initialize decoder: ' + (e as Error).message);
             if (statusEl) statusEl.textContent = 'Decoder Init Error';

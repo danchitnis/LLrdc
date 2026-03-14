@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, clipboardCheckbox, setServerFfmpegCpu } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -55,6 +55,7 @@ interface ConfigMessage {
     cpu_threads?: number;
     enable_desktop_mouse?: boolean;
     video_codec?: string;
+    chroma?: string;
 }
 
 function sendConfig() {
@@ -90,6 +91,14 @@ function sendConfig() {
     }
     if (desktopMouseCheckbox) {
         config.enable_desktop_mouse = desktopMouseCheckbox.checked;
+    }
+
+    if (chromaCheckbox) {
+        config.chroma = chromaCheckbox.checked ? '444' : '420';
+        if (webcodecs.chroma !== config.chroma) {
+            webcodecs.chroma = config.chroma;
+            webcodecs.initDecoder();
+        }
     }
 
     if (videoCodecSelect) {
@@ -134,6 +143,10 @@ if (vbrCheckbox) {
 
 if (mpdecimateCheckbox) {
     mpdecimateCheckbox.addEventListener('change', sendConfig);
+}
+
+if (chromaCheckbox) {
+    chromaCheckbox.addEventListener('change', sendConfig);
 }
 
 if (keyframeIntervalSelect) {
@@ -338,7 +351,14 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                 window.gpuAvailable = msg.gpuAvailable as boolean;
                 if (codecGpuOpts) {
                     codecGpuOpts.forEach(opt => {
-                        opt.style.display = msg.gpuAvailable ? '' : 'none';
+                        const isAV1 = opt.value === 'av1_nvenc';
+                        const av1Available = msg.av1NvencAvailable as boolean;
+                        
+                        if (isAV1 && !av1Available) {
+                            opt.style.display = 'none';
+                        } else {
+                            opt.style.display = msg.gpuAvailable ? '' : 'none';
+                        }
                     });
                 }
             }
@@ -348,6 +368,35 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                 if (cpuEffortSlider) {
                     cpuEffortSlider.disabled = videoCodecSelect.value !== 'vp8';
                 }
+            }
+
+            if (msg.h264Nvenc444Available !== undefined && chromaCheckbox && videoCodecSelect) {
+                const updateChromaState = () => {
+                    const isAV1Nvenc = videoCodecSelect.value === 'av1_nvenc';
+                    const isH264Nvenc = videoCodecSelect.value === 'h264_nvenc';
+                    
+                    // AV1 NVENC never supports 444 (NVENC SDK limitation)
+                    const codec_444_Missing = isAV1Nvenc || (isH264Nvenc && !msg.h264Nvenc444Available);
+                    
+                    if (codec_444_Missing) {
+                        if (chromaCheckbox.checked) {
+                            chromaCheckbox.checked = false;
+                            sendConfig();
+                        }
+                        chromaCheckbox.disabled = true;
+                        chromaCheckbox.parentElement!.style.opacity = '0.5';
+                        chromaCheckbox.parentElement!.title = isAV1Nvenc
+                            ? 'AV1 NVENC does not support 4:4:4 (NVENC SDK limitation)'
+                            : 'H.264 4:4:4 is not supported by your GPU hardware';
+                    } else {
+                        chromaCheckbox.disabled = false;
+                        chromaCheckbox.parentElement!.style.opacity = '1';
+                        chromaCheckbox.parentElement!.title = 'Improve text clarity by avoiding chroma subsampling (H.264/AV1 only)';
+                    }
+                };
+                
+                videoCodecSelect.addEventListener('change', updateChromaState);
+                updateChromaState();
             }
         }
         
@@ -361,6 +410,17 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         
         if (msg.keyframe_interval !== undefined && keyframeIntervalSelect) {
             keyframeIntervalSelect.value = (msg.keyframe_interval as number).toString();
+        }
+
+        if (msg.chroma && typeof msg.chroma === 'string') {
+            log(`Server chroma: ${msg.chroma}`);
+            if (webcodecs.chroma !== msg.chroma) {
+                webcodecs.chroma = msg.chroma;
+                webcodecs.initDecoder();
+            }
+            if (chromaCheckbox) {
+                chromaCheckbox.checked = msg.chroma === '444';
+            }
         }
 
         if (msg.enableClipboard !== undefined && clipboardCheckbox) {

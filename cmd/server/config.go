@@ -3,8 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -13,7 +16,11 @@ var (
 	DisplayNum              string
 	Display                 string
 	VideoCodec              string
+	Chroma                  string
 	UseGPU                  bool
+
+	AV1NVENCAvailable       bool
+	H264NVENC444Available   bool
 	UseDebugX11             bool
 	UseDebugFFmpeg          bool
 	TestPattern             bool
@@ -40,6 +47,11 @@ func initConfig() {
 	defaultVideoCodec := os.Getenv("VIDEO_CODEC")
 	if defaultVideoCodec == "" {
 		defaultVideoCodec = "vp8"
+	}
+
+	defaultChroma := os.Getenv("CHROMA")
+	if defaultChroma == "" {
+		defaultChroma = "420"
 	}
 
 	defaultUseGPU := os.Getenv("USE_GPU") == "true"
@@ -69,6 +81,7 @@ func initConfig() {
 		printFlag(os.Stderr, "port", "Port for HTTP and WebRTC UDP", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
 		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, av1, av1_nvenc)", VideoCodec)
+		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-gpu", "Enable GPU acceleration if available", UseGPU)
 		printFlag(os.Stderr, "use-debug-x11", "Enable X11 debugging", UseDebugX11)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
@@ -88,6 +101,7 @@ func initConfig() {
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
 	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, av1, av1_nvenc)")
+	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseGPU, "use-gpu", defaultUseGPU, "Enable GPU acceleration if available")
 	flag.BoolVar(&UseDebugX11, "use-debug-x11", defaultUseDebugX11, "Enable X11 debugging")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")
@@ -103,6 +117,28 @@ func initConfig() {
 	flag.Parse()
 
 	Display = ":" + DisplayNum
+
+	if UseGPU {
+		log.Printf("Checking NVIDIA GPU capabilities...")
+		
+		// Check basic AV1 support via encoders list
+		outAV1, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_nvenc && echo true || echo false").Output()
+		AV1NVENCAvailable = strings.TrimSpace(string(outAV1)) == "true"
+		
+		if AV1NVENCAvailable {
+			log.Printf("AV1 NVENC support detected")
+			// Note: AV1 NVENC does NOT support 4:4:4 chroma on any current NVIDIA GPU.
+		}
+
+		log.Printf("Checking H.264 NVENC 4:4:4 support...")
+		outH264, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v h264_nvenc -profile:v high444p -f null - > /dev/null 2>&1 && echo true || echo false").Output()
+		H264NVENC444Available = strings.TrimSpace(string(outH264)) == "true"
+		if H264NVENC444Available {
+			log.Printf("H.264 NVENC 4:4:4 support detected")
+		} else {
+			log.Printf("H.264 NVENC 4:4:4 support NOT detected")
+		}
+	}
 }
 
 func printFlag(w *os.File, name, usage string, def any) {

@@ -15,7 +15,15 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM ubuntu:24.04
+# ── FFmpeg Custom Builder ──────────────────────────────────────────────────
+# Pull latest stable FFmpeg static binaries that INCLUDE nvenc support
+FROM alpine:latest AS ffmpeg-builder
+RUN apk add --no-cache curl tar xz
+WORKDIR /tmp
+# Using a build that specifically includes NVENC support
+RUN curl -L https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar xJ --strip-components=1
+
+FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NO_AT_BRIDGE=1
@@ -25,8 +33,6 @@ ENV LIBOVERLAY_SCROLLBAR=0
 
 # ── System dependencies ──────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  # Media
-  ffmpeg \
   # X11 / Virtual framebuffer
   xvfb \
   x11-xserver-utils \
@@ -71,7 +77,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   xz-utils \
   gnupg \
   sudo \
+  # libgl1 is often needed for some ffmpeg hwaccel paths
+  libgl1 \
+  # Need to install dependencies for the custom ffmpeg build
+  libva-drm2 \
+  libva-x11-2 \
+  vdpau-driver-all \
   && rm -rf /var/lib/apt/lists/*
+
+# ── FFmpeg Installation ──────────────────────────────────────────────────────
+# Copy custom ffmpeg and ffprobe from builder stage
+COPY --from=ffmpeg-builder /tmp/bin/ffmpeg /usr/local/bin/
+COPY --from=ffmpeg-builder /tmp/bin/ffprobe /usr/local/bin/
 
 # ── Browser Repositories (Firefox & Chromium without Snap) ───────────────────
 # Allow users to install Firefox and Chromium via apt without snap.

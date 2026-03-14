@@ -105,6 +105,7 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 - `--port`: Port for both HTTP and WebRTC UDP (default: `8080`).
 - `--fps`: Target frames per second (default: `30`).
 - `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `av1`, or `av1_nvenc`.
+- `--chroma`: Chroma subsampling format, `420` (default) or `444`. See [Chroma 4:4:4](#chroma-444) below.
 - `--use-gpu`: Enable GPU acceleration for NVENC codecs.
 - `--use-debug-ffmpeg`: Enable verbose FFmpeg logging.
 - `--use-debug-x11`: Enable verbose X11/XFCE session logging.
@@ -132,6 +133,7 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `PORT` | Server internal port | `--port` |
 | `FPS` | Target frames per second | `--fps` |
 | `VIDEO_CODEC` | Encoder selection | `--video-codec` |
+| `CHROMA` | Chroma subsampling (`420` or `444`) | `--chroma` |
 | `USE_GPU` | Enable GPU acceleration | `--use-gpu` |
 | `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
 | `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
@@ -140,3 +142,19 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `TEST_MINIMAL_X11` | Skip XFCE startup | `--test-minimal-x11` |
 | `WALLPAPER` | Custom wallpaper path | `--wallpaper` |
 | `ENABLE_CLIPBOARD` | Enable clipboard sync | `--enable-clipboard` |
+
+## Chroma 4:4:4
+
+Chroma 4:4:4 avoids chroma subsampling, improving clarity for text and sharp edges on remote desktops. It can be toggled at runtime from the config panel (Quality tab) or set at startup with `--chroma 444`.
+
+### Codec Support
+
+| Codec | 4:4:4 Support | Notes |
+| :--- | :--- | :--- |
+| `h264` (CPU) | ✅ | Uses `high444` profile |
+| `h264_nvenc` (GPU) | ✅ | Uses `high444p` profile. CPU usage increases (~50-85%) due to required CPU-side BGR→YUV444p conversion before GPU upload |
+| `av1` (CPU) | ✅ | Uses `libaom-av1` |
+| `av1_nvenc` (GPU) | ❌ | NVIDIA NVENC SDK does not support AV1 4:4:4 encoding on any current GPU architecture |
+| `vp8` | ❌ | VP8 does not support 4:4:4 |
+
+> **Note:** When using `h264_nvenc` with chroma 444, CPU usage increases because FFmpeg must convert frames from BGR0 to YUV444p on the CPU before uploading to the GPU. NVIDIA's `scale_cuda` filter does not support this conversion.

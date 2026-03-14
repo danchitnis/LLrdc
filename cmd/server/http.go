@@ -193,7 +193,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	initialConfig := map[string]interface{}{
 		"type":             "config",
 		"videoCodec":       VideoCodec,
+		"chroma":           Chroma,
 		"gpuAvailable":     UseGPU,
+		"av1NvencAvailable":    AV1NVENCAvailable,
+		"h264Nvenc444Available": H264NVENC444Available,
 		"framerate":        FPS,
 		"bandwidth":        targetBandwidthMbps,
 		"quality":          targetQuality,
@@ -261,6 +264,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if vCodec, ok := msg["video_codec"].(string); ok {
 				log.Printf("Received Video Codec config: %s", vCodec)
 				SetVideoCodec(vCodec)
+			}
+			if chromaStr, ok := msg["chroma"].(string); ok {
+				log.Printf("Received Chroma config: %s", chromaStr)
+				SetChroma(chromaStr)
 			}
 			if vbrBool, ok := msg["vbr"].(bool); ok {
 				log.Printf("Received VBR config: %v", vbrBool)

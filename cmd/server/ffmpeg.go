@@ -25,6 +25,23 @@ var (
 	ffmpegStreamID         uint32
 )
 
+func SetChroma(chroma string) {
+	if chroma != "420" && chroma != "444" {
+		log.Printf("Invalid chroma setting: %s", chroma)
+		return
+	}
+
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	Chroma = chroma
+	log.Printf("Target chroma changed to %s, restarting ffmpeg...", chroma)
+
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		ffmpegCmd.Process.Kill()
+	}
+}
+
 func SetVideoCodec(codec string) {
 	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "av1" && codec != "av1_nvenc" {
 		log.Printf("Invalid video codec: %s", codec)
@@ -232,14 +249,26 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				if filterStr != "" {
 					filterStr += ","
 				}
-				// For NVENC, ensure even dimensions on CPU (mostly no-op), then upload to GPU and let NVENC do format conversion
-				filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,hwupload_cuda"
+				// For NVENC, ensure even dimensions on CPU, then upload to GPU.
+				if Chroma == "444" {
+					// CPU-side format=yuv444p is required because:
+					// 1. NVENC won't auto-convert BGR0→YUV444p even with high444p profile
+					// 2. scale_cuda doesn't support rgb0→yuv444p conversion
+					// This does increase CPU usage at high resolutions (~50-85%).
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv444p,hwupload_cuda"
+				} else {
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,hwupload_cuda"
+				}
 				outputArgs = append(outputArgs, "-vf", filterStr)
 			} else {
 				if filterStr != "" {
 					filterStr += ","
 				}
-				filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p"
+				if Chroma == "444" {
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv444p"
+				} else {
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p"
+				}
 				outputArgs = append(outputArgs, "-vf", filterStr)
 			}
 

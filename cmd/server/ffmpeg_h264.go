@@ -10,10 +10,16 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 	var outputArgs []string
 
 	if VideoCodec == "h264_nvenc" {
-	        outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull", "-zerolatency", "1", "-aud", "1", "-level", "6.0")
+	        outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull", "-aud", "1", "-level", "6.0")
+			if Chroma == "444" {
+				outputArgs = append(outputArgs, "-profile:v", "high444p")
+			}
 	} else {
 			x264Params := fmt.Sprintf("aud=1:fps=%d", fps)
 	        outputArgs = append(outputArgs, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-x264-params", x264Params, "-level", "6.0")
+			if Chroma == "444" {
+				outputArgs = append(outputArgs, "-profile:v", "high444")
+			}
 	}
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
