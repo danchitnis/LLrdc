@@ -277,6 +277,43 @@ export function setupInput(sendMsg: (data: string) => void) {
             e.preventDefault();
             return false;
         });
+
+        let wheelAccumX = 0;
+        let wheelAccumY = 0;
+        overlayEl.addEventListener('wheel', (e: WheelEvent) => {
+            let dx = e.deltaX;
+            let dy = e.deltaY;
+            
+            // Normalize scroll modes
+            if (e.deltaMode === 1) { // DOM_DELTA_LINE
+                dx *= 33;
+                dy *= 33;
+            } else if (e.deltaMode === 2) { // DOM_DELTA_PAGE
+                dx *= 800;
+                dy *= 800;
+            }
+
+            wheelAccumX += dx;
+            wheelAccumY += dy;
+
+            const THRESHOLD = 20; // Lower threshold for smoother scrolling
+            let sendDx = 0;
+            let sendDy = 0;
+
+            if (Math.abs(wheelAccumX) >= THRESHOLD) {
+                sendDx = Math.sign(wheelAccumX) * Math.floor(Math.abs(wheelAccumX) / THRESHOLD);
+                wheelAccumX -= sendDx * THRESHOLD;
+            }
+            if (Math.abs(wheelAccumY) >= THRESHOLD) {
+                sendDy = Math.sign(wheelAccumY) * Math.floor(Math.abs(wheelAccumY) / THRESHOLD);
+                wheelAccumY -= sendDy * THRESHOLD;
+            }
+
+            if (sendDx !== 0 || sendDy !== 0) {
+                sendMsg(JSON.stringify({ type: 'wheel', deltaX: sendDx, deltaY: sendDy }));
+            }
+            e.preventDefault();
+        }, { passive: false });
     }
 }
 

@@ -249,6 +249,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if btn, ok := msg["button"].(float64); ok {
 				injectMouseButton(int(btn), msgType, Display)
 			}
+		case "wheel":
+			if dx, ok1 := msg["deltaX"].(float64); ok1 {
+				if dy, ok2 := msg["deltaY"].(float64); ok2 {
+					injectMouseWheel(dx, dy, Display)
+				}
+			}
 		case "spawn":
 			if cmd, ok := msg["command"].(string); ok {
 				allowed := map[string]bool{

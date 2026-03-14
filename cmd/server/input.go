@@ -68,6 +68,7 @@ type inputTask struct {
 	Type    string
 	Key     string
 	NX, NY  float64
+	DX, DY  float64
 	Button  int
 	Action  string
 	Display string
@@ -179,6 +180,30 @@ func execTask(task inputTask) {
 		if err := cmd.Start(); err == nil {
 			go cmd.Wait()
 		}
+
+	case "wheel":
+		if task.DY != 0 {
+			btn := "5"
+			if task.DY < 0 {
+				btn = "4"
+			}
+			cmd := exec.Command("xdotool", "click", "--repeat", strconv.Itoa(int(math.Abs(task.DY))), btn)
+			cmd.Env = append(os.Environ(), "DISPLAY="+task.Display)
+			if err := cmd.Start(); err == nil {
+				go cmd.Wait()
+			}
+		}
+		if task.DX != 0 {
+			btn := "7"
+			if task.DX < 0 {
+				btn = "6"
+			}
+			cmd := exec.Command("xdotool", "click", "--repeat", strconv.Itoa(int(math.Abs(task.DX))), btn)
+			cmd.Env = append(os.Environ(), "DISPLAY="+task.Display)
+			if err := cmd.Start(); err == nil {
+				go cmd.Wait()
+			}
+		}
 	}
 }
 
@@ -199,6 +224,13 @@ func injectMouseMove(nx, ny float64, display string) {
 func injectMouseButton(button int, action, display string) {
 	select {
 	case inputChan <- inputTask{Type: "mousebtn", Button: button, Action: action, Display: display}:
+	default:
+	}
+}
+
+func injectMouseWheel(dx, dy float64, display string) {
+	select {
+	case inputChan <- inputTask{Type: "wheel", DX: dx, DY: dy, Display: display}:
 	default:
 	}
 }
