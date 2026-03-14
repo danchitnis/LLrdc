@@ -73,6 +73,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   sudo \
   && rm -rf /var/lib/apt/lists/*
 
+# ── Browser Repositories (Firefox & Chromium without Snap) ───────────────────
+# Allow users to install Firefox and Chromium via apt without snap.
+# Snap does not work in unprivileged Docker containers.
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+  && add-apt-repository -y ppa:mozillateam/ppa \
+  && add-apt-repository -y ppa:xtradeb/apps \
+  && printf 'Package: *\nPin: release o=LP-PPA-mozillateam\nPin-Priority: 1001\n' > /etc/apt/preferences.d/mozilla-firefox \
+  && printf 'Unattended-Upgrade::Allowed-Origins:: "LP-PPA-mozillateam:${distro_codename}";\n' > /etc/apt/apt.conf.d/51unattended-upgrades-firefox \
+  && printf 'Package: snapd chromium-browser\nPin: release *\nPin-Priority: -1\n' > /etc/apt/preferences.d/nosnap \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
 # ── Silencing XFCE warnings ───────────────────────────────────────────────────
 # Create a dummy pm-is-supported script to prevent xfce4-session from complaining.
 RUN printf '#!/bin/sh\nexit 1\n' > /usr/bin/pm-is-supported \
