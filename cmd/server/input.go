@@ -145,15 +145,20 @@ func execTask(task inputTask) {
 		if task.Action == "keyup" || task.Action == "key" {
 			mode = task.Action
 		}
-		
+
 		var cmd *exec.Cmd
-		// Use --clearmodifiers for all discrete key actions to prevent interference from held keys
-		cmd = exec.Command("xdotool", mode, "--clearmodifiers", xKey)
+		if mode == "key" {
+			// Use --clearmodifiers only for discrete combo shortcuts (e.g. ctrl+c)
+			// so held modifiers don't interfere with the injected combo
+			cmd = exec.Command("xdotool", mode, "--clearmodifiers", xKey)
+		} else {
+			// For keydown/keyup, do NOT clear modifiers — we need to preserve
+			// modifier state for normal typing (e.g. Shift+letter for uppercase)
+			cmd = exec.Command("xdotool", mode, xKey)
+		}
 		cmd.Env = append(os.Environ(), "DISPLAY="+task.Display)
 		if err := cmd.Start(); err == nil {
 			_ = cmd.Wait()
-			// Small sleep after any key action to allow X11 to keep up
-			time.Sleep(50 * time.Millisecond)
 		}
 
 	case "mousebtn":
