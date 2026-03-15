@@ -165,6 +165,7 @@ func broadcastConfig(restarted bool) {
 		"mpdecimate":       targetMpdecimate,
 		"keyframe_interval": targetKeyframeInterval,
 		"enableClipboard":  EnableClipboard,
+		"hdpi":             HDPI,
 		"restarted":        restarted,
 	}
 	broadcastJSON(configMsg)
@@ -226,6 +227,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"mpdecimate":       targetMpdecimate,
 		"keyframe_interval": targetKeyframeInterval,
 		"enableClipboard":  EnableClipboard,
+		"hdpi":             HDPI,
 	}
 	_ = writeJSON(initialConfig)
 
@@ -289,6 +291,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		case "config":
 			hasBwOrQuality := false
+			if hdpiFloat, ok := msg["hdpi"].(float64); ok {
+				hdpi := int(hdpiFloat)
+				log.Printf("Received HDPI config: %d%%", hdpi)
+				if HDPI != hdpi {
+					HDPI = hdpi
+					applyHdpiSettings(os.Environ())
+				}
+			}
 			if vCodec, ok := msg["video_codec"].(string); ok {
 				log.Printf("Received Video Codec config: %s", vCodec)
 				SetVideoCodec(vCodec)

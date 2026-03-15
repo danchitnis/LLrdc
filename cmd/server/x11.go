@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -119,6 +120,9 @@ func startX11(displayNum string) error {
 	// Set wallpaper
 	setWallpaper(env, displayNum)
 
+	// Apply HDPI settings if enabled
+	applyHdpiSettings(env)
+
 	return nil
 }
 
@@ -197,3 +201,46 @@ func runWithEnv(cmd string, args []string, env []string) error {
 	c.Env = env
 	return c.Run()
 }
+
+func applyHdpiSettings(baseEnv []string) {
+	if HDPI <= 0 {
+		return
+	}
+
+	dbusAddr := getSessionDbusAddress()
+	if dbusAddr == "" {
+		log.Println("Warning: Could not find DBUS session bus address; HDPI settings not applied.")
+		return
+	}
+
+	env := append(baseEnv, "DBUS_SESSION_BUS_ADDRESS="+dbusAddr)
+
+	dpi := (96 * HDPI) / 100
+	log.Printf("Applying HDPI scaling: %d%% (DPI: %d)", HDPI, dpi)
+
+	// Set Xft DPI
+	runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Xft/DPI", "-n", "-t", "int", "-s", strconv.Itoa(dpi)}, env)
+
+	// Set GDK Window Scaling Factor
+	scale := 1
+	if HDPI >= 200 {
+		scale = HDPI / 100
+	}
+	runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Gdk/WindowScalingFactor", "-n", "-t", "int", "-s", strconv.Itoa(scale)}, env)
+
+	// Set Icon Size on Desktop
+	iconSize := 48 * HDPI / 100
+	runWithEnv("xfconf-query", []string{"-c", "xfce4-desktop", "-p", "/desktop-icons/icon-size", "-n", "-t", "int", "-s", strconv.Itoa(iconSize)}, env)
+
+	// Set Cursor Size
+	cursorSize := 24 * HDPI / 100
+	runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Gtk/CursorThemeSize", "-n", "-t", "int", "-s", strconv.Itoa(cursorSize)}, env)
+
+	// Set Panel Size
+	panelSize := 30 * HDPI / 100
+	runWithEnv("xfconf-query", []string{"-c", "xfce4-panel", "-p", "/panels/panel-1/size", "-n", "-t", "int", "-s", strconv.Itoa(panelSize)}, env)
+	
+	// Restart panel to apply size changes effectively
+	runWithEnv("xfce4-panel", []string{"-r"}, env)
+}
+

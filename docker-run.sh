@@ -20,6 +20,7 @@ USE_DEBUG_X11="false"
 USE_DEBUG_FFMPEG="false"
 WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
 WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
+SERVER_HDPI="${HDPI:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -56,6 +57,24 @@ while [[ $# -gt 0 ]]; do
       else
         echo "Error: --exclude-iface requires an argument."
         exit 1
+      fi
+      ;;
+    --name)
+      if [ -n "${2:-}" ]; then
+        CONTAINER_NAME="$2"
+        shift 2
+      else
+        echo "Error: --name requires an argument."
+        exit 1
+      fi
+      ;;
+    --hdpi|-h)
+      if [[ -n "${2:-}" ]] && [[ "$2" =~ ^[0-9]+$ ]]; then
+        SERVER_HDPI="$2"
+        shift 2
+      else
+        SERVER_HDPI="200"
+        shift
       fi
       ;;
     *)
@@ -147,6 +166,7 @@ docker run \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP}" \
   --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}" \
   --env WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}" \
+  --env HDPI="${SERVER_HDPI}" \
   --env USE_DEBUG_X11="${USE_DEBUG_X11}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env HOST_UID=$(id -u) \

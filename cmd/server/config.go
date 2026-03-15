@@ -31,6 +31,7 @@ var (
 	WebRTCPublicIP          string
 	WebRTCInterfaces        string
 	WebRTCExcludeInterfaces string
+	HDPI                    int
 )
 
 func initConfig() {
@@ -71,6 +72,11 @@ func initConfig() {
 	defaultWebRTCPublicIP := os.Getenv("WEBRTC_PUBLIC_IP")
 	defaultWebRTCInterfaces := os.Getenv("WEBRTC_INTERFACES")
 	defaultWebRTCExcludeInterfaces := os.Getenv("WEBRTC_EXCLUDE_INTERFACES")
+	
+	defaultHDPI := 0
+	if hdpi, err := strconv.Atoi(os.Getenv("HDPI")); err == nil {
+		defaultHDPI = hdpi
+	}
 
 	// Custom Usage format
 	flag.Usage = func() {
@@ -92,6 +98,7 @@ func initConfig() {
 		printFlag(os.Stderr, "webrtc-interfaces", "Comma-separated allowed network interfaces for WebRTC", WebRTCInterfaces)
 		printFlag(os.Stderr, "webrtc-exclude-interfaces", "Comma-separated excluded network interfaces for WebRTC", WebRTCExcludeInterfaces)
 		printFlag(os.Stderr, "enable-clipboard", "Enable clipboard synchronization", EnableClipboard)
+		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
 
 		fmt.Fprintf(os.Stderr, "\nTesting Flags:\n")
 		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of X11", TestPattern)
@@ -114,6 +121,7 @@ func initConfig() {
 	flag.StringVar(&WebRTCInterfaces, "webrtc-interfaces", defaultWebRTCInterfaces, "Comma-separated allowed network interfaces for WebRTC")
 	flag.StringVar(&WebRTCExcludeInterfaces, "webrtc-exclude-interfaces", defaultWebRTCExcludeInterfaces, "Comma-separated excluded network interfaces for WebRTC")
 	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
+	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
 
 	flag.Parse()
 

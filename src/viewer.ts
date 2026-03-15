@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -56,6 +56,7 @@ interface ConfigMessage {
     enable_desktop_mouse?: boolean;
     video_codec?: string;
     chroma?: string;
+    hdpi?: number;
 }
 
 let configDebounceTimer: number | null = null;
@@ -81,6 +82,9 @@ function sendConfig() {
             config.quality = parseInt(qualitySlider.value, 10);
         }
         config.framerate = parseInt(framerateSelect.value, 10);
+        if (hdpiSelect) {
+            config.hdpi = parseInt(hdpiSelect.value, 10);
+        }
         if (vbrCheckbox) {
             config.vbr = vbrCheckbox.checked;
         }
@@ -158,6 +162,10 @@ if (qualitySlider && qualityValue) {
 
 if (framerateSelect) {
     framerateSelect.addEventListener('change', sendConfig);
+}
+
+if (hdpiSelect) {
+    hdpiSelect.addEventListener('change', sendConfig);
 }
 
 if (maxResSelect) {
@@ -373,6 +381,13 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         if (msg.framerate !== undefined && typeof msg.framerate === 'number') {
             if (framerateSelect) {
                 framerateSelect.value = msg.framerate.toString();
+            }
+        }
+
+        if (msg.hdpi !== undefined && typeof msg.hdpi === 'number') {
+            if (hdpiSelect) {
+                const displayHdpi = msg.hdpi === 0 ? 100 : msg.hdpi;
+                hdpiSelect.value = displayHdpi.toString();
             }
         }
 

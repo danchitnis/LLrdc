@@ -48,6 +48,7 @@ To see verbose debug logs, you can use the following flags:
 - `--debug-ffmpeg`: Shows real-time ffmpeg frame rate and encoder reports.
 - `--debug-x11`: Shows X11 keyboard warnings and XFCE session startup errors.
 - `--debug`: Enables both ffmpeg and X11 debug logging.
+- `--hdpi [percent]` or `-h [percent]`: Enables High DPI scaling for the XFCE desktop. If no percentage is provided, it defaults to `200` (2x scaling). Example: `--hdpi 150` for 1.5x scaling.
 
 ### Network and WebRTC Configuration
 

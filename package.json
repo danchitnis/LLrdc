@@ -12,7 +12,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint src/",
-    "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080}/tcp -p ${PORT:-8080}:${PORT:-8080}/udp -e PORT=${PORT:-8080} -e DISPLAY_NUM=${DISPLAY_NUM:-99} -e TEST_PATTERN=${TEST_PATTERN} -e FPS=${FPS:-30} -e VIDEO_CODEC=${VIDEO_CODEC:-vp8} -e HOST_UID=$(id -u) danchitnis/llrdc",
+    "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080}/tcp -p ${PORT:-8080}:${PORT:-8080}/udp -e PORT=${PORT:-8080} -e DISPLAY_NUM=${DISPLAY_NUM:-99} -e TEST_PATTERN=${TEST_PATTERN} -e FPS=${FPS:-30} -e VIDEO_CODEC=${VIDEO_CODEC:-vp8} -e HOST_UID=$(id -u) -e HDPI=${HDPI:-0} danchitnis/llrdc",
     "test": "./test.sh"
   },
   "devDependencies": {

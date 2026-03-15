@@ -16,6 +16,7 @@ export const targetTypeRadios = document.getElementsByName('target-type') as Nod
 export const qualitySlider = document.getElementById('quality-slider') as HTMLInputElement;
 export const qualityValue = document.getElementById('quality-value') as HTMLSpanElement;
 export const framerateSelect = document.getElementById('framerate-select') as HTMLSelectElement;
+export const hdpiSelect = document.getElementById('hdpi-select') as HTMLSelectElement;
 export const maxResSelect = document.getElementById('max-res-select') as HTMLSelectElement;
 
 export const cpuEffortSlider = document.getElementById('cpu-effort-slider') as HTMLInputElement;
