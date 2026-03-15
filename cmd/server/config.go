@@ -21,6 +21,7 @@ var (
 
 	AV1NVENCAvailable       bool
 	H264NVENC444Available   bool
+	H265NVENC444Available   bool
 	UseDebugX11             bool
 	UseDebugFFmpeg          bool
 	TestPattern             bool
@@ -80,7 +81,7 @@ func initConfig() {
 		fmt.Fprintf(os.Stderr, "User Flags:\n")
 		printFlag(os.Stderr, "port", "Port for HTTP and WebRTC UDP", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
-		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, av1, av1_nvenc)", VideoCodec)
+		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-gpu", "Enable GPU acceleration if available", UseGPU)
 		printFlag(os.Stderr, "use-debug-x11", "Enable X11 debugging", UseDebugX11)
@@ -100,7 +101,7 @@ func initConfig() {
 	// Define flags
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
-	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, av1, av1_nvenc)")
+	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseGPU, "use-gpu", defaultUseGPU, "Enable GPU acceleration if available")
 	flag.BoolVar(&UseDebugX11, "use-debug-x11", defaultUseDebugX11, "Enable X11 debugging")
@@ -137,6 +138,15 @@ func initConfig() {
 			log.Printf("H.264 NVENC 4:4:4 support detected")
 		} else {
 			log.Printf("H.264 NVENC 4:4:4 support NOT detected")
+		}
+
+		log.Printf("Checking H.265 NVENC 4:4:4 support...")
+		outH265, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v hevc_nvenc -profile:v rext -f null - > /dev/null 2>&1 && echo true || echo false").Output()
+		H265NVENC444Available = strings.TrimSpace(string(outH265)) == "true"
+		if H265NVENC444Available {
+			log.Printf("H.265 NVENC 4:4:4 support detected")
+		} else {
+			log.Printf("H.265 NVENC 4:4:4 support NOT detected")
 		}
 	}
 }

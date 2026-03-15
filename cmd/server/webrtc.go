@@ -34,6 +34,8 @@ func initWebRTCTrack() {
 	mimeType := webrtc.MimeTypeVP8
 	if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
 		mimeType = webrtc.MimeTypeH264
+	} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
+		mimeType = "video/H265"
 	} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
 		mimeType = webrtc.MimeTypeAV1
 	}

@@ -78,7 +78,7 @@ test.describe('Chroma 4:4:4 Streaming', () => {
   });
 
   // av1_nvenc excluded: NVIDIA NVENC SDK does not support AV1 4:4:4
-  const codecs = ['h264', 'av1', 'h264_nvenc'];
+  const codecs = ['h264', 'h265', 'av1', 'h264_nvenc', 'h265_nvenc'];
 
   for (const codec of codecs) {
     test(`should use ${codec} with YUV444p profile and decode successfully`, async ({ page }) => {

@@ -73,6 +73,7 @@ export class WebCodecsManager {
             });
 
             const isH264 = this.videoCodec.startsWith('h264');
+            const isH265 = this.videoCodec.startsWith('h265');
             const isAV1 = this.videoCodec.startsWith('av1');
             
             let codecStr = 'vp8';
@@ -83,6 +84,14 @@ export class WebCodecsManager {
                 } else {
                     // avc1.42E034 is Baseline profile, level 5.2 - supports 4K @ 120fps
                     codecStr = 'avc1.42E034';
+                }
+            } else if (isH265) {
+                if (this.chroma === '444') {
+                    // hev1.2.4.L120.90 is Main 4:4:4 10 profile
+                    codecStr = 'hev1.2.4.L120.90';
+                } else {
+                    // hev1.1.6.L120.90 is Main profile, Level 4.0, Main tier
+                    codecStr = 'hev1.1.6.L120.90';
                 }
             } else if (isAV1) {
                 if (this.chroma === '444') {

@@ -308,6 +308,18 @@ function handleBinaryMessage(buffer: ArrayBuffer) {
                     }
                 }
             }
+        } else if (webcodecs.videoCodec.startsWith('h265')) {
+            // H.265 Annex B keyframe detection
+            // Look for VPS (32), SPS (33), PPS (34) or IDR (19, 20) or CRA (21)
+            for (let i = 0; i < chunkData.length - 4; i++) {
+                if (chunkData[i] === 0 && chunkData[i + 1] === 0 && chunkData[i + 2] === 0 && chunkData[i + 3] === 1) {
+                    const nalType = (chunkData[i + 4] & 0x7E) >> 1;
+                    if (nalType === 19 || nalType === 20 || nalType === 21 || nalType === 32 || nalType === 33 || nalType === 34) {
+                        isKey = true;
+                        break;
+                    }
+                }
+            }
         } else if (webcodecs.videoCodec.startsWith('av1')) {
             // AV1 keyframe detection
             // An AV1 keyframe (IDR) must contain a Sequence Header OBU (Type 1).
@@ -400,9 +412,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                 const updateChromaState = () => {
                     const isAV1Nvenc = videoCodecSelect.value === 'av1_nvenc';
                     const isH264Nvenc = videoCodecSelect.value === 'h264_nvenc';
+                    const isH265Nvenc = videoCodecSelect.value === 'h265_nvenc';
                     
                     // AV1 NVENC never supports 444 (NVENC SDK limitation)
-                    const codec_444_Missing = isAV1Nvenc || (isH264Nvenc && !msg.h264Nvenc444Available);
+                    const codec_444_Missing = isAV1Nvenc || (isH264Nvenc && !msg.h264Nvenc444Available) || (isH265Nvenc && !msg.h265Nvenc444Available);
                     
                     if (codec_444_Missing) {
                         if (chromaCheckbox.checked) {
@@ -413,11 +426,11 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                         chromaCheckbox.parentElement!.style.opacity = '0.5';
                         chromaCheckbox.parentElement!.title = isAV1Nvenc
                             ? 'AV1 NVENC does not support 4:4:4 (NVENC SDK limitation)'
-                            : 'H.264 4:4:4 is not supported by your GPU hardware';
+                            : '4:4:4 is not supported by your GPU hardware for this codec';
                     } else {
                         chromaCheckbox.disabled = false;
                         chromaCheckbox.parentElement!.style.opacity = '1';
-                        chromaCheckbox.parentElement!.title = 'Improve text clarity by avoiding chroma subsampling (H.264/AV1 only)';
+                        chromaCheckbox.parentElement!.title = 'Improve text clarity by avoiding chroma subsampling (H.264/H.265/AV1 only)';
                     }
                 };
                 

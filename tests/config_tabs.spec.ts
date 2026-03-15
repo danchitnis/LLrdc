@@ -160,6 +160,9 @@ ${outputBuffer}`));
             await codecLocator.selectOption('h264');
             await page.waitForTimeout(4000);
 
+            await codecLocator.selectOption('h265');
+            await page.waitForTimeout(4000);
+
             await codecLocator.selectOption('vp8');
             await page.waitForTimeout(4000);
 
@@ -174,6 +177,7 @@ ${outputBuffer}`));
         expect(outputBuffer).toContain('Target draw mouse changed to false, restarting ffmpeg...');
         expect(outputBuffer).toMatch(/Received resize: \d+x\d+ \(clamped to \d+x720\)/);
         expect(outputBuffer).toContain('Target video codec changed to h264, reinitializing WebRTC track and restarting ffmpeg...');
+        expect(outputBuffer).toContain('Target video codec changed to h265, reinitializing WebRTC track and restarting ffmpeg...');
         expect(outputBuffer).toContain('Target video codec changed to vp8, reinitializing WebRTC track and restarting ffmpeg...');
     });
 });

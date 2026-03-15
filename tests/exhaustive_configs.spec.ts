@@ -108,7 +108,13 @@ test.describe('Exhaustive Configuration Transitions', () => {
         await page.waitForTimeout(2000); // Give it a moment to trigger
         await verifyStreaming(page, 'H.264 30fps');
 
-        // Transition 2: H.264 -> AV1
+        // Transition 1.5: H.264 -> H.265
+        console.log('Transitioning to H.265...');
+        await page.selectOption('#video-codec-select', 'h265');
+        await page.waitForTimeout(2000);
+        await verifyStreaming(page, 'H.265 30fps');
+
+        // Transition 2: H.265 -> AV1
         console.log('Transitioning to AV1...');
         await page.selectOption('#video-codec-select', 'av1');
         await page.waitForTimeout(2000);

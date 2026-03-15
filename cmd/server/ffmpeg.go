@@ -43,7 +43,7 @@ func SetChroma(chroma string) {
 }
 
 func SetVideoCodec(codec string) {
-	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "av1" && codec != "av1_nvenc" {
+	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h265" && codec != "h265_nvenc" && codec != "av1" && codec != "av1_nvenc" {
 		log.Printf("Invalid video codec: %s", codec)
 		return
 	}
@@ -235,7 +235,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
 
-			useNVENC := VideoCodec == "h264_nvenc" || VideoCodec == "av1_nvenc"
+			useNVENC := VideoCodec == "h264_nvenc" || VideoCodec == "h265_nvenc" || VideoCodec == "av1_nvenc"
 			
 			var filterStr string
 			if mpdecimate {
@@ -273,10 +273,13 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			}
 
 			useH264 := VideoCodec == "h264" || VideoCodec == "h264_nvenc"
+			useH265 := VideoCodec == "h265" || VideoCodec == "h265_nvenc"
 			useAV1 := VideoCodec == "av1" || VideoCodec == "av1_nvenc"
 
 			if useH264 {
 				outputArgs = append(outputArgs, buildH264Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
+			} else if useH265 {
+				outputArgs = append(outputArgs, buildH265Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
 			} else if useAV1 {
 				outputArgs = append(outputArgs, buildAV1Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
 			} else {
@@ -346,6 +349,10 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			go func() {
 				if useH264 {
 					splitH264AnnexB(stdout, func(frame []byte) {
+						onFrame(frame, currentStreamID)
+					})
+				} else if useH265 {
+					splitH265AnnexB(stdout, func(frame []byte) {
 						onFrame(frame, currentStreamID)
 					})
 				} else {
