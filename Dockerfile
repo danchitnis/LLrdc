@@ -77,6 +77,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   xz-utils \
   gnupg \
   sudo \
+  # Audio
+  pulseaudio \
+  alsa-utils \
   # libgl1 is often needed for some ffmpeg hwaccel paths
   libgl1 \
   # Need to install dependencies for the custom ffmpeg build

@@ -118,9 +118,9 @@ if [ -z "${WEBRTC_PUBLIC_IP:-}" ]; then
   if [ -n "${WEBRTC_INTERFACES:-}" ]; then
     WEBRTC_PUBLIC_IP=$(ip -4 addr show "${WEBRTC_INTERFACES%%,*}" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 || true)
   fi
-  
+
   # Fallback to general detection
-  if [ -z "$WEBRTC_PUBLIC_IP" ]; then
+  if [ -z "${WEBRTC_PUBLIC_IP:-}" ]; then
     WEBRTC_PUBLIC_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' || true)
   fi
 fi

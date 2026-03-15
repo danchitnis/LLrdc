@@ -149,6 +149,26 @@ func broadcastVideoFrame(frame []byte, streamID uint32) {
 	}
 }
 
+func broadcastConfig(restarted bool) {
+	configMsg := map[string]interface{}{
+		"type":             "config",
+		"videoCodec":       VideoCodec,
+		"chroma":           Chroma,
+		"gpuAvailable":     UseGPU,
+		"av1NvencAvailable":    AV1NVENCAvailable,
+		"h264Nvenc444Available": H264NVENC444Available,
+		"framerate":        FPS,
+		"bandwidth":        targetBandwidthMbps,
+		"quality":          targetQuality,
+		"vbr":              targetVBR,
+		"mpdecimate":       targetMpdecimate,
+		"keyframe_interval": targetKeyframeInterval,
+		"enableClipboard":  EnableClipboard,
+		"restarted":        restarted,
+	}
+	broadcastJSON(configMsg)
+}
+
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -338,6 +358,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					SetFramerate(fps)
 				}
 			}
+			broadcastConfig(true)
 		case "resize":
 			widthFloat, wOk := msg["width"].(float64)
 			heightFloat, hOk := msg["height"].(float64)
@@ -354,6 +375,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 					RestartForResize()
+					broadcastConfig(true)
 				}
 			}
 		case "webrtc_ready":

@@ -19,6 +19,7 @@ type WebRTCFrame struct {
 
 var (
 	videoTrack      *webrtc.TrackLocalStaticSample
+	audioTrack      *webrtc.TrackLocalStaticSample
 	videoTrackMutex sync.RWMutex
 	webrtcFrameChan = make(chan WebRTCFrame, 300)
 	lastSampleTime  time.Time
@@ -49,6 +50,15 @@ func initWebRTCTrack() {
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)
 	}
+
+	if audioTrack == nil {
+		audioTrack, err = webrtc.NewTrackLocalStaticSample(
+			webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion",
+		)
+		if err != nil {
+			log.Fatalf("Failed to create audio track: %v", err)
+		}
+	}
 }
 
 func initWebRTC() {
@@ -56,6 +66,7 @@ func initWebRTC() {
 
 	go func() {
 		var bufferedFrame *WebRTCFrame
+		var lastTrack *webrtc.TrackLocalStaticSample
 
 		for frame := range webrtcFrameChan {
 			videoTrackMutex.RLock()
@@ -66,15 +77,21 @@ func initWebRTC() {
 				continue
 			}
 
+			// If track changed, flush/discard old buffer and reset
+			if vt != lastTrack {
+				bufferedFrame = nil
+				lastTrack = vt
+			}
+
 			if bufferedFrame == nil {
-				// First frame
+				// First frame for this track
 				f := frame // Copy
 				bufferedFrame = &f
 				currentStreamID = frame.StreamID
 				continue
 			}
 
-			// If stream ID changed, flush old buffer with a small duration, start new buffer
+			// If stream ID changed (e.g. FFmpeg restart), flush old buffer
 			if frame.StreamID != currentStreamID {
 				_ = vt.WriteSample(media.Sample{
 					Data:     bufferedFrame.Data,
@@ -175,10 +192,17 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 
 	videoTrackMutex.RLock()
 	vt := videoTrack
+	at := audioTrack
 	videoTrackMutex.RUnlock()
 
 	if _, err = pc.AddTrack(vt); err != nil {
 		return nil, err
+	}
+
+	if at != nil {
+		if _, err = pc.AddTrack(at); err != nil {
+			return nil, err
+		}
 	}
 
 	return pc, nil

@@ -32,9 +32,16 @@ export class WebRTCManager {
         if (this.rtcPeer) {
             this.rtcPeer.close();
         }
+        if (videoEl) {
+            videoEl.srcObject = null;
+        }
         this.isWebRtcActive = false;
         this.lastTotalDecoded = -1;
         this.lastStatsTime = 0;
+        this.lastBytesReceived = 0;
+        this.bandwidthMbps = 0;
+        this.frameCount = 0;
+        this.lastVideoFrameTime = 0;
         this.hasSentWebrtcReady = false;
         this.rtcPeer = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -51,19 +58,26 @@ export class WebRTCManager {
         };
 
         this.rtcPeer.ontrack = (e: RTCTrackEvent) => {
-            log('WebRTC track received');
-            videoEl.srcObject = new MediaStream([e.track]);
+            log('WebRTC track received: ' + e.track.kind);
+            let stream = videoEl.srcObject as MediaStream;
+            if (!stream) {
+                stream = new MediaStream();
+                videoEl.srcObject = stream;
+            }
+            stream.addTrack(e.track);
 
-            videoEl.play().then(() => {
-                log('WebRTC Video playing');
-                this.isWebRtcActive = true;
-                if (statusEl) {
-                    statusEl.textContent = 'WebRTC Connected';
-                }
-                this.startVideoCanvasLoop(0);
-            }).catch((err: unknown) => {
-                log('Video play error: ' + (err as Error).message);
-            });
+            if (videoEl.paused) {
+                videoEl.play().then(() => {
+                    log('WebRTC Video/Audio playing');
+                    this.isWebRtcActive = true;
+                    if (statusEl) {
+                        statusEl.textContent = 'WebRTC Connected';
+                    }
+                    this.startVideoCanvasLoop(0);
+                }).catch((err: unknown) => {
+                    log('Media play error: ' + (err as Error).message);
+                });
+            }
         };
 
         this.rtcPeer.oniceconnectionstatechange = () => {
@@ -78,6 +92,7 @@ export class WebRTCManager {
         };
 
         this.rtcPeer.addTransceiver('video', { direction: 'recvonly' });
+        this.rtcPeer.addTransceiver('audio', { direction: 'recvonly' });
         this.rtcPeer.createOffer().then((offer: RTCSessionDescriptionInit) => {
             if (offer.sdp) {
                 offer.sdp = offer.sdp.replace(/a=rtcp-fb:\d* transport-cc\r\n/g, '');

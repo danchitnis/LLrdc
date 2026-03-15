@@ -79,6 +79,18 @@ func startX11(displayNum string) error {
 		return nil
 	}
 
+	// Start PulseAudio
+	log.Println("Starting pulseaudio...")
+	paCmd := exec.Command("pulseaudio", "-D", "--exit-idle-time=-1")
+	paCmd.Env = env
+	if UseDebugX11 {
+		paCmd.Stdout = os.Stdout
+		paCmd.Stderr = os.Stderr
+	}
+	if err := paCmd.Run(); err != nil {
+		log.Printf("Warning: pulseaudio failed to start: %v", err)
+	}
+
 	// Start XFCE
 	log.Println("Starting xfce4-session...")
 	session := exec.Command("dbus-run-session", "xfce4-session")

@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -58,63 +58,59 @@ interface ConfigMessage {
     chroma?: string;
 }
 
+let configDebounceTimer: number | null = null;
+
 function sendConfig() {
-    let target = 'bandwidth';
-    for (const radio of targetTypeRadios) {
-        if (radio.checked) {
-            target = radio.value;
-            break;
+    if (configDebounceTimer) {
+        clearTimeout(configDebounceTimer);
+    }
+    
+    configDebounceTimer = window.setTimeout(() => {
+        let target = 'bandwidth';
+        for (const radio of targetTypeRadios) {
+            if (radio.checked) {
+                target = radio.value;
+                break;
+            }
         }
-    }
 
-    const config: ConfigMessage = { type: 'config' };
-    if (target === 'bandwidth') {
-        config.bandwidth = parseInt(bandwidthSelect.value, 10);
-    } else {
-        config.quality = parseInt(qualitySlider.value, 10);
-    }
-    config.framerate = parseInt(framerateSelect.value, 10);
-    if (vbrCheckbox) {
-        config.vbr = vbrCheckbox.checked;
-    }
-    if (mpdecimateCheckbox) {
-        config.mpdecimate = mpdecimateCheckbox.checked;
-    }
-    if (keyframeIntervalSelect) {
-        config.keyframe_interval = parseInt(keyframeIntervalSelect.value, 10);
-    }
-    if (cpuEffortSlider) {
-        config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
-    }
-    if (cpuThreadsSelect) {
-        config.cpu_threads = parseInt(cpuThreadsSelect.value, 10);
-    }
-    if (desktopMouseCheckbox) {
-        config.enable_desktop_mouse = desktopMouseCheckbox.checked;
-    }
-
-    if (chromaCheckbox) {
-        config.chroma = chromaCheckbox.checked ? '444' : '420';
-        if (webcodecs.chroma !== config.chroma) {
-            webcodecs.chroma = config.chroma;
-            webcodecs.initDecoder();
+        const config: ConfigMessage = { type: 'config' };
+        if (target === 'bandwidth') {
+            config.bandwidth = parseInt(bandwidthSelect.value, 10);
+        } else {
+            config.quality = parseInt(qualitySlider.value, 10);
         }
-    }
-
-    if (videoCodecSelect) {
-        config.video_codec = videoCodecSelect.value;
-        
-        if (webcodecs.videoCodec !== config.video_codec) {
-            webcodecs.videoCodec = config.video_codec;
-            webrtc.videoCodec = config.video_codec;
-            webcodecs.initDecoder();
+        config.framerate = parseInt(framerateSelect.value, 10);
+        if (vbrCheckbox) {
+            config.vbr = vbrCheckbox.checked;
         }
-    }
+        if (mpdecimateCheckbox) {
+            config.mpdecimate = mpdecimateCheckbox.checked;
+        }
+        if (keyframeIntervalSelect) {
+            config.keyframe_interval = parseInt(keyframeIntervalSelect.value, 10);
+        }
+        if (cpuEffortSlider) {
+            config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
+        }
+        if (cpuThreadsSelect) {
+            config.cpu_threads = parseInt(cpuThreadsSelect.value, 10);
+        }
+        if (desktopMouseCheckbox) {
+            config.enable_desktop_mouse = desktopMouseCheckbox.checked;
+        }
 
-    network.sendMsg(JSON.stringify(config));
-    if (webrtc.isWebRtcActive) {
-        webrtc.initWebRTC();
-    }
+        if (chromaCheckbox) {
+            config.chroma = chromaCheckbox.checked ? '444' : '420';
+        }
+
+        if (videoCodecSelect) {
+            config.video_codec = videoCodecSelect.value;
+        }
+
+        network.sendMsg(JSON.stringify(config));
+        configDebounceTimer = null;
+    }, 100);
 }
 
 if (configBtn && configDropdown) {
@@ -232,6 +228,8 @@ let lastResizeWidth = 0;
 let lastResizeHeight = 0;
 let resizeTimer: number | null = null;
 
+let isReinitializingWebRTC = false;
+
 function sendResize() {
     if (!displayContainerEl) return;
     const rect = displayContainerEl.getBoundingClientRect();
@@ -275,7 +273,16 @@ if (displayContainerEl && 'ResizeObserver' in window) {
 
 window.addEventListener('resize', scheduleResize);
 window.addEventListener('orientationchange', scheduleResize);
-window.addEventListener('load', scheduleResize);
+window.addEventListener('load', () => {
+    scheduleResize();
+    const unmuteVideo = () => {
+        if (videoEl && videoEl.muted) {
+            videoEl.muted = false;
+        }
+    };
+    window.addEventListener('mousedown', unmuteVideo, { once: true });
+    window.addEventListener('keydown', unmuteVideo, { once: true });
+});
 
 function handleBinaryMessage(buffer: ArrayBuffer) {
     const dv = new DataView(buffer);
@@ -339,14 +346,33 @@ function handleBinaryMessage(buffer: ArrayBuffer) {
 
 function handleJsonMessage(msg: Record<string, unknown>) {
     if (msg.type === 'config') {
+        let codecChanged = false;
+
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {
             log(`Server codec: ${msg.videoCodec}`);
-            if (webcodecs.videoCodec !== msg.videoCodec) {
+            if (webcodecs.videoCodec !== msg.videoCodec || webrtc.videoCodec !== msg.videoCodec) {
                 webcodecs.videoCodec = msg.videoCodec;
                 webrtc.videoCodec = msg.videoCodec;
                 webcodecs.initDecoder();
+                codecChanged = true;
             }
+        }
 
+        if (msg.framerate !== undefined && typeof msg.framerate === 'number') {
+            if (framerateSelect) {
+                framerateSelect.value = msg.framerate.toString();
+            }
+        }
+
+        if (webrtc.rtcPeer && (codecChanged || msg.restarted === true)) {
+            log('Config change triggered FFmpeg restart, re-initializing WebRTC...');
+            isReinitializingWebRTC = true;
+            webrtc.initWebRTC();
+            // Clear flag after 2 seconds or when WebRTC becomes active again
+            setTimeout(() => { isReinitializingWebRTC = false; }, 2000);
+        }
+
+        if (msg.videoCodec && typeof msg.videoCodec === 'string') {
             if (msg.gpuAvailable !== undefined) {
                 window.gpuAvailable = msg.gpuAvailable as boolean;
                 if (codecGpuOpts) {

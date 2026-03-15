@@ -8,13 +8,13 @@ func buildAV1Args(mode string, bw int, quality int, fps int, vbr bool, keyframeI
 	var outputArgs []string
 
 	if VideoCodec == "av1_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "av1_nvenc", "-preset", "p1", "-tune", "ull")
+		outputArgs = append(outputArgs, "-c:v", "av1_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0")
 		// Note: AV1 NVENC does NOT support 4:4:4 chroma (NVENC SDK limitation).
 		// Unlike H.264 NVENC (high444p profile), there is no 444 profile for AV1 NVENC.
 		// The server probe in config.go correctly detects this and disables the option.
 	} else {
 		// libaom-av1 is slow, but we provide it as a software fallback
-		outputArgs = append(outputArgs, "-c:v", "libaom-av1", "-cpu-used", "8", "-usage", "realtime", "-row-mt", "1")
+		outputArgs = append(outputArgs, "-c:v", "libaom-av1", "-cpu-used", "8", "-usage", "realtime", "-row-mt", "1", "-lag-in-frames", "0", "-error-resilient", "1")
 	}
 
 	if mode == "bandwidth" {

@@ -40,6 +40,7 @@ func main() {
 
 	// 3. Start ffmpeg streaming
 	startStreaming(broadcastVideoFrame)
+	startAudioStreaming()
 	// 4. Start HTTP & WebSocket server (blocks)
 	startHTTPServer()
 }
