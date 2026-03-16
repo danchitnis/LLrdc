@@ -122,9 +122,9 @@ ${outputBuffer}`));
             await page.waitForTimeout(3000);
         });
 
-        await test.step('Switch to Mouse tab and disable desktop mouse', async () => {
-            const mouseTabLocator = page.locator('.config-tab-btn[data-tab="tab-mouse"]');
-            await mouseTabLocator.click();
+        await test.step('Switch to Input tab and disable desktop mouse', async () => {
+            const inputTabLocator = page.locator('.config-tab-btn[data-tab="tab-input"]');
+            await inputTabLocator.click();
 
             const mouseCheckboxLocator = page.locator('#desktop-mouse-checkbox');
             await mouseCheckboxLocator.waitFor({ state: 'visible', timeout: 10000 });

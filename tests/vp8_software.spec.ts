@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = 8000 + Math.floor(Math.random() * 1000);
 const DISPLAY_NUM = 150 + Math.floor(Math.random() * 50);
+const CONTAINER_NAME = `llrdc-test-vp8-${PORT}`;
 
 function killPort(port: number) {
   try {
@@ -24,6 +25,9 @@ let outputBuffer = '';
 test.describe('Software VP8 Streaming', () => {
   test.beforeAll(async () => {
     killPort(PORT);
+    try {
+      execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
+    } catch (e) {}
     console.log(`Starting server with VIDEO_CODEC=vp8 on port ${PORT}...`);
     
     serverProcess = spawn('./docker-run.sh', [], {
@@ -32,6 +36,7 @@ test.describe('Software VP8 Streaming', () => {
         PORT: PORT.toString(), 
         HOST_PORT: PORT.toString(),
         DISPLAY_NUM: DISPLAY_NUM.toString(),
+        CONTAINER_NAME: CONTAINER_NAME,
         VIDEO_CODEC: 'vp8',
         TEST_PATTERN: '1'
       },
@@ -70,6 +75,9 @@ test.describe('Software VP8 Streaming', () => {
       serverProcess.kill('SIGTERM');
     }
     killPort(PORT);
+    try {
+      execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
+    } catch (e) {}
   });
 
   test('should use libvpx and decode successfully without freezing', async ({ page }) => {

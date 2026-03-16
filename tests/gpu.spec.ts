@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = 8000 + Math.floor(Math.random() * 1000);
 const DISPLAY_NUM = 150 + Math.floor(Math.random() * 50);
+const CONTAINER_NAME = `llrdc-test-gpu-${PORT}`;
 
 function killPort(port: number) {
   try {
@@ -24,6 +25,9 @@ let outputBuffer = '';
 test.describe('GPU Acceleration (H264 NVENC)', () => {
   test.beforeAll(async () => {
     killPort(PORT);
+    try {
+      execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
+    } catch (e) {}
     console.log(`Starting server with GPU flag on port ${PORT}...`);
     
     // We run docker-run.sh with --gpu and environment overrides
@@ -33,6 +37,7 @@ test.describe('GPU Acceleration (H264 NVENC)', () => {
         PORT: PORT.toString(), 
         HOST_PORT: PORT.toString(),
         DISPLAY_NUM: DISPLAY_NUM.toString(),
+        CONTAINER_NAME: CONTAINER_NAME,
         TEST_PATTERN: '1' // Use test pattern to avoid needing a real X11 display if possible
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -74,7 +79,7 @@ ${outputBuffer}`));
     killPort(PORT);
     // Cleanup any lingering containers just in case
     try {
-        execSync(`docker rm -f llrdc`, { stdio: 'ignore' });
+        execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
     } catch(e) {}
   });
 

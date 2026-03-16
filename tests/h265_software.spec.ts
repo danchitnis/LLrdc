@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = 8000 + Math.floor(Math.random() * 1000);
 const DISPLAY_NUM = 150 + Math.floor(Math.random() * 50);
+const CONTAINER_NAME = `llrdc-test-h265-${PORT}`;
 
 function killPort(port: number) {
   try {
@@ -27,6 +28,9 @@ test.describe('Software H.265 Streaming', () => {
 
   test.beforeAll(async () => {
     killPort(PORT);
+    try {
+      execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
+    } catch (e) {}
     console.log(`Starting server with VIDEO_CODEC=h265 on port ${PORT}...`);
     
     serverProcess = spawn('./docker-run.sh', [], {
@@ -35,6 +39,7 @@ test.describe('Software H.265 Streaming', () => {
         PORT: PORT.toString(), 
         HOST_PORT: PORT.toString(),
         DISPLAY_NUM: DISPLAY_NUM.toString(),
+        CONTAINER_NAME: CONTAINER_NAME,
         VIDEO_CODEC: 'h265',
         TEST_PATTERN: '1'
       },
@@ -75,6 +80,9 @@ ${outputBuffer}`));
       serverProcess.kill('SIGTERM');
     }
     killPort(PORT);
+    try {
+      execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
+    } catch (e) {}
   });
 
   test('should use libx265 and decode successfully', async ({ page }) => {

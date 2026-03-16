@@ -21,8 +21,11 @@ let serverProcess: ChildProcess;
 let outputBuffer = '';
 
 test.describe('Exhaustive Configuration Transitions', () => {
+    const CONTAINER_NAME = `llrdc-exhaustive-${PORT}`;
+
     test.beforeAll(async () => {
         killPort(PORT);
+        execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
         console.log(`Starting server on port ${PORT}...`);
         
         serverProcess = spawn('./docker-run.sh', [], {
@@ -31,7 +34,7 @@ test.describe('Exhaustive Configuration Transitions', () => {
                 PORT: PORT.toString(), 
                 HOST_PORT: PORT.toString(),
                 DISPLAY_NUM: DISPLAY_NUM.toString(),
-                CONTAINER_NAME: `llrdc-exhaustive-${PORT}`,
+                CONTAINER_NAME: CONTAINER_NAME,
                 TEST_PATTERN: '1',
                 USE_DEBUG_FFMPEG: '1'
             },
@@ -70,6 +73,7 @@ test.describe('Exhaustive Configuration Transitions', () => {
             serverProcess.kill('SIGTERM');
         }
         killPort(PORT);
+        execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
     });
 
     const verifyStreaming = async (page: any, message: string) => {
