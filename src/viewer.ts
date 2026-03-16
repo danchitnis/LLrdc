@@ -60,6 +60,7 @@ interface ConfigMessage {
 }
 
 let configDebounceTimer: number | null = null;
+let currentHdpi = 100;
 
 function sendConfig() {
     if (configDebounceTimer) {
@@ -385,9 +386,9 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         }
 
         if (msg.hdpi !== undefined && typeof msg.hdpi === 'number') {
+            currentHdpi = msg.hdpi === 0 ? 100 : msg.hdpi;
             if (hdpiSelect) {
-                const displayHdpi = msg.hdpi === 0 ? 100 : msg.hdpi;
-                hdpiSelect.value = displayHdpi.toString();
+                hdpiSelect.value = currentHdpi.toString();
             }
         }
 
@@ -495,7 +496,44 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         }
     } else if (msg.type === 'cursor_shape') {
         if (overlayEl && typeof msg.dataURL === 'string' && typeof msg.xhot === 'number' && typeof msg.yhot === 'number') {
-            overlayEl.style.cursor = `url(${msg.dataURL}) ${msg.xhot} ${msg.yhot}, auto`;
+            const dataURL = msg.dataURL;
+            const xhot = msg.xhot;
+            const yhot = msg.yhot;
+            const img = new Image();
+            img.onload = () => {
+                const hdpiScale = currentHdpi / 100;
+                const baseWidth = img.width / hdpiScale;
+                const baseHeight = img.height / hdpiScale;
+                
+                const MIN_SIZE = 24;
+                let scale = 1 / hdpiScale;
+                
+                if (baseWidth > 0 && baseHeight > 0 && (baseWidth < MIN_SIZE || baseHeight < MIN_SIZE)) {
+                    const minScale = Math.max(MIN_SIZE / baseWidth, MIN_SIZE / baseHeight);
+                    scale = scale * minScale;
+                }
+
+                // Use a small epsilon to avoid precision issues
+                if (img.width > 0 && img.height > 0 && Math.abs(scale - 1.0) > 0.01) {
+                    const newWidth = Math.round(img.width * scale);
+                    const newHeight = Math.round(img.height * scale);
+                    const newXhot = Math.round(xhot * scale);
+                    const newYhot = Math.round(yhot * scale);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = newWidth;
+                    canvas.height = newHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+                        overlayEl.style.cursor = `url(${canvas.toDataURL('image/png')}) ${newXhot} ${newYhot}, auto`;
+                        return;
+                    }
+                }
+                overlayEl.style.cursor = `url(${dataURL}) ${xhot} ${yhot}, auto`;
+            };
+            img.src = dataURL;
         }
     }
 }
