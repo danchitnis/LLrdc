@@ -4,6 +4,7 @@ export class NetworkManager {
     public ws: WebSocket;
     public networkLatency = 0;
     public wsBandwidthMbps = 0;
+    public wsConnected = false;
 
     private onBinaryMessage: (buffer: ArrayBuffer) => void;
     private onJsonMessage: (msg: Record<string, unknown>) => void;
@@ -26,6 +27,7 @@ export class NetworkManager {
 
         this.ws.onopen = () => {
             log('WebSocket Connected');
+            this.wsConnected = true;
             if (statusEl) {
                 statusEl.textContent = 'Connected, Negotiating WebRTC...';
             }
@@ -36,6 +38,7 @@ export class NetworkManager {
 
         this.ws.onclose = () => {
             log('WebSocket Disconnected');
+            this.wsConnected = false;
             if (statusEl) {
                 statusEl.textContent = 'Disconnected';
                 statusEl.style.color = '#f44';

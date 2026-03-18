@@ -170,7 +170,7 @@ COPY --from=builder /app/llrdc /app/llrdc
 # Ensure app ownership and add entrypoint script
 RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose the WebSocket / HTTP port
 EXPOSE 8080

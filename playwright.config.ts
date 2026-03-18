@@ -11,6 +11,9 @@ export default defineConfig({
   // Use a CLI reporter so the test run exits cleanly (no HTML report server).
   reporter: 'line',
   use: {
+    launchOptions: {
+      args: ['--autoplay-policy=no-user-gesture-required']
+    },
     trace: 'on-first-retry',
     video: 'on',
   },

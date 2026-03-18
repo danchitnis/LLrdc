@@ -239,9 +239,9 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			
 			var filterStr string
 			if mpdecimate {
-				filterStr = "mpdecimate=max=15,settb=1/1000"
+				filterStr = "mpdecimate=max=15,setpts=N/FRAME_RATE/TB"
 			} else {
-				filterStr = "settb=1/1000"
+				filterStr = "setpts=N/FRAME_RATE/TB"
 			}
 
 			outputArgs := []string{}
@@ -291,7 +291,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			initialArgs := []string{
 				"-probesize", "32",
 				"-analyzeduration", "0",
-				"-fflags", "nobuffer",
+				"-fflags", "nobuffer+genpts",
 				"-threads", "2",
 			}
 			if !UseDebugFFmpeg {

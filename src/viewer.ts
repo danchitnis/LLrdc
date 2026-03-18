@@ -240,9 +240,9 @@ let resizeTimer: number | null = null;
 let isReinitializingWebRTC = false;
 
 function sendResize() {
-    if (!displayContainerEl) return;
+    if (!displayContainerEl) { console.log('sendResize abort: no container'); return; }
     const rect = displayContainerEl.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) return;
+    if (rect.width < 1 || rect.height < 1) { console.log('sendResize abort: rect too small', rect); return; }
     const scale = window.devicePixelRatio || 1;
     let width = Math.max(1, Math.round(rect.width * scale));
     let height = Math.max(1, Math.round(rect.height * scale));
@@ -256,10 +256,15 @@ function sendResize() {
         }
     }
 
+    console.log(`sendResize evaluated: w=${width}, h=${height}, lastW=${lastResizeWidth}, lastH=${lastResizeHeight}, connected=${network.wsConnected}`);
+
     if (width === lastResizeWidth && height === lastResizeHeight) return;
+
+    if (!network.wsConnected) return; // Wait until network is connected to send and save state
 
     lastResizeWidth = width;
     lastResizeHeight = height;
+    console.log(`Sending resize: ${width}x${height}`);
     network.sendMsg(JSON.stringify({ type: 'resize', width, height }));
 }
 

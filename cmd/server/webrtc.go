@@ -70,6 +70,9 @@ func initWebRTC() {
 		var bufferedFrame *WebRTCFrame
 		var lastTrack *webrtc.TrackLocalStaticSample
 
+		framesWritten := 0
+		lastLogTime := time.Now()
+
 		for frame := range webrtcFrameChan {
 			videoTrackMutex.RLock()
 			vt := videoTrack
@@ -99,6 +102,7 @@ func initWebRTC() {
 					Data:     bufferedFrame.Data,
 					Duration: time.Second / time.Duration(FPS),
 				})
+				framesWritten++
 
 				f := frame
 				bufferedFrame = &f
@@ -113,10 +117,19 @@ func initWebRTC() {
 			}
 
 			// Send the buffered frame with the exact time elapsed until the next frame
-			_ = vt.WriteSample(media.Sample{
+			err := vt.WriteSample(media.Sample{
 				Data:     bufferedFrame.Data,
 				Duration: duration,
 			})
+			if err == nil {
+				framesWritten++
+			}
+
+			if time.Since(lastLogTime) >= time.Second {
+				log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
+				framesWritten = 0
+				lastLogTime = time.Now()
+			}
 
 			// Buffer the new frame
 			f := frame

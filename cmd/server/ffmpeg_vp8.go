@@ -88,6 +88,7 @@ func splitIVF(reader io.Reader, onFrame func([]byte)) {
 			return
 		}
 
+		// log.Printf("splitIVF: decoded frame of size %d", frameSize)
 		onFrame(frameData)
 	}
 }
