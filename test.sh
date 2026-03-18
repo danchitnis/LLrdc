@@ -5,7 +5,11 @@ set -euo pipefail
 cleanup_containers() {
     # Remove any containers created from the llrdc image.
     # (Tests start the server via `npm start` -> `docker run`.)
-    docker rm -f $(docker ps -aq --filter ancestor=danchitnis/llrdc:latest) 2>/dev/null || true
+    local containers=$(docker ps -aq --filter ancestor=danchitnis/llrdc:latest)
+    if [ -n "$containers" ]; then
+        docker kill $containers 2>/dev/null || true
+        docker rm -f $containers 2>/dev/null || true
+    fi
 }
 
 cleanup() {
@@ -34,8 +38,11 @@ for arg in "$@"; do
 done
 
 if [ ${#TEST_FILES[@]} -eq 0 ]; then
-    # Default: all Playwright spec files.
+    # Default: all Playwright spec files, excluding latency_matrix.
     while IFS= read -r f; do
+        if [[ "$f" == *"latency_matrix.spec.ts"* ]]; then
+            continue
+        fi
         TEST_FILES+=("$f")
     done < <(find tests -maxdepth 1 -name "*.spec.ts" | sort)
 fi

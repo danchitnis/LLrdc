@@ -5,6 +5,7 @@ export class NetworkManager {
     public networkLatency = 0;
     public wsBandwidthMbps = 0;
     public wsConnected = false;
+    public totalBytesReceived = 0;
 
     private onBinaryMessage: (buffer: ArrayBuffer) => void;
     private onJsonMessage: (msg: Record<string, unknown>) => void;
@@ -53,9 +54,11 @@ export class NetworkManager {
         this.ws.onmessage = (event: MessageEvent) => {
             if (event.data instanceof ArrayBuffer) {
                 this.bytesReceived += event.data.byteLength;
+                this.totalBytesReceived += event.data.byteLength;
                 this.onBinaryMessage(event.data);
             } else if (typeof event.data === 'string') {
                 this.bytesReceived += event.data.length;
+                this.totalBytesReceived += event.data.length;
                 try {
                     const msg = JSON.parse(event.data) as Record<string, unknown>;
                     if (msg.type === 'pong') {

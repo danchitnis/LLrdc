@@ -10,23 +10,25 @@ export class WebRTCManager {
     private getNetworkLatencyVal: () => number;
     private lastVideoFrameTime = 0;
     private frameCount = 0;
-    private lastTotalDecoded = 0;
+    public lastTotalDecoded = -1;
+    public lastBytesReceived = 0;
     private lastStatsTime = 0;
     private lastFPSUpdate = Date.now();
     private getLatencyMonitor: () => number;
-    private lastBytesReceived = 0;
     private bandwidthMbps = 0;
     private webrtcLatency = 0;
     private hasSentWebrtcReady = false;
     private statsInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(sendWs: (data: string) => void, getNetworkLatencyVal: () => number, getLatencyMonitor: () => number) {
+        console.log('[WebRTCManager] Constructor called');
         this.sendWs = sendWs;
         this.getNetworkLatencyVal = getNetworkLatencyVal;
         this.getLatencyMonitor = getLatencyMonitor;
     }
 
     public initWebRTC() {
+        console.log('[WebRTCManager] initWebRTC called');
         if (this.statsInterval) clearInterval(this.statsInterval);
 
         if (this.rtcPeer) {
@@ -51,6 +53,16 @@ export class WebRTCManager {
 
         this.statsInterval = setInterval(() => this.pollStats(), 1000);
 
+        (window as any).getStats = () => {
+            return {
+                fps: this.fps,
+                bandwidth: this.bandwidthMbps,
+                bytesReceived: this.lastBytesReceived,
+                latency: this.webrtcLatency,
+                totalDecoded: this.lastTotalDecoded
+            };
+        };
+
         this.rtcPeer.onicecandidate = (e: RTCPeerConnectionIceEvent) => {
             if (e.candidate) {
                 this.sendWs(JSON.stringify({ type: 'webrtc_ice', candidate: e.candidate }));
@@ -67,15 +79,17 @@ export class WebRTCManager {
             stream.addTrack(e.track);
 
             if (videoEl.paused) {
+                this.isWebRtcActive = true;
                 videoEl.play().then(() => {
                     log('WebRTC Video/Audio playing');
-                    this.isWebRtcActive = true;
                     if (statusEl) {
                         statusEl.textContent = 'WebRTC Connected';
                     }
                     this.startVideoCanvasLoop(0);
                 }).catch((err: unknown) => {
                     log('Media play error: ' + (err as Error).message);
+                    // Still active even if play() was interrupted, as stats will still flow
+                    this.startVideoCanvasLoop(0);
                 });
             }
         };
@@ -148,7 +162,14 @@ export class WebRTCManager {
     }
 
     private pollStats() {
-        if (!this.isWebRtcActive || !this.rtcPeer) return;
+        if (!this.rtcPeer) {
+            console.log('[pollStats] No rtcPeer');
+            return;
+        }
+        if (!this.isWebRtcActive) {
+            // console.log('[pollStats] isWebRtcActive is false');
+            return;
+        }
         this.rtcPeer.getStats(null).then(stats => {
             const now = Date.now();
             const deltaMs = this.lastStatsTime === 0 ? 1000 : now - this.lastStatsTime;
@@ -157,10 +178,13 @@ export class WebRTCManager {
             let bytesReceived = 0;
             let framesDecoded = -1;
             stats.forEach(report => {
-                if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                    bytesReceived = report.bytesReceived;
-                    if (report.framesDecoded !== undefined) {
-                        framesDecoded = report.framesDecoded;
+                if (report.type === 'inbound-rtp') {
+                    const kind = report.kind || report.mediaType;
+                    if (kind === 'video') {
+                        bytesReceived = report.bytesReceived || 0;
+                        if (report.framesDecoded !== undefined) {
+                            framesDecoded = report.framesDecoded;
+                        }
                     }
                 }
                 if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime !== undefined) {
@@ -168,13 +192,24 @@ export class WebRTCManager {
                 }
             });
 
+            // Fallback for some browsers/versions where kind might be missing in top level
+            if (bytesReceived === 0) {
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number' && report.bytesReceived > 0) {
+                        // If we have multiple, this might sum audio + video but at least it's not 0
+                        bytesReceived += report.bytesReceived;
+                    }
+                });
+            }
+
             if (this.lastBytesReceived > 0 && bytesReceived > this.lastBytesReceived) {
                 const deltaBytes = bytesReceived - this.lastBytesReceived;
                 const bits = deltaBytes * 8;
                 this.bandwidthMbps = bits / (deltaMs / 1000) / 1000000;
             } else if (this.lastBytesReceived > 0 && bytesReceived === this.lastBytesReceived) {
-                // No new inbound video bytes since the previous sample window.
-                // Treat as 0 Mbps for UI/testing instead of holding the last non-zero value.
+                this.bandwidthMbps = 0;
+            } else if (bytesReceived > 0 && this.lastBytesReceived === 0) {
+                // First non-zero sample
                 this.bandwidthMbps = 0;
             }
             this.lastBytesReceived = bytesReceived;

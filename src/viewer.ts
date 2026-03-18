@@ -8,10 +8,13 @@ export { };
 
 declare global {
     interface Window {
-        getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; };
+        getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; bytesReceived: number; };
         hasReceivedKeyFrame: boolean;
         rtcPeer: RTCPeerConnection | null;
         gpuAvailable: boolean;
+        webrtcManager: WebRTCManager;
+        webcodecsManager: WebCodecsManager;
+        networkManager: NetworkManager;
     }
 }
 
@@ -28,18 +31,21 @@ const network = new NetworkManager(
         triggerResizeUpdate();
     }
 );
+window.networkManager = network;
 
 const webcodecs: WebCodecsManager = new WebCodecsManager(
     () => webrtc ? webrtc.isWebRtcActive : false,
     () => network.networkLatency,
     () => network.wsBandwidthMbps
 );
+window.webcodecsManager = webcodecs;
 
 webrtc = new WebRTCManager(
     (data) => network.sendMsg(data),
     () => network.networkLatency,
     () => webcodecs.latencyMonitor
 );
+window.webrtcManager = webrtc;
 
 setupInput((data) => network.sendMsg(data));
 
@@ -544,15 +550,18 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 }
 
 window.getStats = () => {
-    let webrtcTotal = 0;
-    const v = document.getElementById('webrtc-video') as HTMLVideoElement;
-    if (v && v.getVideoPlaybackQuality) {
-        webrtcTotal = v.getVideoPlaybackQuality().totalVideoFrames;
-    }
+    console.log('[getStats-DEBUG] Entering getStats');
+    const webrtcTotal = (webrtc && webrtc.lastTotalDecoded >= 0) ? webrtc.lastTotalDecoded : 0;
+    const webcodecsTotal = (webcodecs && webcodecs.totalDecoded >= 0) ? webcodecs.totalDecoded : 0;
+    
+    // If WebRTC is active, prefer its stats. Otherwise use WebCodecs.
+    const useWebRtc = webrtc && webrtc.isWebRtcActive;
+    
     return {
-        fps: webrtc.isWebRtcActive ? webrtc.fps : webcodecs.fps,
+        fps: useWebRtc ? webrtc.fps : webcodecs.fps,
         latency: webcodecs.latencyMonitor,
-        totalDecoded: webrtc.isWebRtcActive ? webrtcTotal : webcodecs.totalDecoded,
-        webrtcFps: webrtc.fps
+        totalDecoded: useWebRtc ? webrtcTotal : webcodecsTotal,
+        webrtcFps: webrtc ? webrtc.fps : 0,
+        bytesReceived: useWebRtc ? webrtc.lastBytesReceived : network.totalBytesReceived
     };
 };
