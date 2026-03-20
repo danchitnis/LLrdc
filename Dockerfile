@@ -23,7 +23,8 @@ WORKDIR /tmp
 # Using a build that specifically includes NVENC support
 RUN curl -L https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar xJ --strip-components=1
 
-FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
+FROM ubuntu:24.04
+ENV NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NO_AT_BRIDGE=1
