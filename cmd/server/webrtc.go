@@ -126,7 +126,9 @@ func initWebRTC() {
 			}
 
 			if time.Since(lastLogTime) >= time.Second {
-				log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
+				if UseDebugFFmpeg {
+					log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
+				}
 				framesWritten = 0
 				lastLogTime = time.Now()
 			}
