@@ -237,7 +237,7 @@ func injectMouseWheel(dx, dy float64, display string) {
 
 func spawnApp(command, display string) {
 	log.Printf("Spawning app: %s", command)
-	cmd := exec.Command(command)
+	cmd := exec.Command("bash", "-c", command)
 	cmd.Env = append(os.Environ(), "DISPLAY="+display)
 	if err := cmd.Start(); err != nil {
 		log.Printf("Failed to spawn app %s: %v\n", command, err)

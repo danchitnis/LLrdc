@@ -285,7 +285,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					"gnome-calculator": true, "weston-terminal": true, "gedit": true,
 					"mousepad": true, "xclock": true, "xeyes": true, "xfce4-terminal": true,
 				}
-				if allowed[cmd] {
+				parts := strings.Fields(cmd)
+				if len(parts) > 0 && allowed[parts[0]] {
 					spawnApp(cmd, Display)
 				}
 			}

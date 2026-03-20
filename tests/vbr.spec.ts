@@ -29,28 +29,29 @@ async function getInboundVideoBytes(page: any): Promise<number> {
 }
 
 async function generateLoad(page: any) {
-    // Move the mouse to trigger visual updates (especially if xeyes is running)
-    const x = Math.floor(Math.random() * 800);
-    const y = Math.floor(Math.random() * 600);
-    await page.mouse.move(x, y);
-    await page.waitForTimeout(100);
+    // Move the mouse aggressively to trigger xeyes tracking and cursor updates
+    for (let i = 0; i < 5; i++) {
+        const x = Math.floor(Math.random() * 800);
+        const y = Math.floor(Math.random() * 600);
+        await page.mouse.move(x, y, { steps: 5 });
+        await page.waitForTimeout(50);
+    }
 }
 
 // Helper to spawn a persistent visual load
 async function spawnVisualLoad(page: any) {
     await page.evaluate(() => {
-        const ws = (window as any).networkManager?.ws;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            // Spawn xeyes which follows the mouse
-            ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
-            // Also spawn a terminal with scrolling text for guaranteed pixel changes
-            ws.send(JSON.stringify({ type: 'spawn', command: 'xfce4-terminal -e "bash -c \'while true; do echo $RANDOM; sleep 0.1; done\'"' }));
+        const nm = (window as any).networkManager;
+        if (nm && typeof nm.sendMsg === 'function') {
+            // Spawn xclock with 0.1 second update interval to ensure constant screen changes
+            nm.sendMsg(JSON.stringify({ type: 'spawn', command: 'xclock -update 0.1 -geometry 400x400' }));
         }
     });
-    await page.waitForTimeout(2000);
+    // Give it more time to appear and start updating
+    await page.waitForTimeout(5000);
 }
 
-async function measureAverageInboundMbps(page: any, durationMs: number, tick?: () => Promise<void>, skipSetup = false): Promise<number> {
+async function measureAverageStats(page: any, durationMs: number, tick?: () => Promise<void>, skipSetup = false): Promise<{ mbps: number, fps: number }> {
     // Wait for some decoding to happen (verifies stream is active)
     await expect.poll(async () => {
         return await page.evaluate(() => {
@@ -61,17 +62,19 @@ async function measureAverageInboundMbps(page: any, durationMs: number, tick?: (
     }, { timeout: 45000, message: 'Wait for video decoding' }).toBeGreaterThan(-1);
 
     if (!skipSetup) {
-        // Now wait for at least one frame
+        const startFrames = await page.evaluate(() => (window as any).myTestStats().totalDecoded);
+        // Now wait for at least some frames to be decoded during the load
         await generateLoad(page);
         await expect.poll(async () => {
             return await page.evaluate(() => {
                 if (typeof (window as any).myTestStats !== 'function') return 0;
                 return (window as any).myTestStats().totalDecoded;
             });
-        }, { timeout: 15000, message: 'Wait for first frame' }).toBeGreaterThan(0);
+        }, { timeout: 15000, message: 'Wait for frames during load' }).toBeGreaterThan(startFrames);
     }
 
     const startBytes = await getInboundVideoBytes(page);
+    const startTotalDecoded = await page.evaluate(() => (window as any).myTestStats().totalDecoded);
     const startTime = Date.now();
     const endTime = startTime + durationMs;
 
@@ -81,16 +84,16 @@ async function measureAverageInboundMbps(page: any, durationMs: number, tick?: (
     }
 
     const endBytes = await getInboundVideoBytes(page);
+    const endTotalDecoded = await page.evaluate(() => (window as any).myTestStats().totalDecoded);
     const elapsedSec = (Date.now() - startTime) / 1000;
+    
     const deltaBytes = Math.max(0, endBytes - startBytes);
     const mbps = (deltaBytes * 8) / elapsedSec / 1_000_000;
     
-    // Fallback if bytesReceived is not tracked (e.g. legacy WebCodecs path)
-    if (mbps === 0) {
-         console.log('Warning: Measured 0 Mbps, checking if we have totalDecoded but no bytesReceived tracking.');
-    }
+    const deltaFrames = Math.max(0, endTotalDecoded - startTotalDecoded);
+    const fps = deltaFrames / elapsedSec;
     
-    return mbps;
+    return { mbps, fps };
 }
 
 test.beforeAll(async () => {
@@ -119,6 +122,9 @@ test.beforeAll(async () => {
         stdio: 'pipe',
         detached: false,
     });
+
+    serverProcess.stdout?.on('data', (data) => console.log(`[Server]: ${data.toString().trim()}`));
+    serverProcess.stderr?.on('data', (data) => console.error(`[Server-Err]: ${data.toString().trim()}`));
 
     // Wait until server prints readiness line.
     await new Promise<void>((resolve, reject) => {
@@ -173,8 +179,6 @@ test('VBR reduces bandwidth when screen is idle', async ({ page }) => {
                 else if (network && typeof (network as any).bytesReceived === 'number') bytes = (network as any).bytesReceived;
             }
 
-            // Fallback: if we have NO managers yet, but the page is loading, return 0.
-            // If we have totalDecoded from ANY path, use it.
             const total = webrtcTotal + webcodecsTotal;
 
             return {
@@ -201,7 +205,7 @@ test('VBR reduces bandwidth when screen is idle', async ({ page }) => {
         const wsUrl = window.location.origin.replace('http', 'ws');
         const ws = new WebSocket(wsUrl);
         ws.onopen = () => {
-            ws.send(JSON.stringify({ type: 'config', bandwidth: 2, framerate: 30 }));
+            ws.send(JSON.stringify({ type: 'config', bandwidth: 2, framerate: 30, vbr: true, mpdecimate: true }));
             ws.close();
         };
     });
@@ -209,36 +213,26 @@ test('VBR reduces bandwidth when screen is idle', async ({ page }) => {
     // Give the pipeline time to restart.
     await page.waitForTimeout(5000);
 
-    // Open config and ensure VBR is checked
-    await page.locator('#config-btn').click();
-    await page.locator('.config-tab-btn[data-tab="tab-quality"]').click();
-    
-    const vbrCheckbox = page.locator('#vbr-checkbox');
-    if (!(await vbrCheckbox.isChecked())) {
-        await vbrCheckbox.check();
-    }
-    
-    // Close config
-    await page.locator('#config-btn').click();
-    
-    // Wait for config to propagate
+    // Wait for config to propagate and screen to settle
     await page.waitForTimeout(5000);
 
-    // Measure "idle" bandwidth over a longer window.
-    const idleAvg = await measureAverageInboundMbps(page, 15_000, undefined, true);
-    console.log(`Idle average inbound bitrate (15s): ${idleAvg.toFixed(2)} Mbps`);
+    // Measure "idle" bandwidth and FPS over a shorter window as requested.
+    const idleStats = await measureAverageStats(page, 10_000, undefined, true);
+    console.log(`Idle average inbound bitrate (10s): ${idleStats.mbps.toFixed(2)} Mbps | FPS: ${idleStats.fps.toFixed(2)}`);
 
     // Setup active load (one-time)
     await spawnVisualLoad(page);
 
-    const activeAvg = await measureAverageInboundMbps(page, 8_000, async () => {
+    const activeStats = await measureAverageStats(page, 15_000, async () => {
         await generateLoad(page);
     });
-    console.log(`Active average inbound bitrate (8s): ${activeAvg.toFixed(2)} Mbps`);
+    console.log(`Active average inbound bitrate (15s): ${activeStats.mbps.toFixed(2)} Mbps | FPS: ${activeStats.fps.toFixed(2)}`);
 
     // Expectations:
-    // - Idle should be relatively low (VBR savings when screen is stable).
-    // - Note: background noise in XFCE (clock, etc.) can keep it > 0.
-    expect(idleAvg).toBeLessThan(1.5);
-    expect(activeAvg).toBeGreaterThan(idleAvg + 0.05);
+    // - Idle should be very low (mpdecimate + VBR)
+    expect(idleStats.mbps).toBeLessThan(0.5);
+    // - Active should be higher than idle
+    expect(activeStats.mbps).toBeGreaterThan(idleStats.mbps + 0.005);
+    // - Active FPS should be noticeably higher than idle FPS
+    expect(activeStats.fps).toBeGreaterThan(idleStats.fps + 2);
 });
