@@ -29,15 +29,28 @@ async function getInboundVideoBytes(page: any): Promise<number> {
 }
 
 async function generateLoad(page: any) {
-    await page.evaluate(() => {
-        if ((window as any).ws && (window as any).ws.readyState === WebSocket.OPEN) {
-            (window as any).ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
-        }
-    });
-    await page.waitForTimeout(1000);
+    // Move the mouse to trigger visual updates (especially if xeyes is running)
+    const x = Math.floor(Math.random() * 800);
+    const y = Math.floor(Math.random() * 600);
+    await page.mouse.move(x, y);
+    await page.waitForTimeout(100);
 }
 
-async function measureAverageInboundMbps(page: any, durationMs: number, tick?: () => Promise<void>): Promise<number> {
+// Helper to spawn a persistent visual load
+async function spawnVisualLoad(page: any) {
+    await page.evaluate(() => {
+        const ws = (window as any).networkManager?.ws;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            // Spawn xeyes which follows the mouse
+            ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
+            // Also spawn a terminal with scrolling text for guaranteed pixel changes
+            ws.send(JSON.stringify({ type: 'spawn', command: 'xfce4-terminal -e "bash -c \'while true; do echo $RANDOM; sleep 0.1; done\'"' }));
+        }
+    });
+    await page.waitForTimeout(2000);
+}
+
+async function measureAverageInboundMbps(page: any, durationMs: number, tick?: () => Promise<void>, skipSetup = false): Promise<number> {
     // Wait for some decoding to happen (verifies stream is active)
     await expect.poll(async () => {
         return await page.evaluate(() => {
@@ -47,14 +60,16 @@ async function measureAverageInboundMbps(page: any, durationMs: number, tick?: (
         });
     }, { timeout: 45000, message: 'Wait for video decoding' }).toBeGreaterThan(-1);
 
-    // Now wait for at least one frame
-    await generateLoad(page);
-    await expect.poll(async () => {
-        return await page.evaluate(() => {
-            if (typeof (window as any).myTestStats !== 'function') return 0;
-            return (window as any).myTestStats().totalDecoded;
-        });
-    }, { timeout: 15000, message: 'Wait for first frame' }).toBeGreaterThan(0);
+    if (!skipSetup) {
+        // Now wait for at least one frame
+        await generateLoad(page);
+        await expect.poll(async () => {
+            return await page.evaluate(() => {
+                if (typeof (window as any).myTestStats !== 'function') return 0;
+                return (window as any).myTestStats().totalDecoded;
+            });
+        }, { timeout: 15000, message: 'Wait for first frame' }).toBeGreaterThan(0);
+    }
 
     const startBytes = await getInboundVideoBytes(page);
     const startTime = Date.now();
@@ -99,8 +114,7 @@ test.beforeAll(async () => {
             DISPLAY_NUM: String(displayNum),
             TEST_MINIMAL_X11: '1',
             CONTAINER_NAME: containerName,
-            WEBRTC_PUBLIC_IP: '127.0.0.1',
-            WEBRTC_INTERFACES: 'lo'
+            WEBRTC_PUBLIC_IP: '127.0.0.1'
         },
         stdio: 'pipe',
         detached: false,
@@ -175,8 +189,11 @@ test('VBR reduces bandwidth when screen is idle', async ({ page }) => {
     // Wait for WebRTC peer connection to exist.
     await expect
         .poll(async () => {
-            return await page.evaluate(() => !!(window as any).rtcPeer);
-        }, { timeout: 30000, message: 'Expected window.rtcPeer to be initialized' })
+            return await page.evaluate(() => {
+                const webrtc = (window as any).webrtcManager;
+                return webrtc && webrtc.rtcPeer && webrtc.rtcPeer.iceConnectionState === 'connected';
+            });
+        }, { timeout: 30000, message: 'Expected WebRTC ICE to be connected' })
         .toBeTruthy();
 
     // Force bandwidth target mode + set a low cap so CBR would be obvious.
@@ -208,8 +225,11 @@ test('VBR reduces bandwidth when screen is idle', async ({ page }) => {
     await page.waitForTimeout(5000);
 
     // Measure "idle" bandwidth over a longer window.
-    const idleAvg = await measureAverageInboundMbps(page, 20_000);
-    console.log(`Idle average inbound bitrate (20s): ${idleAvg.toFixed(2)} Mbps`);
+    const idleAvg = await measureAverageInboundMbps(page, 15_000, undefined, true);
+    console.log(`Idle average inbound bitrate (15s): ${idleAvg.toFixed(2)} Mbps`);
+
+    // Setup active load (one-time)
+    await spawnVisualLoad(page);
 
     const activeAvg = await measureAverageInboundMbps(page, 8_000, async () => {
         await generateLoad(page);
@@ -220,5 +240,5 @@ test('VBR reduces bandwidth when screen is idle', async ({ page }) => {
     // - Idle should be relatively low (VBR savings when screen is stable).
     // - Note: background noise in XFCE (clock, etc.) can keep it > 0.
     expect(idleAvg).toBeLessThan(1.5);
-    expect(activeAvg).toBeGreaterThan(idleAvg + 0.01);
+    expect(activeAvg).toBeGreaterThan(idleAvg + 0.05);
 });
