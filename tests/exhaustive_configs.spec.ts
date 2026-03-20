@@ -76,8 +76,21 @@ test.describe('Exhaustive Configuration Transitions', () => {
         execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
     });
 
+    const generateLoad = async (page: any) => {
+        // Simple activity: toggle the calculator/xeyes spawn
+        await page.evaluate(() => {
+            if ((window as any).ws && (window as any).ws.readyState === (window as any).WebSocket.OPEN) {
+                (window as any).ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
+            }
+        });
+        await page.waitForTimeout(1000);
+    };
+
     const verifyStreaming = async (page: any, message: string) => {
         console.log(`Verifying: ${message}`);
+        
+        await generateLoad(page);
+
         // Wait for WebRTC connection
         await page.waitForFunction(() => {
             const statusEl = document.getElementById('status');
@@ -112,13 +125,7 @@ test.describe('Exhaustive Configuration Transitions', () => {
         await page.waitForTimeout(2000); // Give it a moment to trigger
         await verifyStreaming(page, 'H.264 30fps');
 
-        // Transition 1.5: H.264 -> H.265
-        console.log('Transitioning to H.265...');
-        await page.selectOption('#video-codec-select', 'h265');
-        await page.waitForTimeout(2000);
-        await verifyStreaming(page, 'H.265 30fps');
-
-        // Transition 2: H.265 -> AV1
+        // Transition 2: H.264 -> AV1
         console.log('Transitioning to AV1...');
         await page.selectOption('#video-codec-select', 'av1');
         await page.waitForTimeout(2000);

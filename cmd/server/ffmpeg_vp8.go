@@ -16,22 +16,37 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
 		bufSizeStr := fmt.Sprintf("%dk", bw*200)
 
-		outputArgs = append(outputArgs,
-			"-b:v", bitrateStr,
-			"-maxrate", bitrateStr,
-			"-bufsize", bufSizeStr,
-			"-crf", "20", 
-			"-static-thresh", "1000",
-		)
+		if vbr {
+			// libvpx VBR: set a target bitrate but allow it to drop to 0 if static
+			outputArgs = append(outputArgs,
+				"-b:v", bitrateStr,
+				"-maxrate", bitrateStr,
+				"-bufsize", bufSizeStr,
+				"-crf", "20",
+				"-static-thresh", "1000",
+			)
+		} else {
+			// CBR
+			outputArgs = append(outputArgs,
+				"-b:v", bitrateStr,
+				"-maxrate", bitrateStr,
+				"-minrate", bitrateStr,
+				"-bufsize", bufSizeStr,
+				"-static-thresh", "0",
+			)
+		}
 	} else {
 		crf := 50 - (quality-10)*46/90
 		if crf < 4 {
 			crf = 4
 		}
-		if crf > 63 {
-			crf = 63
-		}
-		outputArgs = append(outputArgs, "-crf", fmt.Sprintf("%d", crf), "-qmin", fmt.Sprintf("%d", crf))
+		// For VP8 quality mode, use a nominal bitrate + CRF
+		outputArgs = append(outputArgs,
+			"-b:v", "2M",
+			"-crf", fmt.Sprintf("%d", crf),
+			"-static-thresh", "1000",
+		)
+
 		maxKbps := 2000 + (quality-10)*18000/90
 		maxrateStr := fmt.Sprintf("%dk", maxKbps)
 		bufsizeStr := fmt.Sprintf("%dk", maxKbps/5)

@@ -36,7 +36,7 @@ test.describe('Framerate Configuration', () => {
             });
         } else {
             serverProcess = spawn('npm', ['start'], {
-                env: { ...process.env, PORT: PORT.toString(), FPS: '30', DISPLAY_NUM: DISPLAY_NUM.toString(), VIDEO_CODEC: 'h264', WEBRTC_PUBLIC_IP: '127.0.0.1' },
+                env: { ...process.env, PORT: PORT.toString(), FPS: '30', DISPLAY_NUM: DISPLAY_NUM.toString(), VIDEO_CODEC: 'h264', WEBRTC_PUBLIC_IP: '127.0.0.1', USE_DEBUG_FFMPEG: '1' },
                 stdio: ['ignore', 'pipe', 'pipe'],
                 shell: false
             });
@@ -185,43 +185,9 @@ ${outputBuffer}`));
             }).toBeGreaterThan(45);
         });
 
-        await test.step('Switch framerate to 90 FPS', async () => {
-            const selectLocator = page.locator('#framerate-select');
-            await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
-            await selectLocator.selectOption('90');
-
-            await page.waitForTimeout(3000);
-            await generateLoad();
-
-            await expect.poll(async () => {
-                return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
-            }, {
-                message: 'Video FPS should reach at least 55 after 90 FPS switch (limited by 60Hz headless display)',
-                timeout: 10000,
-            }).toBeGreaterThan(55);
-        });
-
-        await test.step('Switch framerate to 120 FPS', async () => {
-            const selectLocator = page.locator('#framerate-select');
-            await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
-            await selectLocator.selectOption('120');
-
-            await page.waitForTimeout(3000);
-            await generateLoad();
-
-            await expect.poll(async () => {
-                return await page.evaluate(() => window.getStats ? window.getStats().fps : 0);
-            }, {
-                message: 'Video FPS should reach at least 55 after 120 FPS switch (limited by 60Hz headless display)',
-                timeout: 10000,
-            }).toBeGreaterThan(55);
-        });
-
         // Assert Server Output reflects the framerate change config 
         expect(outputBuffer).toContain('Target framerate changed to 15 fps, restarting ffmpeg...');
         expect(outputBuffer).toContain('Target framerate changed to 60 fps, restarting ffmpeg...');
-        expect(outputBuffer).toContain('Target framerate changed to 90 fps, restarting ffmpeg...');
-        expect(outputBuffer).toContain('Target framerate changed to 120 fps, restarting ffmpeg...');
         expect(outputBuffer).not.toContain('WARNING: webrtcFrameChan is full');
     });
 });

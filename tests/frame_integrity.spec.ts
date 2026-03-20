@@ -56,9 +56,17 @@ test('verify WebRTC connection and frame integrity', async ({ page }) => {
     console.log('Waiting for WebRTC connection...');
     await expect(async () => {
         const status = await page.locator('#status').textContent();
-        expect(status).toMatch(/\[(WebRTC|WebCodecs) (VP8|vp8|h264|H264)\]/i);
+        expect(status).toMatch(/\[(WebRTC|WebCodecs) (VP8|vp8|h264|H264|h265|H265|av1|AV1)\]/i);
     }).toPass({ timeout: 15000 });
     console.log('WebRTC is connected.');
+
+    // Simple activity: toggle the calculator/xeyes spawn to ensure frames are produced
+    await page.evaluate(() => {
+        if ((window as any).ws && (window as any).ws.readyState === WebSocket.OPEN) {
+            (window as any).ws.send(JSON.stringify({ type: 'spawn', command: 'xeyes' }));
+        }
+    });
+    await page.waitForTimeout(1000);
 
     // Verify video is playing and no frames are dropped (temporal integrity)
     await expect(async () => {

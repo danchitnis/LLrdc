@@ -83,35 +83,30 @@ func splitH264AnnexB(reader io.Reader, onFrame func([]byte)) {
 	buffer := make([]byte, 0, 1024*1024)
 	temp := make([]byte, 16384)
 
-	// AUD (Access Unit Delimiter) NAL unit start: 00 00 00 01 09
-	// We use this as a frame boundary because we enabled -aud 1 in ffmpeg
-	aud := []byte{0x00, 0x00, 0x00, 0x01, 0x09}
-
 	for {
 		n, err := reader.Read(temp)
 		if n > 0 {
 			buffer = append(buffer, temp[:n]...)
 			for {
-				if len(buffer) < 10 {
+				if len(buffer) < 5 {
 					break
 				}
 
 				nextIdx := -1
-				for i := 5; i <= len(buffer)-len(aud); i++ {
-					match := true
-					for j := 0; j < len(aud); j++ {
-						if buffer[i+j] != aud[j] {
-							match = false
+				// Look for either 00 00 00 01 09 or 00 00 01 09
+				for i := 4; i <= len(buffer)-4; i++ {
+					if buffer[i] == 0x09 {
+						if i >= 4 && buffer[i-1] == 0x01 && buffer[i-2] == 0x00 && buffer[i-3] == 0x00 && buffer[i-4] == 0x00 {
+							nextIdx = i - 4
+							break
+						} else if i >= 3 && buffer[i-1] == 0x01 && buffer[i-2] == 0x00 && buffer[i-3] == 0x00 {
+							nextIdx = i - 3
 							break
 						}
 					}
-					if match {
-						nextIdx = i
-						break
-					}
 				}
 
-				if nextIdx != -1 {
+				if nextIdx > 0 {
 					frame := make([]byte, nextIdx)
 					copy(frame, buffer[:nextIdx])
 					onFrame(frame)
@@ -119,6 +114,32 @@ func splitH264AnnexB(reader io.Reader, onFrame func([]byte)) {
 					newBuf := make([]byte, len(buffer)-nextIdx)
 					copy(newBuf, buffer[nextIdx:])
 					buffer = newBuf
+				} else if nextIdx == 0 {
+					// We are exactly at a start code. We need to find the NEXT start code to slice the frame.
+					endIdx := -1
+					for i := 5; i <= len(buffer)-4; i++ {
+						if buffer[i] == 0x09 {
+							if i >= 4 && buffer[i-1] == 0x01 && buffer[i-2] == 0x00 && buffer[i-3] == 0x00 && buffer[i-4] == 0x00 {
+								endIdx = i - 4
+								break
+							} else if i >= 3 && buffer[i-1] == 0x01 && buffer[i-2] == 0x00 && buffer[i-3] == 0x00 {
+								endIdx = i - 3
+								break
+							}
+						}
+					}
+
+					if endIdx != -1 {
+						frame := make([]byte, endIdx)
+						copy(frame, buffer[:endIdx])
+						onFrame(frame)
+
+						newBuf := make([]byte, len(buffer)-endIdx)
+						copy(newBuf, buffer[endIdx:])
+						buffer = newBuf
+					} else {
+						break
+					}
 				} else {
 					break
 				}
