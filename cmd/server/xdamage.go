@@ -23,7 +23,18 @@ var (
 	xgbConnDamage      *xgb.Conn
 	damageRootWin      xproto.Window
 	clientLayerDirty   bool // Track if client needs a clear_lossless
+	SettleTime         = 300
 )
+
+func SetSettleTime(ms int) {
+	damageTrackerMutex.Lock()
+	defer damageTrackerMutex.Unlock()
+	if ms < 100 {
+		ms = 100
+	}
+	SettleTime = ms
+	log.Printf("Settle time changed to %dms", SettleTime)
+}
 
 func SetEnableHybrid(enable bool) {
 	damageTrackerMutex.Lock()
@@ -133,9 +144,9 @@ func handleDamage(x, y, w, h int) {
 	}
 
 	if settleTimer == nil {
-		settleTimer = time.AfterFunc(300*time.Millisecond, sendLosslessPatches)
+		settleTimer = time.AfterFunc(time.Duration(SettleTime)*time.Millisecond, sendLosslessPatches)
 	} else {
-		settleTimer.Reset(300 * time.Millisecond)
+		settleTimer.Reset(time.Duration(SettleTime) * time.Millisecond)
 	}
 }
 

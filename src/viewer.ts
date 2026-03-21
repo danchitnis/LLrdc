@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -64,6 +64,7 @@ interface ConfigMessage {
     chroma?: string;
     hdpi?: number;
     enable_hybrid?: boolean;
+    settle_time?: number;
 }
 
 let configDebounceTimer: number | null = null;
@@ -120,6 +121,10 @@ function sendConfig() {
             config.enable_hybrid = hybridCheckbox.checked;
         }
 
+        if (settleSlider) {
+            config.settle_time = parseInt(settleSlider.value, 10);
+        }
+
         if (videoCodecSelect) {
             config.video_codec = videoCodecSelect.value;
         }
@@ -159,6 +164,13 @@ if (mpdecimateCheckbox) {
 
 if (hybridCheckbox) {
     hybridCheckbox.addEventListener('change', sendConfig);
+}
+
+if (settleSlider && settleValue) {
+    settleSlider.addEventListener('input', (e) => {
+        settleValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    settleSlider.addEventListener('change', sendConfig);
 }
 
 if (chromaCheckbox) {
@@ -485,6 +497,11 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.enable_hybrid !== undefined && hybridCheckbox) {
             hybridCheckbox.checked = msg.enable_hybrid as boolean;
+        }
+
+        if (msg.settle_time !== undefined && msg.settle_time !== null && settleSlider && settleValue) {
+            settleSlider.value = (msg.settle_time as number).toString();
+            settleValue.textContent = msg.settle_time.toString();
         }
 
         if (msg.keyframe_interval !== undefined && keyframeIntervalSelect) {

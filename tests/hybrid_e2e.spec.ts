@@ -169,3 +169,34 @@ test('verify hybrid encoding can be disabled', async ({ page }) => {
     
     expect(isEmpty).toBe(true);
 });
+
+test('verify settle time config propagates', async ({ page }) => {
+    test.setTimeout(30000);
+    await page.goto(serverUrl);
+
+    await page.waitForTimeout(5000);
+
+    // 1. Open config and change settle time
+    await page.click('#config-btn');
+    await page.click('button[data-tab="tab-quality"]');
+    
+    // Using evaluate to ensure both slider move and event firing
+    await page.evaluate(() => {
+        const slider = document.getElementById('settle-slider') as HTMLInputElement;
+        slider.value = '1200';
+        slider.dispatchEvent(new Event('input'));
+        slider.dispatchEvent(new Event('change'));
+    });
+    
+    await page.waitForTimeout(2000);
+
+    // 2. Refresh page to see if it persisted (initialConfig)
+    await page.reload();
+    await page.waitForTimeout(5000);
+    
+    await page.click('#config-btn');
+    await page.click('button[data-tab="tab-quality"]');
+    
+    const settleValue = await page.inputValue('#settle-slider');
+    expect(settleValue).toBe('1200');
+});

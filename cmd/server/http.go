@@ -166,6 +166,7 @@ func broadcastConfig(restarted bool) {
 		"keyframe_interval": targetKeyframeInterval,
 		"enableClipboard":   EnableClipboard,
 		"enable_hybrid":     EnableHybrid,
+		"settle_time":       SettleTime,
 		"hdpi":              HDPI,
 		"restarted":        restarted,
 	}
@@ -229,6 +230,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"keyframe_interval": targetKeyframeInterval,
 		"enableClipboard":   EnableClipboard,
 		"enable_hybrid":     EnableHybrid,
+		"settle_time":       SettleTime,
 		"hdpi":              HDPI,
 	}
 	_ = writeJSON(initialConfig)
@@ -340,6 +342,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if hybridBool, ok := msg["enable_hybrid"].(bool); ok {
 				log.Printf("Received Enable Hybrid Sharpness config: %v", hybridBool)
 				SetEnableHybrid(hybridBool)
+			}
+			if settleTime, ok := msg["settle_time"].(float64); ok {
+				log.Printf("Received Settle Time config: %vms", settleTime)
+				SetSettleTime(int(settleTime))
 			}
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
 				hasBwOrQuality = true
