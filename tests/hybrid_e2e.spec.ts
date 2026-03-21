@@ -200,3 +200,21 @@ test('verify settle time config propagates', async ({ page }) => {
     const settleValue = await page.inputValue('#settle-slider');
     expect(settleValue).toBe('1200');
 });
+
+test('verify no layout shift between video and canvas', async ({ page }) => {
+    test.setTimeout(30000);
+    await page.goto(serverUrl);
+    await page.waitForTimeout(5000);
+
+    const videoBox = await page.locator('#display').boundingBox();
+    const canvasBox = await page.locator('#sharpness-layer').boundingBox();
+
+    expect(videoBox).not.toBeNull();
+    expect(canvasBox).not.toBeNull();
+    
+    // They should be perfectly aligned
+    expect(videoBox!.x).toBeCloseTo(canvasBox!.x, 1);
+    expect(videoBox!.y).toBeCloseTo(canvasBox!.y, 1);
+    expect(videoBox!.width).toBeCloseTo(canvasBox!.width, 1);
+    expect(videoBox!.height).toBeCloseTo(canvasBox!.height, 1);
+});

@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -47,7 +47,7 @@ webrtc = new WebRTCManager(
 );
 window.webrtcManager = webrtc;
 
-setupInput((data) => network.sendMsg(data));
+setupInput((data) => network.sendMsg(data), () => clearLosslessCanvas());
 
 interface ConfigMessage {
     type: 'config';
@@ -65,6 +65,7 @@ interface ConfigMessage {
     hdpi?: number;
     enable_hybrid?: boolean;
     settle_time?: number;
+    tile_size?: number;
 }
 
 let configDebounceTimer: number | null = null;
@@ -125,6 +126,10 @@ function sendConfig() {
             config.settle_time = parseInt(settleSlider.value, 10);
         }
 
+        if (tileSizeSlider) {
+            config.tile_size = parseInt(tileSizeSlider.value, 10);
+        }
+
         if (videoCodecSelect) {
             config.video_codec = videoCodecSelect.value;
         }
@@ -171,6 +176,13 @@ if (settleSlider && settleValue) {
         settleValue.textContent = (e.target as HTMLInputElement).value;
     });
     settleSlider.addEventListener('change', sendConfig);
+}
+
+if (tileSizeSlider && tileSizeValue) {
+    tileSizeSlider.addEventListener('input', (e) => {
+        tileSizeValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    tileSizeSlider.addEventListener('change', sendConfig);
 }
 
 if (chromaCheckbox) {
@@ -397,6 +409,16 @@ function handleBinaryMessage(buffer: ArrayBuffer) {
     }
 }
 
+export function clearLosslessCanvas(x?: number, y?: number, w?: number, h?: number) {
+    if (sharpnessCtx && sharpnessLayerEl) {
+        if (x !== undefined && y !== undefined && w !== undefined && h !== undefined) {
+            sharpnessCtx.clearRect(x, y, w, h);
+        } else {
+            sharpnessCtx.clearRect(0, 0, sharpnessLayerEl.width, sharpnessLayerEl.height);
+        }
+    }
+}
+
 function handleJsonMessage(msg: Record<string, unknown>) {
     if (msg.type === 'config') {
         let codecChanged = false;
@@ -504,6 +526,11 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             settleValue.textContent = msg.settle_time.toString();
         }
 
+        if (msg.tile_size !== undefined && msg.tile_size !== null && tileSizeSlider && tileSizeValue) {
+            tileSizeSlider.value = (msg.tile_size as number).toString();
+            tileSizeValue.textContent = msg.tile_size.toString();
+        }
+
         if (msg.keyframe_interval !== undefined && keyframeIntervalSelect) {
             keyframeIntervalSelect.value = (msg.keyframe_interval as number).toString();
         }
@@ -544,9 +571,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             img.src = msg.data;
         }
     } else if (msg.type === 'clear_lossless') {
-        if (sharpnessCtx && sharpnessLayerEl) {
-            sharpnessCtx.clearRect(0, 0, sharpnessLayerEl.width, sharpnessLayerEl.height);
-        }
+        clearLosslessCanvas(msg.x as number | undefined, msg.y as number | undefined, msg.w as number | undefined, msg.h as number | undefined);
     } else if (msg.type === 'cursor_shape') {
         const shape = msg.shape as string;
         if (overlayEl && typeof msg.dataURL === 'string' && typeof msg.xhot === 'number' && typeof msg.yhot === 'number') {

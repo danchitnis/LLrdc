@@ -19,12 +19,31 @@ var (
 	damageTrackerMutex sync.Mutex
 	dirtyTiles         = make(map[string]image.Rectangle)
 	settleTimer        *time.Timer
-	tileSize           = 512
 	xgbConnDamage      *xgb.Conn
 	damageRootWin      xproto.Window
 	clientLayerDirty   bool // Track if client needs a clear_lossless
 	SettleTime         = 300
 )
+
+func SetTileSize(size int) {
+	damageTrackerMutex.Lock()
+	defer damageTrackerMutex.Unlock()
+	if size < 64 {
+		size = 64
+	}
+	if size > 1024 {
+		size = 1024
+	}
+	if TileSize == size {
+		return
+	}
+	log.Printf("Tile size changed from %d to %d, clearing pending patches", TileSize, size)
+	TileSize = size
+	dirtyTiles = make(map[string]image.Rectangle)
+	broadcastJSON(map[string]interface{}{
+		"type": "clear_lossless",
+	})
+}
 
 func SetSettleTime(ms int) {
 	damageTrackerMutex.Lock()
@@ -127,19 +146,21 @@ func handleDamage(x, y, w, h int) {
 		return
 	}
 
-	// Fast clear event to clients to erase the sharp layer immediately when motion starts
-	if clientLayerDirty {
-		broadcastJSON(map[string]interface{}{
-			"type": "clear_lossless",
-		})
-		clientLayerDirty = false
-	}
-
 	// Intersect with tiles
-	for ty := (y / tileSize) * tileSize; ty < y+h; ty += tileSize {
-		for tx := (x / tileSize) * tileSize; tx < x+w; tx += tileSize {
+	for ty := (y / TileSize) * TileSize; ty < y+h; ty += TileSize {
+		for tx := (x / TileSize) * TileSize; tx < x+w; tx += TileSize {
 			key := fmt.Sprintf("%d,%d", tx, ty)
-			dirtyTiles[key] = image.Rect(tx, ty, tx+tileSize, ty+tileSize)
+			if _, exists := dirtyTiles[key]; !exists {
+				dirtyTiles[key] = image.Rect(tx, ty, tx+TileSize, ty+TileSize)
+				// Send clear_lossless for this specific tile
+				broadcastJSON(map[string]interface{}{
+					"type": "clear_lossless",
+					"x":    tx,
+					"y":    ty,
+					"w":    TileSize,
+					"h":    TileSize,
+				})
+			}
 		}
 	}
 

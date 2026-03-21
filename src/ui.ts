@@ -11,6 +11,8 @@ export const mpdecimateCheckbox = document.getElementById('mpdecimate-checkbox')
 export const hybridCheckbox = document.getElementById('hybrid-checkbox') as HTMLInputElement;
 export const settleSlider = document.getElementById('settle-slider') as HTMLInputElement;
 export const settleValue = document.getElementById('settle-value') as HTMLSpanElement;
+export const tileSizeSlider = document.getElementById('tile-size-slider') as HTMLInputElement;
+export const tileSizeValue = document.getElementById('tile-size-value') as HTMLSpanElement;
 export const keyframeIntervalSelect = document.getElementById('keyframe-interval-select') as HTMLSelectElement;
 
 export const configBtn = document.getElementById('config-btn') as HTMLButtonElement;

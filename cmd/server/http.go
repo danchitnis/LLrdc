@@ -167,6 +167,7 @@ func broadcastConfig(restarted bool) {
 		"enableClipboard":   EnableClipboard,
 		"enable_hybrid":     EnableHybrid,
 		"settle_time":       SettleTime,
+		"tile_size":         TileSize,
 		"hdpi":              HDPI,
 		"restarted":        restarted,
 	}
@@ -231,6 +232,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"enableClipboard":   EnableClipboard,
 		"enable_hybrid":     EnableHybrid,
 		"settle_time":       SettleTime,
+		"tile_size":         TileSize,
 		"hdpi":              HDPI,
 	}
 	_ = writeJSON(initialConfig)
@@ -346,6 +348,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if settleTime, ok := msg["settle_time"].(float64); ok {
 				log.Printf("Received Settle Time config: %vms", settleTime)
 				SetSettleTime(int(settleTime))
+			}
+			if tileSize, ok := msg["tile_size"].(float64); ok {
+				log.Printf("Received Tile Size config: %vpx", tileSize)
+				SetTileSize(int(tileSize))
 			}
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
 				hasBwOrQuality = true

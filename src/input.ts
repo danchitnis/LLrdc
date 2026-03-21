@@ -31,7 +31,7 @@ function processPendingClipboard() {
     }
 }
 
-export function setupInput(sendMsg: (data: string) => void) {
+export function setupInput(sendMsg: (data: string) => void, onMouseMoveLocal?: () => void) {
     let withheldKey: string | null = null;
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 
@@ -245,13 +245,13 @@ export function setupInput(sendMsg: (data: string) => void) {
             const now = Date.now();
             if (now - lastMove < 8) return;
             lastMove = now;
-            
+
             const pos = getNormalizedPos(e);
             if (!pos) return;
-            
+
+            if (onMouseMoveLocal) onMouseMoveLocal();
             sendMouse('mousemove', pos.x, pos.y, null);
         });
-
         overlayEl.addEventListener('mousedown', (e: MouseEvent) => {
             processPendingClipboard();
             focusClipboard();

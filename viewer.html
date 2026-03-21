@@ -98,6 +98,11 @@
                             <input type="range" id="settle-slider" min="100" max="2000" step="50" value="300" style="flex: 1; margin: 0 10px;">
                             <span id="settle-value">300</span>
                         </div>
+                        <div class="config-group" style="width: 100%; margin-top: 5px; flex-direction: row; align-items: center;">
+                            <label title="Size of the lossless patches sent to the client" style="white-space: nowrap;">Patch Tile Size (px)</label>
+                            <input type="range" id="tile-size-slider" min="64" max="1024" step="64" value="512" style="flex: 1; margin: 0 10px;">
+                            <span id="tile-size-value">512</span>
+                        </div>
                         <label title="Improve text clarity by avoiding chroma subsampling (H.264/AV1 only)"><input type="checkbox" id="chroma-checkbox"> Enable YUV 4:4:4 Chroma</label>
                     </div>
                     <div class="config-group">

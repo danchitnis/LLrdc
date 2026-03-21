@@ -28,6 +28,7 @@ var (
 	TestMinimalX11          bool
 	EnableClipboard         bool
 	EnableHybrid            bool
+	TileSize                int
 	Wallpaper               string
 	WebRTCPublicIP          string
 	WebRTCInterfaces        string
@@ -64,6 +65,13 @@ func initConfig() {
 	defaultTestMinimalX11 := os.Getenv("TEST_MINIMAL_X11") != ""
 	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
 	defaultEnableHybrid := os.Getenv("ENABLE_HYBRID") != "false"
+	defaultTileSizeStr := os.Getenv("TILE_SIZE")
+	defaultTileSize := 512
+	if defaultTileSizeStr != "" {
+		if val, err := strconv.Atoi(defaultTileSizeStr); err == nil {
+			defaultTileSize = val
+		}
+	}
 
 	defaultDisplayNum := os.Getenv("DISPLAY_NUM")
 	if defaultDisplayNum == "" {
@@ -124,6 +132,7 @@ func initConfig() {
 	flag.StringVar(&WebRTCExcludeInterfaces, "webrtc-exclude-interfaces", defaultWebRTCExcludeInterfaces, "Comma-separated excluded network interfaces for WebRTC")
 	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
 	flag.BoolVar(&EnableHybrid, "enable-hybrid", defaultEnableHybrid, "Enable RDP-style hybrid sharpness patches")
+	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Tile size for hybrid patches (64-1024)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
 
 	flag.Parse()
