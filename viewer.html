@@ -92,6 +92,7 @@
                     <div class="config-group" style="padding-top: 5px; flex-direction: column; align-items: flex-start;">
                         <label title="Allow encoder to use less bandwidth during static scenes"><input type="checkbox" id="vbr-checkbox" checked> Enable Variable Bitrate (VBR)</label>
                         <label title="Completely drop duplicate frames to save CPU and bandwidth"><input type="checkbox" id="mpdecimate-checkbox"> Enable Drop Duplicate Frames (mpdecimate)</label>
+                        <label title="Achieve RDP-like sharpness by sending lossless patches for static regions"><input type="checkbox" id="hybrid-checkbox" checked> Enable Hybrid Sharpness (RDP-style)</label>
                         <label title="Improve text clarity by avoiding chroma subsampling (H.264/AV1 only)"><input type="checkbox" id="chroma-checkbox"> Enable YUV 4:4:4 Chroma</label>
                     </div>
                     <div class="config-group">
@@ -143,6 +144,7 @@
     <div id="display-container">
         <!-- Replaced video with canvas for explicit painting control -->
         <canvas id="display" width="1280" height="720"></canvas>
+        <canvas id="sharpness-layer" width="1280" height="720" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
         <video id="webrtc-video" autoplay playsinline muted
             style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: 0.01;"></video>
         <div id="input-overlay"></div>

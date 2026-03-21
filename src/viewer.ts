@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -63,6 +63,7 @@ interface ConfigMessage {
     video_codec?: string;
     chroma?: string;
     hdpi?: number;
+    enable_hybrid?: boolean;
 }
 
 let configDebounceTimer: number | null = null;
@@ -115,6 +116,10 @@ function sendConfig() {
             config.chroma = chromaCheckbox.checked ? '444' : '420';
         }
 
+        if (hybridCheckbox) {
+            config.enable_hybrid = hybridCheckbox.checked;
+        }
+
         if (videoCodecSelect) {
             config.video_codec = videoCodecSelect.value;
         }
@@ -150,6 +155,10 @@ if (vbrCheckbox) {
 
 if (mpdecimateCheckbox) {
     mpdecimateCheckbox.addEventListener('change', sendConfig);
+}
+
+if (hybridCheckbox) {
+    hybridCheckbox.addEventListener('change', sendConfig);
 }
 
 if (chromaCheckbox) {
@@ -473,7 +482,11 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         if (msg.mpdecimate !== undefined && mpdecimateCheckbox) {
             mpdecimateCheckbox.checked = msg.mpdecimate as boolean;
         }
-        
+
+        if (msg.enable_hybrid !== undefined && hybridCheckbox) {
+            hybridCheckbox.checked = msg.enable_hybrid as boolean;
+        }
+
         if (msg.keyframe_interval !== undefined && keyframeIntervalSelect) {
             keyframeIntervalSelect.value = (msg.keyframe_interval as number).toString();
         }
@@ -505,7 +518,20 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         if (typeof msg.ffmpegCpu === 'number') {
             setServerFfmpegCpu(msg.ffmpegCpu);
         }
+    } else if (msg.type === 'lossless_patch') {
+        if (sharpnessCtx && msg.data && typeof msg.data === 'string' && typeof msg.x === 'number' && typeof msg.y === 'number') {
+            const img = new Image();
+            img.onload = () => {
+                sharpnessCtx!.drawImage(img, msg.x as number, msg.y as number);
+            };
+            img.src = msg.data;
+        }
+    } else if (msg.type === 'clear_lossless') {
+        if (sharpnessCtx && sharpnessLayerEl) {
+            sharpnessCtx.clearRect(0, 0, sharpnessLayerEl.width, sharpnessLayerEl.height);
+        }
     } else if (msg.type === 'cursor_shape') {
+        const shape = msg.shape as string;
         if (overlayEl && typeof msg.dataURL === 'string' && typeof msg.xhot === 'number' && typeof msg.yhot === 'number') {
             const dataURL = msg.dataURL;
             const xhot = msg.xhot;

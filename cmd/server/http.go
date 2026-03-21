@@ -164,8 +164,9 @@ func broadcastConfig(restarted bool) {
 		"vbr":              targetVBR,
 		"mpdecimate":       targetMpdecimate,
 		"keyframe_interval": targetKeyframeInterval,
-		"enableClipboard":  EnableClipboard,
-		"hdpi":             HDPI,
+		"enableClipboard":   EnableClipboard,
+		"enable_hybrid":     EnableHybrid,
+		"hdpi":              HDPI,
 		"restarted":        restarted,
 	}
 	broadcastJSON(configMsg)
@@ -226,8 +227,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"vbr":              targetVBR,
 		"mpdecimate":       targetMpdecimate,
 		"keyframe_interval": targetKeyframeInterval,
-		"enableClipboard":  EnableClipboard,
-		"hdpi":             HDPI,
+		"enableClipboard":   EnableClipboard,
+		"enable_hybrid":     EnableHybrid,
+		"hdpi":              HDPI,
 	}
 	_ = writeJSON(initialConfig)
 
@@ -334,6 +336,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
 				log.Printf("Received Enable Desktop Mouse config: %v", mouseBool)
 				SetDrawMouse(mouseBool)
+			}
+			if hybridBool, ok := msg["enable_hybrid"].(bool); ok {
+				log.Printf("Received Enable Hybrid Sharpness config: %v", hybridBool)
+				SetEnableHybrid(hybridBool)
 			}
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
 				hasBwOrQuality = true

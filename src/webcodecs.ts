@@ -1,4 +1,4 @@
-import { log, statusEl, displayEl, ctx, updateStatusText, clientGpuCheckbox } from './ui';
+import { log, statusEl, displayEl, sharpnessLayerEl, ctx, updateStatusText, clientGpuCheckbox } from './ui';
 
 export class WebCodecsManager {
     public totalDecoded = 0;
@@ -132,6 +132,10 @@ export class WebCodecsManager {
             if (displayEl.width !== frame.displayWidth || displayEl.height !== frame.displayHeight) {
                 displayEl.width = frame.displayWidth;
                 displayEl.height = frame.displayHeight;
+                if (sharpnessLayerEl) {
+                    sharpnessLayerEl.width = frame.displayWidth;
+                    sharpnessLayerEl.height = frame.displayHeight;
+                }
             }
             ctx.drawImage(frame as CanvasImageSource, 0, 0, displayEl.width, displayEl.height);
         }

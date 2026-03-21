@@ -1,12 +1,14 @@
 export const statusEl = document.getElementById('status') as HTMLDivElement;
 export const displayContainerEl = document.getElementById('display-container') as HTMLDivElement;
 export const displayEl = document.getElementById('display') as HTMLCanvasElement;
+export const sharpnessLayerEl = document.getElementById('sharpness-layer') as HTMLCanvasElement;
 export const videoEl = document.getElementById('webrtc-video') as HTMLVideoElement;
 export const overlayEl = document.getElementById('input-overlay') as HTMLDivElement;
 export const clipboardArea = document.getElementById('clipboard-area') as HTMLTextAreaElement;
 export const bandwidthSelect = document.getElementById('bandwidth-select') as HTMLSelectElement;
 export const vbrCheckbox = document.getElementById('vbr-checkbox') as HTMLInputElement;
 export const mpdecimateCheckbox = document.getElementById('mpdecimate-checkbox') as HTMLInputElement;
+export const hybridCheckbox = document.getElementById('hybrid-checkbox') as HTMLInputElement;
 export const keyframeIntervalSelect = document.getElementById('keyframe-interval-select') as HTMLSelectElement;
 
 export const configBtn = document.getElementById('config-btn') as HTMLButtonElement;
@@ -30,6 +32,7 @@ export const chromaCheckbox = document.getElementById('chroma-checkbox') as HTML
 export const clipboardCheckbox = document.getElementById('clipboard-checkbox') as HTMLInputElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
+export const sharpnessCtx = sharpnessLayerEl ? sharpnessLayerEl.getContext('2d') : null;
 
 export function log(msg: string) {
     console.log(msg);

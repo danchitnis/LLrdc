@@ -31,6 +31,7 @@ func main() {
 			log.Fatalf("Failed to initialize X11: %v", err)
 		}
 		startCursorWatcher(Display)
+		initDamageTracking(Display)
 	} else {
 		log.Println("TEST_PATTERN mode: skipping X11 setup.")
 	}
