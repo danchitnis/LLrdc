@@ -1,4 +1,4 @@
-import { log, statusEl, videoEl, displayEl, sharpnessLayerEl, ctx, updateStatusText } from './ui';
+import { log, statusEl, videoEl, displayEl, sharpnessLayerEl, ctx, updateStatusText, applySmoothingSettings } from './ui';
 
 export class WebRTCManager {
     public rtcPeer: RTCPeerConnection | null = null;
@@ -153,6 +153,7 @@ export class WebRTCManager {
                     sharpnessLayerEl.width = videoEl.videoWidth;
                     sharpnessLayerEl.height = videoEl.videoHeight;
                 }
+                applySmoothingSettings();
             }
             ctx.drawImage(videoEl, 0, 0, displayEl.width, displayEl.height);
             this.updateStats();

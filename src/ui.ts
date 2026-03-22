@@ -38,7 +38,22 @@ export const enableAudioCheckbox = document.getElementById('enable-audio-checkbo
 export const audioBitrateSelect = document.getElementById('audio-bitrate-select') as HTMLSelectElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
+if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+}
 export const sharpnessCtx = sharpnessLayerEl ? sharpnessLayerEl.getContext('2d') : null;
+
+export function applySmoothingSettings() {
+    if (ctx) {
+        ctx.imageSmoothingEnabled = false;
+    }
+    if (sharpnessCtx) {
+        sharpnessCtx.imageSmoothingEnabled = false;
+    }
+}
+
+// Initial application
+applySmoothingSettings();
 
 export function log(msg: string) {
     console.log(msg);

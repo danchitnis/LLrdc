@@ -87,6 +87,15 @@ test('verify hybrid encoding overlay receives and clears patches', async ({ page
     await page.click('#config-btn'); // Close dropdown
     await page.waitForTimeout(1000);
 
+    // Clear the canvas manually before starting motion to ensure a clean state for the "transparent" check
+    await page.evaluate(() => {
+        const canvas = document.getElementById('sharpness-layer') as HTMLCanvasElement;
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    });
+
     // 1. Trigger motion by moving the mouse over the overlay
     console.log('Triggering motion...');
     const display = await page.locator('#input-overlay');

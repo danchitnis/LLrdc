@@ -138,6 +138,8 @@ body {
   -webkit-user-drag: none;
   /* Critical: ensure both use the same rendering intent */
   image-rendering: pixelated; 
+  image-rendering: crisp-edges;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 #display {
