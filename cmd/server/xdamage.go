@@ -21,8 +21,12 @@ var (
 	settleTimer        *time.Timer
 	xgbConnDamage      *xgb.Conn
 	damageRootWin      xproto.Window
-	clientLayerDirty   bool // Track if client needs a clear_lossless
 	SettleTime         = 300
+	sendingPatches     bool
+
+	clearMutex sync.Mutex
+	clearRects []map[string]interface{}
+	clearTimer *time.Timer
 )
 
 func SetTileSize(size int) {
@@ -71,7 +75,6 @@ func SetEnableHybrid(enable bool) {
 		broadcastJSON(map[string]interface{}{
 			"type": "clear_lossless",
 		})
-		clientLayerDirty = false
 	}
 }
 
@@ -138,13 +141,42 @@ func initDamageTracking(display string) {
 	log.Println("XDamage tracking initialized.")
 }
 
-func handleDamage(x, y, w, h int) {
-	damageTrackerMutex.Lock()
-	defer damageTrackerMutex.Unlock()
+func queueClear(x, y, w, h int) {
+	clearMutex.Lock()
+	clearRects = append(clearRects, map[string]interface{}{
+		"x": x,
+		"y": y,
+		"w": w,
+		"h": h,
+	})
+	if clearTimer == nil {
+		clearTimer = time.AfterFunc(33*time.Millisecond, flushClears)
+	}
+	clearMutex.Unlock()
+}
 
+func flushClears() {
+	clearMutex.Lock()
+	rects := clearRects
+	clearRects = nil
+	clearTimer = nil
+	clearMutex.Unlock()
+
+	if len(rects) > 0 {
+		broadcastJSON(map[string]interface{}{
+			"type":  "clear_lossless",
+			"rects": rects,
+		})
+	}
+}
+
+func handleDamage(x, y, w, h int) {
 	if !EnableHybrid {
 		return
 	}
+
+	damageTrackerMutex.Lock()
+	defer damageTrackerMutex.Unlock()
 
 	// Intersect with tiles
 	for ty := (y / TileSize) * TileSize; ty < y+h; ty += TileSize {
@@ -152,14 +184,8 @@ func handleDamage(x, y, w, h int) {
 			key := fmt.Sprintf("%d,%d", tx, ty)
 			if _, exists := dirtyTiles[key]; !exists {
 				dirtyTiles[key] = image.Rect(tx, ty, tx+TileSize, ty+TileSize)
-				// Send clear_lossless for this specific tile
-				broadcastJSON(map[string]interface{}{
-					"type": "clear_lossless",
-					"x":    tx,
-					"y":    ty,
-					"w":    TileSize,
-					"h":    TileSize,
-				})
+				// Queue clear for this specific newly dirty tile
+				queueClear(tx, ty, TileSize, TileSize)
 			}
 		}
 	}
@@ -178,11 +204,33 @@ func sendLosslessPatches() {
 		damageTrackerMutex.Unlock()
 		return
 	}
+	if sendingPatches {
+		damageTrackerMutex.Unlock()
+		if settleTimer != nil {
+			settleTimer.Reset(100 * time.Millisecond)
+		}
+		return
+	}
 	tiles := dirtyTiles
 	dirtyTiles = make(map[string]image.Rectangle)
+	sendingPatches = true
 	damageTrackerMutex.Unlock()
 
+	defer func() {
+		damageTrackerMutex.Lock()
+		sendingPatches = false
+		damageTrackerMutex.Unlock()
+	}()
+
 	if len(tiles) == 0 {
+		return
+	}
+
+	totalPixels := len(tiles) * TileSize * TileSize
+	if totalPixels > 8000000 { // Approx 4K screen
+		log.Printf("Dropping lossless patches because total area (%d px) exceeded limit", totalPixels)
+		// Large screen changes are handled efficiently by the video stream.
+		// Sending dozens of huge PNGs would flood the WebSocket and freeze the client cursor.
 		return
 	}
 
@@ -254,11 +302,8 @@ func sendLosslessPatches() {
 
 		broadcastJSON(msg)
 		patchesSent++
-	}
-
-	if patchesSent > 0 {
-		damageTrackerMutex.Lock()
-		clientLayerDirty = true
-		damageTrackerMutex.Unlock()
+		if patchesSent%5 == 0 {
+			time.Sleep(5 * time.Millisecond) // Yield to allow cursor/websocket traffic to process smoothly
+		}
 	}
 }

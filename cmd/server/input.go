@@ -124,6 +124,14 @@ func execMouseMove(nx, ny float64, display string) {
 	}
 	x := int(math.Round(nx * float64(width)))
 	y := int(math.Round(ny * float64(height)))
+
+	// Mark the area around the cursor as damaged to clear old patches 
+	// (which might contain a baked-in frozen cursor from ffmpeg)
+	cx, cy := x-64, y-64
+	if cx < 0 { cx = 0 }
+	if cy < 0 { cy = 0 }
+	handleDamage(cx, cy, 128, 128)
+
 	cmd := exec.Command("xdotool", "mousemove", strconv.Itoa(x), strconv.Itoa(y))
 	cmd.Env = append(os.Environ(), "DISPLAY="+display)
 	if err := cmd.Start(); err == nil {

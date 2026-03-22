@@ -80,6 +80,13 @@ test('verify hybrid encoding overlay receives and clears patches', async ({ page
     console.log('Waiting for stream to initialize...');
     await page.waitForTimeout(5000);
 
+    // Enable hybrid mode for the test
+    await page.click('#config-btn');
+    await page.click('button[data-tab="tab-quality"]');
+    await page.check('#hybrid-checkbox');
+    await page.click('#config-btn'); // Close dropdown
+    await page.waitForTimeout(1000);
+
     // 1. Trigger motion by moving the mouse over the overlay
     console.log('Triggering motion...');
     const display = await page.locator('#input-overlay');
@@ -119,6 +126,12 @@ test('verify hybrid encoding overlay receives and clears patches', async ({ page
             return false;
         });
     }, { timeout: 5000 }).toBe(true);
+
+    // Clean up to avoid affecting subsequent tests
+    await page.click('#config-btn');
+    await page.uncheck('#hybrid-checkbox');
+    await page.waitForTimeout(1000); // Wait for debounce to send config
+    await page.click('#config-btn'); // Close
 });
 
 test('verify hybrid encoding can be disabled', async ({ page }) => {
@@ -133,7 +146,11 @@ test('verify hybrid encoding can be disabled', async ({ page }) => {
     await page.click('button[data-tab="tab-quality"]');
     
     const isChecked = await page.isChecked('#hybrid-checkbox');
-    expect(isChecked).toBe(true); // Default should be on
+    expect(isChecked).toBe(false); // Default should be off
+
+    // Check it first to test unchecking
+    await page.check('#hybrid-checkbox');
+    await page.waitForTimeout(500);
 
     await page.uncheck('#hybrid-checkbox');
     await page.click('#config-btn'); // Close dropdown
@@ -199,6 +216,61 @@ test('verify settle time config propagates', async ({ page }) => {
     
     const settleValue = await page.inputValue('#settle-slider');
     expect(settleValue).toBe('1200');
+});
+
+test('verify hybrid encoding with small tiles', async ({ page }) => {
+    test.setTimeout(30000);
+    await page.goto(serverUrl);
+
+    console.log('Waiting for stream to initialize...');
+    await page.waitForTimeout(5000);
+
+    // 1. Enable hybrid and set Tile Size to minimum (64)
+    await page.click('#config-btn');
+    await page.click('button[data-tab="tab-quality"]');
+    await page.check('#hybrid-checkbox');
+    
+    // Set tile size slider to minimum
+    await page.evaluate(() => {
+        const slider = document.getElementById('tile-size-slider') as HTMLInputElement;
+        if (slider) {
+            slider.value = '64';
+            slider.dispatchEvent(new Event('input'));
+            slider.dispatchEvent(new Event('change'));
+        }
+    });
+    
+    await page.click('#config-btn'); // Close dropdown
+    await page.waitForTimeout(1000); // Wait for configs to settle
+
+    // 2. Move mouse to trigger damage
+    const display = await page.locator('#input-overlay');
+    await display.hover({ position: { x: 50, y: 50 } });
+    await page.mouse.move(100, 100, { steps: 5 });
+
+    // Wait for the settle timer
+    await page.waitForTimeout(1000);
+
+    // 3. Verify patches were received and drawn
+    await expect.poll(async () => {
+        return await page.evaluate(() => {
+            const canvas = document.getElementById('sharpness-layer') as HTMLCanvasElement;
+            if (!canvas) return false;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return false;
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            for (let i = 3; i < pixels.length; i += 4) {
+                if (pixels[i] !== 0) return true;
+            }
+            return false;
+        });
+    }, { timeout: 5000 }).toBe(true);
+
+    // Clean up
+    await page.click('#config-btn');
+    await page.uncheck('#hybrid-checkbox');
+    await page.waitForTimeout(1000);
+    await page.click('#config-btn');
 });
 
 test('verify no layout shift between video and canvas', async ({ page }) => {

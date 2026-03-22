@@ -80,6 +80,13 @@ test('verify hybrid encoding overlay receives and clears patches', async ({ page
     console.log('Waiting for stream to initialize...');
     await page.waitForTimeout(5000);
 
+    // Enable hybrid mode for the test
+    await page.click('#config-btn');
+    await page.click('button[data-tab="tab-quality"]');
+    await page.check('#hybrid-checkbox');
+    await page.click('#config-btn'); // Close dropdown
+    await page.waitForTimeout(1000);
+
     // 1. Trigger motion by moving the mouse over the overlay
     console.log('Triggering motion...');
     const display = await page.locator('#input-overlay');
@@ -87,37 +94,37 @@ test('verify hybrid encoding overlay receives and clears patches', async ({ page
     await page.mouse.move(200, 200, { steps: 10 });
     
     // 2. While moving, the sharpness layer should be transparent (cleared)
-    const isCleared = await page.evaluate(() => {
-        const canvas = document.getElementById('sharpness-layer') as HTMLCanvasElement;
-        if (!canvas) return false;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return false;
-        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-        // Check if all alpha values are 0
-        for (let i = 3; i < pixels.length; i += 4) {
-            if (pixels[i] !== 0) return false;
-        }
-        return true;
-    });
-    expect(isCleared).toBe(true);
+    await expect.poll(async () => {
+        return await page.evaluate(() => {
+            const canvas = document.getElementById('sharpness-layer') as HTMLCanvasElement;
+            if (!canvas) return false;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return false;
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            // Check if all alpha values are 0
+            for (let i = 3; i < pixels.length; i += 4) {
+                if (pixels[i] !== 0) return false;
+            }
+            return true;
+        });
+    }, { timeout: 2000 }).toBe(true);
 
     // 3. Stop motion and wait for the settle timer (250ms on server + latency)
     console.log('Waiting for image to settle...');
     await page.waitForTimeout(1000);
 
     // 4. Check if the sharpness layer received the patch and is no longer transparent
-    const hasPatch = await page.evaluate(() => {
-        const canvas = document.getElementById('sharpness-layer') as HTMLCanvasElement;
-        if (!canvas) return false;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return false;
-        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-        // Check if there's any non-zero alpha pixel
-        for (let i = 3; i < pixels.length; i += 4) {
-            if (pixels[i] !== 0) return true;
-        }
-        return false;
-    });
-    
-    expect(hasPatch).toBe(true);
+    await expect.poll(async () => {
+        return await page.evaluate(() => {
+            const canvas = document.getElementById('sharpness-layer') as HTMLCanvasElement;
+            if (!canvas) return false;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return false;
+            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            for (let i = 3; i < pixels.length; i += 4) {
+                if (pixels[i] !== 0) return true;
+            }
+            return false;
+        });
+    }, { timeout: 5000 }).toBe(true);
 });

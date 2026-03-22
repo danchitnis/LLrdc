@@ -47,7 +47,7 @@ webrtc = new WebRTCManager(
 );
 window.webrtcManager = webrtc;
 
-setupInput((data) => network.sendMsg(data), () => clearLosslessCanvas());
+setupInput((data) => network.sendMsg(data));
 
 interface ConfigMessage {
     type: 'config';
@@ -177,8 +177,19 @@ if (mpdecimateCheckbox) {
     mpdecimateCheckbox.addEventListener('change', sendConfig);
 }
 
+function updateHybridSlidersState() {
+    if (hybridCheckbox) {
+        if (settleSlider) settleSlider.disabled = !hybridCheckbox.checked;
+        if (tileSizeSlider) tileSizeSlider.disabled = !hybridCheckbox.checked;
+    }
+}
+
 if (hybridCheckbox) {
-    hybridCheckbox.addEventListener('change', sendConfig);
+    hybridCheckbox.addEventListener('change', () => {
+        updateHybridSlidersState();
+        sendConfig();
+    });
+    updateHybridSlidersState();
 }
 
 if (settleSlider && settleValue) {
@@ -537,6 +548,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.enable_hybrid !== undefined && hybridCheckbox) {
             hybridCheckbox.checked = msg.enable_hybrid as boolean;
+            updateHybridSlidersState();
         }
 
         if (msg.settle_time !== undefined && msg.settle_time !== null && settleSlider && settleValue) {
@@ -597,7 +609,13 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             img.src = msg.data;
         }
     } else if (msg.type === 'clear_lossless') {
-        clearLosslessCanvas(msg.x as number | undefined, msg.y as number | undefined, msg.w as number | undefined, msg.h as number | undefined);
+        if (msg.rects && Array.isArray(msg.rects)) {
+            for (const rect of msg.rects) {
+                clearLosslessCanvas(rect.x as number, rect.y as number, rect.w as number, rect.h as number);
+            }
+        } else {
+            clearLosslessCanvas(msg.x as number | undefined, msg.y as number | undefined, msg.w as number | undefined, msg.h as number | undefined);
+        }
     } else if (msg.type === 'cursor_shape') {
         const shape = msg.shape as string;
         if (overlayEl && typeof msg.dataURL === 'string' && typeof msg.xhot === 'number' && typeof msg.yhot === 'number') {

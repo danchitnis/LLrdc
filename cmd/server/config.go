@@ -66,7 +66,7 @@ func initConfig() {
 	defaultTestPattern := os.Getenv("TEST_PATTERN") != ""
 	defaultTestMinimalX11 := os.Getenv("TEST_MINIMAL_X11") != ""
 	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
-	defaultEnableHybrid := os.Getenv("ENABLE_HYBRID") != "false"
+	defaultEnableHybrid := os.Getenv("ENABLE_HYBRID") == "true"
 	defaultEnableAudio := os.Getenv("ENABLE_AUDIO") != "false"
 	defaultAudioBitrate := os.Getenv("AUDIO_BITRATE")
 	if defaultAudioBitrate == "" {
