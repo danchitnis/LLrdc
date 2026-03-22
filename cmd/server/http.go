@@ -168,8 +168,10 @@ func broadcastConfig(restarted bool) {
 		"enable_hybrid":     EnableHybrid,
 		"settle_time":       SettleTime,
 		"tile_size":         TileSize,
+		"enable_audio":      EnableAudio,
+		"audio_bitrate":     AudioBitrate,
 		"hdpi":              HDPI,
-		"restarted":        restarted,
+		"restarted":         restarted,
 	}
 	broadcastJSON(configMsg)
 }
@@ -233,6 +235,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"enable_hybrid":     EnableHybrid,
 		"settle_time":       SettleTime,
 		"tile_size":         TileSize,
+		"enable_audio":      EnableAudio,
+		"audio_bitrate":     AudioBitrate,
 		"hdpi":              HDPI,
 	}
 	_ = writeJSON(initialConfig)
@@ -352,6 +356,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if tileSize, ok := msg["tile_size"].(float64); ok {
 				log.Printf("Received Tile Size config: %vpx", tileSize)
 				SetTileSize(int(tileSize))
+			}
+			if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
+				log.Printf("Received Enable Audio config: %v", enableAudioBool)
+				SetEnableAudio(enableAudioBool)
+			}
+			if audioBitrateStr, ok := msg["audio_bitrate"].(string); ok {
+				log.Printf("Received Audio Bitrate config: %s", audioBitrateStr)
+				SetAudioBitrate(audioBitrateStr)
 			}
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
 				hasBwOrQuality = true

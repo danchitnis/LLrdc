@@ -34,6 +34,8 @@ export const codecGpuOpts = document.querySelectorAll('.codec-opt-gpu') as NodeL
 export const clientGpuCheckbox = document.getElementById('client-gpu-checkbox') as HTMLInputElement;
 export const chromaCheckbox = document.getElementById('chroma-checkbox') as HTMLInputElement;
 export const clipboardCheckbox = document.getElementById('clipboard-checkbox') as HTMLInputElement;
+export const enableAudioCheckbox = document.getElementById('enable-audio-checkbox') as HTMLInputElement;
+export const audioBitrateSelect = document.getElementById('audio-bitrate-select') as HTMLSelectElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
 export const sharpnessCtx = sharpnessLayerEl ? sharpnessLayerEl.getContext('2d') : null;

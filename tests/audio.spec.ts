@@ -132,13 +132,105 @@ test.describe('Audio Functionality', () => {
 
         console.log('WebRTC Audio Stats:', audioStats);
 
+        expect(audioStats.hasAudioTrack).toBe(true);
+        expect(audioStats.bytesReceived).toBeGreaterThan(0);
+
+        // Open config menu
+        await page.click('#config-btn');
+        // Click Audio tab
+        await page.click('[data-tab="tab-audio"]');
+
+        // Test disabling audio
+        console.log('Disabling audio...');
+        await page.uncheck('#enable-audio-checkbox');
+        
+        // Wait for server to restart audio stream (it will just stop)
+        await page.waitForTimeout(4000);
+        
+        const statsAfterDisable1 = await page.evaluate(async () => {
+            const rtcPeer = (window as any).rtcPeer as RTCPeerConnection;
+            if (!rtcPeer) return 0;
+            const stats = await rtcPeer.getStats();
+            let bytes = 0;
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                    if (report.bytesReceived !== undefined) bytes = report.bytesReceived;
+                }
+            });
+            return bytes;
+        });
+
+        await page.waitForTimeout(2000);
+
+        const statsAfterDisable2 = await page.evaluate(async () => {
+            const rtcPeer = (window as any).rtcPeer as RTCPeerConnection;
+            if (!rtcPeer) return 0;
+            const stats = await rtcPeer.getStats();
+            let bytes = 0;
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                    if (report.bytesReceived !== undefined) bytes = report.bytesReceived;
+                }
+            });
+            return bytes;
+        });
+        
+        console.log(`Bytes after disable 1: ${statsAfterDisable1}, 2: ${statsAfterDisable2}`);
+        // Bytes should not increase significantly after being disabled
+        // We allow a small increase just in case there were queued packets
+        expect(statsAfterDisable2 - statsAfterDisable1).toBeLessThan(5000);
+
+        // Test enabling audio again
+        console.log('Re-enabling audio...');
+        await page.check('#enable-audio-checkbox');
+        await page.waitForTimeout(5000);
+
+        const statsAfterEnable = await page.evaluate(async () => {
+            const rtcPeer = (window as any).rtcPeer as RTCPeerConnection;
+            if (!rtcPeer) return 0;
+            const stats = await rtcPeer.getStats();
+            let bytes = 0;
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                    if (report.bytesReceived !== undefined) bytes = report.bytesReceived;
+                }
+            });
+            return bytes;
+        });
+
+        console.log(`Bytes after re-enable: ${statsAfterEnable}`);
+        expect(statsAfterEnable).toBeGreaterThan(statsAfterDisable2);
+
+        // Test changing audio bitrate
+        console.log('Changing audio bitrate...');
+        await page.selectOption('#audio-bitrate-select', '64k');
+        
+        // Server will restart ffmpeg for audio
+        await page.waitForTimeout(8000);
+        
+        const statsAfterBitrate = await page.evaluate(async () => {
+            const rtcPeer = (window as any).rtcPeer as RTCPeerConnection;
+            if (!rtcPeer) return 0;
+            const stats = await rtcPeer.getStats();
+            let bytes = 0;
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                    if (report.bytesReceived !== undefined) bytes = report.bytesReceived;
+                }
+            });
+            return bytes;
+        });
+        
+        console.log(`Bytes after bitrate change: ${statsAfterBitrate}`);
+        
         if (aplayProc) {
             aplayProc.kill();
         }
 
-        expect(audioStats.hasAudioTrack).toBe(true);
-        // Sometimes the audio might take a moment to start, but bytesReceived should be > 0.
-        // We might also check if bytesReceived is greater than 0
-        expect(audioStats.bytesReceived).toBeGreaterThan(0);
+        if (statsAfterBitrate <= statsAfterEnable) {
+            console.error('Server output buffer:\n', outputBuffer);
+        }
+        
+        expect(statsAfterBitrate).toBeGreaterThan(statsAfterEnable);
     });
 });

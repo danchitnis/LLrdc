@@ -20,6 +20,7 @@ var (
 	targetDrawMouse        = true        // Default: true
 	targetKeyframeInterval = 2           // Default: 2 seconds
 	ffmpegCmd              *exec.Cmd
+	ffmpegAudioCmd         *exec.Cmd
 	ffmpegMutex            sync.Mutex
 	ffmpegShouldRun        = true
 	ffmpegStreamID         uint32
@@ -183,6 +184,30 @@ func RestartForResize() {
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Println("Screen size changed, restarting ffmpeg...")
 		ffmpegCmd.Process.Kill()
+	}
+}
+
+func SetEnableAudio(enable bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	EnableAudio = enable
+
+	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
+		log.Printf("Enable audio changed to %v, restarting audio ffmpeg...", enable)
+		ffmpegAudioCmd.Process.Kill()
+	}
+}
+
+func SetAudioBitrate(bitrate string) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	AudioBitrate = bitrate
+
+	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
+		log.Printf("Audio bitrate changed to %s, restarting audio ffmpeg...", bitrate)
+		ffmpegAudioCmd.Process.Kill()
 	}
 }
 

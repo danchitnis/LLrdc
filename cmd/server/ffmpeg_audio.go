@@ -14,9 +14,15 @@ func startAudioStreaming() {
 		for {
 			ffmpegMutex.Lock()
 			shouldRun := ffmpegShouldRun
+			enableAudio := EnableAudio
+			audioBitrate := AudioBitrate
 			ffmpegMutex.Unlock()
 			if !shouldRun {
 				break
+			}
+			if !enableAudio {
+				time.Sleep(2 * time.Second)
+				continue
 			}
 
 			log.Println("Starting ffmpeg audio capture...")
@@ -24,11 +30,15 @@ func startAudioStreaming() {
 				"-f", "pulse",
 				"-i", "default",
 				"-c:a", "libopus",
-				"-b:a", "128k",
+				"-b:a", audioBitrate,
 				"-page_duration", "20",
 				"-f", "ogg",
 				"pipe:1",
 			)
+
+			ffmpegMutex.Lock()
+			ffmpegAudioCmd = cmd
+			ffmpegMutex.Unlock()
 
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {

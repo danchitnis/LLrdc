@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -66,6 +66,8 @@ interface ConfigMessage {
     enable_hybrid?: boolean;
     settle_time?: number;
     tile_size?: number;
+    enable_audio?: boolean;
+    audio_bitrate?: string;
 }
 
 let configDebounceTimer: number | null = null;
@@ -132,6 +134,14 @@ function sendConfig() {
 
         if (videoCodecSelect) {
             config.video_codec = videoCodecSelect.value;
+        }
+
+        if (enableAudioCheckbox) {
+            config.enable_audio = enableAudioCheckbox.checked;
+        }
+
+        if (audioBitrateSelect) {
+            config.audio_bitrate = audioBitrateSelect.value;
         }
 
         network.sendMsg(JSON.stringify(config));
@@ -255,6 +265,14 @@ if (clipboardCheckbox) {
     clipboardCheckbox.addEventListener('change', () => {
         setClipboardEnabled(clipboardCheckbox.checked);
     });
+}
+
+if (enableAudioCheckbox) {
+    enableAudioCheckbox.addEventListener('change', sendConfig);
+}
+
+if (audioBitrateSelect) {
+    audioBitrateSelect.addEventListener('change', sendConfig);
 }
 
 if (videoCodecSelect) {
@@ -549,6 +567,14 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         if (msg.enableClipboard !== undefined && clipboardCheckbox) {
             clipboardCheckbox.checked = msg.enableClipboard as boolean;
             setClipboardEnabled(msg.enableClipboard as boolean);
+        }
+
+        if (msg.enable_audio !== undefined && enableAudioCheckbox) {
+            enableAudioCheckbox.checked = msg.enable_audio as boolean;
+        }
+
+        if (msg.audio_bitrate && typeof msg.audio_bitrate === 'string' && audioBitrateSelect) {
+            audioBitrateSelect.value = msg.audio_bitrate;
         }
     } else if (msg.type === 'clipboard_get') {
         if (typeof msg.text === 'string') {

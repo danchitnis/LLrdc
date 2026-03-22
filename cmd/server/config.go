@@ -28,6 +28,8 @@ var (
 	TestMinimalX11          bool
 	EnableClipboard         bool
 	EnableHybrid            bool
+	EnableAudio             bool
+	AudioBitrate            string
 	TileSize                int
 	Wallpaper               string
 	WebRTCPublicIP          string
@@ -65,6 +67,11 @@ func initConfig() {
 	defaultTestMinimalX11 := os.Getenv("TEST_MINIMAL_X11") != ""
 	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
 	defaultEnableHybrid := os.Getenv("ENABLE_HYBRID") != "false"
+	defaultEnableAudio := os.Getenv("ENABLE_AUDIO") != "false"
+	defaultAudioBitrate := os.Getenv("AUDIO_BITRATE")
+	if defaultAudioBitrate == "" {
+		defaultAudioBitrate = "128k"
+	}
 	defaultTileSizeStr := os.Getenv("TILE_SIZE")
 	defaultTileSize := 512
 	if defaultTileSizeStr != "" {
@@ -108,6 +115,8 @@ func initConfig() {
 		printFlag(os.Stderr, "webrtc-interfaces", "Comma-separated allowed network interfaces for WebRTC", WebRTCInterfaces)
 		printFlag(os.Stderr, "webrtc-exclude-interfaces", "Comma-separated excluded network interfaces for WebRTC", WebRTCExcludeInterfaces)
 		printFlag(os.Stderr, "enable-clipboard", "Enable clipboard synchronization", EnableClipboard)
+		printFlag(os.Stderr, "enable-audio", "Enable audio streaming", EnableAudio)
+		printFlag(os.Stderr, "audio-bitrate", "Audio bitrate (e.g. 64k, 128k)", AudioBitrate)
 		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
 
 		fmt.Fprintf(os.Stderr, "\nTesting Flags:\n")
@@ -131,6 +140,8 @@ func initConfig() {
 	flag.StringVar(&WebRTCInterfaces, "webrtc-interfaces", defaultWebRTCInterfaces, "Comma-separated allowed network interfaces for WebRTC")
 	flag.StringVar(&WebRTCExcludeInterfaces, "webrtc-exclude-interfaces", defaultWebRTCExcludeInterfaces, "Comma-separated excluded network interfaces for WebRTC")
 	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
+	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
+	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.BoolVar(&EnableHybrid, "enable-hybrid", defaultEnableHybrid, "Enable RDP-style hybrid sharpness patches")
 	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Tile size for hybrid patches (64-1024)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
