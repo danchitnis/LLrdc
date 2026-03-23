@@ -2,7 +2,7 @@ import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, 
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
-import { setupInput, setPendingClipboard, setClipboardEnabled } from './input';
+import { setupInput } from './input';
 
 export { };
 
@@ -274,7 +274,7 @@ if (desktopMouseCheckbox) {
 
 if (clipboardCheckbox) {
     clipboardCheckbox.addEventListener('change', () => {
-        setClipboardEnabled(clipboardCheckbox.checked);
+
     });
 }
 
@@ -578,7 +578,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.enableClipboard !== undefined && clipboardCheckbox) {
             clipboardCheckbox.checked = msg.enableClipboard as boolean;
-            setClipboardEnabled(msg.enableClipboard as boolean);
+
         }
 
         if (msg.enable_audio !== undefined && enableAudioCheckbox) {
@@ -590,7 +590,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         }
     } else if (msg.type === 'clipboard_get') {
         if (typeof msg.text === 'string') {
-            setPendingClipboard(msg.text);
+
         }
     } else if (msg.type === 'webrtc_answer') {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);

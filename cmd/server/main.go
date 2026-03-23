@@ -25,15 +25,13 @@ func main() {
 		shutdown()
 	}()
 
-	// 1. Start X11 unless TEST_PATTERN is set
+	// 1. Start Wayland unless TEST_PATTERN is set
 	if !TestPattern {
-		if err := startX11(DisplayNum); err != nil {
-			log.Fatalf("Failed to initialize X11: %v", err)
+		if err := startWayland(DisplayNum); err != nil {
+			log.Fatalf("Failed to initialize Wayland: %v", err)
 		}
-		startCursorWatcher(Display)
-		initDamageTracking(Display)
 	} else {
-		log.Println("TEST_PATTERN mode: skipping X11 setup.")
+		log.Println("TEST_PATTERN mode: skipping Wayland setup.")
 	}
 
 	// 2. Initialize WebRTC and RTP Listener

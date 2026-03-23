@@ -15,7 +15,9 @@ SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
 HOST_PORT="${HOST_PORT:-8080}"
 CONTAINER_PORT="${CONTAINER_PORT:-$SERVER_PORT}"
 
-USE_GPU="${USE_GPU:-false}"
+USE_GPU="false"
+USE_WAYLAND="false"
+USE_DETACHED="false"
 USE_DEBUG_X11="false"
 USE_DEBUG_FFMPEG="false"
 WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
@@ -24,6 +26,15 @@ SERVER_HDPI="${HDPI:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -d|--detach)
+      USE_DETACHED="true"
+      shift
+      ;;
+    --wayland)
+      USE_WAYLAND="true"
+      IMAGE_TAG="wayland-latest"
+      shift
+      ;;
     --gpu)
       USE_GPU="true"
       shift
@@ -83,6 +94,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [ "$USE_WAYLAND" = "true" ]; then
+  SERVER_VIDEO_CODEC="vp8"
+  USE_GPU="false"
+  echo "  Mode  : Wayland (Minimal VP8 CPU)"
+fi
+
 GPU_ARGS=""
 if [ "$USE_GPU" = "true" ]; then
   # Verify if Docker has NVIDIA runtime/toolkit support
@@ -125,8 +142,13 @@ if [ "$USE_GPU" = "true" ]; then
 fi
 
 INTERACTIVE_ARGS=""
-if [ -t 0 ]; then
+if [ -t 0 ] && [ "$USE_DETACHED" = "false" ]; then
   INTERACTIVE_ARGS="--interactive --tty"
+fi
+
+DETACHED_ARGS=""
+if [ "$USE_DETACHED" = "true" ]; then
+  DETACHED_ARGS="--detach"
 fi
 
 # Detect IP for WebRTC. 
@@ -148,6 +170,7 @@ echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP:-none} (auto-detected)"
 
 docker run \
   $GPU_ARGS \
+  $DETACHED_ARGS \
   --rm \
   $INTERACTIVE_ARGS \
   --name "${CONTAINER_NAME}" \

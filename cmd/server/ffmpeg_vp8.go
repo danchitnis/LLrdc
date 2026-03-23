@@ -77,13 +77,30 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 }
 
 func splitIVF(reader io.Reader, onFrame func([]byte)) {
+	// Scan for "DKIF"
 	headerData := make([]byte, 32)
-	if _, err := io.ReadFull(reader, headerData); err != nil {
-		log.Printf("Failed to read IVF header: %v", err)
-		return
+	found := false
+	for {
+		b := make([]byte, 1)
+		if _, err := io.ReadFull(reader, b); err != nil {
+			log.Printf("Failed to read while scanning for IVF header: %v", err)
+			return
+		}
+		if b[0] == 'D' {
+			headerData[0] = 'D'
+			if _, err := io.ReadFull(reader, headerData[1:32]); err != nil {
+				log.Printf("Failed to read IVF header: %v", err)
+				return
+			}
+			if string(headerData[0:4]) == "DKIF" {
+				found = true
+				break
+			}
+		}
 	}
-	if string(headerData[:4]) != "DKIF" {
-		log.Printf("Invalid IVF signature: %s", string(headerData[:4]))
+
+	if !found {
+		log.Printf("Could not find IVF signature 'DKIF'")
 		return
 	}
 
@@ -103,7 +120,6 @@ func splitIVF(reader io.Reader, onFrame func([]byte)) {
 			return
 		}
 
-		// log.Printf("splitIVF: decoded frame of size %d", frameSize)
 		onFrame(frameData)
 	}
 }
