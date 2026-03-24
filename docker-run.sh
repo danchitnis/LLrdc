@@ -20,6 +20,7 @@ USE_WAYLAND="false"
 USE_DETACHED="false"
 USE_DEBUG_X11="false"
 USE_DEBUG_FFMPEG="false"
+USE_DEBUG_INPUT="false"
 WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
 WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
 SERVER_HDPI="${HDPI:-0}"
@@ -47,9 +48,14 @@ while [[ $# -gt 0 ]]; do
       USE_DEBUG_FFMPEG="true"
       shift
       ;;
+    --debug-input)
+      USE_DEBUG_INPUT="true"
+      shift
+      ;;
     --debug)
       USE_DEBUG_X11="true"
       USE_DEBUG_FFMPEG="true"
+      USE_DEBUG_INPUT="true"
       shift
       ;;
     --iface|-i)
@@ -167,10 +173,15 @@ if [ -z "${WEBRTC_PUBLIC_IP:-}" ]; then
 fi
 
 echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP:-none} (auto-detected)"
+UINPUT_ARGS=""
+if [ -e /dev/uinput ]; then
+  UINPUT_ARGS="--device /dev/uinput:/dev/uinput"
+fi
 
 docker run \
   $GPU_ARGS \
   $DETACHED_ARGS \
+  $UINPUT_ARGS \
   --rm \
   $INTERACTIVE_ARGS \
   --name "${CONTAINER_NAME}" \
@@ -180,6 +191,7 @@ docker run \
   --cpuset-cpus "${CPU_LIST}" \
   --ulimit rtprio=99 \
   --cap-add=SYS_NICE \
+  --cap-add=SYS_ADMIN \
   --env PORT="${SERVER_PORT}" \
   --env FPS="${SERVER_FPS}" \
   --env DISPLAY_NUM="${SERVER_DISPLAY_NUM}" \
@@ -192,5 +204,6 @@ docker run \
   --env HDPI="${SERVER_HDPI}" \
   --env USE_DEBUG_X11="${USE_DEBUG_X11}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
+  --env USE_DEBUG_INPUT="${USE_DEBUG_INPUT}" \
   --env HOST_UID=$(id -u) \
   "${IMAGE_NAME}:${IMAGE_TAG}"

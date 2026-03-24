@@ -24,6 +24,7 @@ var (
 	H265NVENC444Available   bool
 	UseDebugX11             bool
 	UseDebugFFmpeg          bool
+	UseDebugInput           bool
 	TestPattern             bool
 	TestMinimalX11          bool
 	EnableClipboard         bool
@@ -63,6 +64,7 @@ func initConfig() {
 	defaultUseGPU := os.Getenv("USE_GPU") == "true"
 	defaultUseDebugX11 := os.Getenv("USE_DEBUG_X11") == "true"
 	defaultUseDebugFFmpeg := os.Getenv("USE_DEBUG_FFMPEG") == "true"
+	defaultUseDebugInput := os.Getenv("USE_DEBUG_INPUT") == "true"
 	defaultTestPattern := os.Getenv("TEST_PATTERN") != ""
 	defaultTestMinimalX11 := os.Getenv("TEST_MINIMAL_X11") != ""
 	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
@@ -132,6 +134,7 @@ func initConfig() {
 	flag.BoolVar(&UseGPU, "use-gpu", defaultUseGPU, "Enable GPU acceleration if available")
 	flag.BoolVar(&UseDebugX11, "use-debug-x11", defaultUseDebugX11, "Enable X11 debugging")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")
+	flag.BoolVar(&UseDebugInput, "use-debug-input", defaultUseDebugInput, "Enable Input debugging")
 	flag.StringVar(&DisplayNum, "display-num", defaultDisplayNum, "X11 Display number (e.g., 99 for :99)")
 	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of X11")
 	flag.BoolVar(&TestMinimalX11, "test-minimal-x11", defaultTestMinimalX11, "Start minimal X11 without full DE")

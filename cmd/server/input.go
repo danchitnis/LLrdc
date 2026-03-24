@@ -16,7 +16,6 @@ type inputTask struct {
 }
 
 var inputChan = make(chan inputTask, 5000)
-var currentX, currentY int = 0, 0
 
 func init() {
 	go func() {
@@ -24,16 +23,6 @@ func init() {
 			execTask(task)
 		}
 	}()
-}
-
-// ResetMouse forces the cursor to 0,0 to synchronize our tracking
-func ResetMouse() {
-	log.Println("Synchronizing Wayland mouse to 0,0...")
-	cmd := exec.Command("wlrctl", "pointer", "move", "-3000", "-3000")
-	cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0")
-	_ = cmd.Run()
-	currentX = 0
-	currentY = 0
 }
 
 func execTask(task inputTask) {
@@ -46,39 +35,36 @@ func execTask(task inputTask) {
 		targetX := int(math.Round(task.NX * float64(width)))
 		targetY := int(math.Round(task.NY * float64(height)))
 
-		dx := targetX - currentX
-		dy := targetY - currentY
-
-		if dx != 0 || dy != 0 {
-			log.Printf("Wayland mouse move to absolute: %d, %d (relative: %d, %d)", targetX, targetY, dx, dy)
-			// Move relative to current position
-			cmd := exec.Command("wlrctl", "pointer", "move", strconv.Itoa(dx), strconv.Itoa(dy))
-			cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0")
-			_ = cmd.Run()
-
-			// Update tracked position, clamping to screen bounds to match compositor behavior
-			currentX += dx
-			currentY += dy
-			
-			if currentX < 0 { currentX = 0 }
-			if currentX >= width { currentX = width - 1 }
-			if currentY < 0 { currentY = 0 }
-			if currentY >= height { currentY = height - 1 }
+		if UseDebugInput {
+			log.Printf("Wayland mouse move to absolute: %d, %d", targetX, targetY)
 		}
+
+		// Using ydotool for absolute movement. ydotoold must be running.
+		cmd := exec.Command("ydotool", "mousemove", "--absolute", strconv.Itoa(targetX), strconv.Itoa(targetY))
+		cmd.Env = os.Environ()
+		_ = cmd.Run()
 
 	case "mousebtn":
-		wlrBtn := "left"
+		// ydotool key codes for mouse buttons: Left=272, Right=273, Middle=274
+		btnCode := 272
 		if task.Button == 1 {
-			wlrBtn = "middle"
+			btnCode = 274 // Middle
 		} else if task.Button == 2 {
-			wlrBtn = "right"
+			btnCode = 273 // Right
 		}
 
-		if task.Action == "mousedown" {
-			cmd := exec.Command("wlrctl", "pointer", "click", wlrBtn)
-			cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0")
-			_ = cmd.Run()
+		state := "1" // Down
+		if task.Action == "mouseup" {
+			state = "0" // Up
 		}
+
+		if UseDebugInput {
+			log.Printf("Wayland mouse button %d %s", btnCode, task.Action)
+		}
+
+		cmd := exec.Command("ydotool", "key", strconv.Itoa(btnCode)+":"+state)
+		cmd.Env = os.Environ()
+		_ = cmd.Run()
 	}
 }
 
