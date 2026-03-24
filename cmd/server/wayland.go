@@ -29,6 +29,19 @@ func startWayland(displayNum string) error {
 	// Force Native Wayland for GDK/GTK applications (XFCE 4.20)
 	os.Setenv("GDK_BACKEND", "wayland")
 	os.Setenv("QT_QPA_PLATFORM", "wayland")
+	
+	// Reduce warnings and improve theming
+	os.Setenv("NO_AT_BRIDGE", "1")
+	os.Setenv("XDG_MENU_PREFIX", "xfce-")
+	os.Setenv("XDG_CURRENT_DESKTOP", "XFCE")
+	
+	// Ensure data dirs are set for icons/themes
+	if os.Getenv("XDG_DATA_DIRS") == "" {
+		os.Setenv("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
+	}
+	if os.Getenv("XDG_CONFIG_DIRS") == "" {
+		os.Setenv("XDG_CONFIG_DIRS", "/etc/xdg")
+	}
 
 	// Labwc config dir
 	home := os.Getenv("HOME")
@@ -52,9 +65,35 @@ func startWayland(displayNum string) error {
 	_ = os.WriteFile(filepath.Join(configDir, "rc.xml"), []byte(rc), 0644)
 
 	// Autostart script for XFCE components (Native Wayland)
+	// We use xfconf-query to force high-res icons and standard background
 	autostart := `#!/bin/sh
 (
   sleep 4
+  
+  # Ensure xfconfd is running
+  /usr/lib/x86_64-linux-gnu/xfce4/xfconf/xfconfd &
+  sleep 1
+
+  # Set Icon Theme (Elementary is very high quality for XFCE)
+  xfconf-query -c xsettings -p /Net/IconThemeName -s "elementary-Xfce-darker" --create
+  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s 1 --create
+  
+  # Set Theme
+  xfconf-query -c xsettings -p /Net/ThemeName -s "Greybird" --create
+  
+  # Set Background (The XFCE Mouse image)
+  # We try multiple property paths to ensure it sticks across versions
+  BG_FILE="/usr/share/backgrounds/xfce/xfce-blue.jpg"
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorHEADLESS-1/workspace0/last-image -s "$BG_FILE" --create
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s "$BG_FILE" --create
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorHEADLESS-1/workspace0/image-style -n -t int -s 5 --create
+  
+  # Disable session management warnings
+  xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
+  
+  # Ensure components use Wayland where possible
+  export GDK_BACKEND=wayland
+  
   xfsettingsd &
   xfce4-panel &
   xfdesktop &
@@ -102,7 +141,7 @@ func startWayland(displayNum string) error {
 	startWaylandInputHelper()
 
 	// Wait a moment for UI components to stabilize
-	time.Sleep(12 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	return nil
 }
