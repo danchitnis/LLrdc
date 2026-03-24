@@ -91,8 +91,7 @@ func startWayland(displayNum string) error {
   # Disable session management warnings
   xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
   
-  # Ensure components use Xwayland for stability with XFCE 4.18
-  export GDK_BACKEND=x11
+  # Ensure components run on Wayland natively with XFCE 4.20
   
   xfsettingsd &
   xfce4-panel &
