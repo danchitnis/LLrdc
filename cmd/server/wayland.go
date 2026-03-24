@@ -55,12 +55,64 @@ func startWayland(displayNum string) error {
   <core>
     <decoration>none</decoration>
   </core>
+  <keyboard>
+    <default />
+  </keyboard>
+  <mouse>
+    <default />
+    <!-- Disable the default root menu on right click -->
+    <action name="ShowMenu" menu="root-menu" button="Right" context="Root" clear="true" />
+  </mouse>
 </labwc_config>`
 	_ = os.WriteFile(filepath.Join(configDir, "rc.xml"), []byte(rc), 0644)
 
 	// Outputs file to map the headless output name
 	outputs := "HEADLESS-1 1920x1080\n"
 	_ = os.WriteFile(filepath.Join(configDir, "outputs"), []byte(outputs), 0644)
+
+	bgFile := Wallpaper
+	if bgFile == "" {
+		bgFile = "/usr/share/backgrounds/xfce/xfce-blue.jpg"
+	}
+
+	// Native labwc autostart script
+	autostart := fmt.Sprintf(`#!/bin/sh
+# Wait for the compositor to settle
+sleep 1
+
+# Force headless output resolution
+wlr-randr --output HEADLESS-1 --mode 1920x1080
+
+# Set Wayland native backend for GTK/XFCE
+export GDK_BACKEND=wayland
+
+# Launch XFCE Components
+xfsettingsd &
+xfce4-panel &
+xfdesktop &
+
+# Apply Theme & Background Properties after components start
+(
+  sleep 3
+  xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
+  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s 1 --create
+  xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
+  
+  for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
+    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "%s" --create
+    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/image-style -n -t int -s 5 --create
+    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/color-style -n -t int -s 0 --create
+  done
+  
+  xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
+  xfdesktop --reload
+  
+  # swaybg is more reliable for Wayland backgrounds on labwc
+  # It will draw below xfdesktop if xfdesktop decides to work, or visible if xfdesktop is transparent
+  swaybg -o HEADLESS-1 -i "%s" -m stretch &
+) &
+`, bgFile, bgFile)
+	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
 
 	// Set global screen size
 	initScreenSize(1920, 1080)
@@ -104,40 +156,8 @@ func startWayland(displayNum string) error {
 	// Start native wayland input helper
 	startWaylandInputHelper()
 
-	// Launch XFCE components
-	go func() {
-		time.Sleep(2 * time.Second)
-		log.Println("Launching XFCE components...")
-		
-		env := append(os.Environ(), 
-			"XDG_RUNTIME_DIR="+runDir,
-			"WAYLAND_DISPLAY=wayland-0",
-			"GDK_BACKEND=wayland",
-		)
-
-		// 1. Force resolution
-		runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--mode", "1920x1080"}, env)
-		
-		// 2. Launch Core XFCE (without xfdesktop)
-		exec.Command("sh", "-c", "XDG_RUNTIME_DIR="+runDir+" WAYLAND_DISPLAY=wayland-0 xfsettingsd").Start()
-		exec.Command("sh", "-c", "XDG_RUNTIME_DIR="+runDir+" WAYLAND_DISPLAY=wayland-0 xfce4-panel").Start()
-
-		// 3. Set Background reliably with swaybg
-		bgFile := Wallpaper
-		if bgFile == "" {
-			bgFile = "/usr/share/backgrounds/xfce/xfce-blue.jpg"
-		}
-		log.Printf("Applying background with swaybg: %s", bgFile)
-		exec.Command("sh", "-c", "XDG_RUNTIME_DIR="+runDir+" WAYLAND_DISPLAY=wayland-0 swaybg -i "+bgFile+" -m stretch").Start()
-
-		time.Sleep(2 * time.Second)
-
-		// 4. Set Theme & Icons
-		runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Net/IconThemeName", "-n", "-t", "string", "-s", "elementary-Xfce-darker", "--create"}, env)
-		runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Gdk/WindowScalingFactor", "-n", "-t", "int", "-s", "1", "--create"}, env)
-		runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Net/ThemeName", "-n", "-t", "string", "-s", "Greybird", "--create"}, env)
-		runWithEnv("xfconf-query", []string{"-c", "xfce4-session", "-p", "/general/SaveOnExit", "-n", "-t", "bool", "-s", "false", "--create"}, env)
-	}()
+	// Wait a moment for UI components to stabilize
+	time.Sleep(5 * time.Second)
 
 	return nil
 }
