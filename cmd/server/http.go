@@ -176,6 +176,46 @@ func broadcastConfig(restarted bool) {
 	broadcastJSON(configMsg)
 }
 
+func handleInputMessage(msg map[string]interface{}) {
+	msgType, _ := msg["type"].(string)
+
+	switch msgType {
+	case "keydown", "keyup", "key":
+		if key, ok := msg["key"].(string); ok {
+			injectKey(key, msgType, Display)
+		}
+	case "mousemove":
+		if x, ok1 := msg["x"].(float64); ok1 {
+			if y, ok2 := msg["y"].(float64); ok2 {
+				injectMouseMove(x, y, Display)
+			}
+		}
+	case "mousebtn":
+		if btn, ok := msg["button"].(float64); ok {
+			if action, ok2 := msg["action"].(string); ok2 {
+				injectMouseButton(int(btn), action, Display)
+			}
+		}
+	case "wheel":
+		if dx, ok1 := msg["deltaX"].(float64); ok1 {
+			if dy, ok2 := msg["deltaY"].(float64); ok2 {
+				injectMouseWheel(dx, dy, Display)
+			}
+		}
+	case "spawn":
+		if cmd, ok := msg["command"].(string); ok {
+			allowed := map[string]bool{
+				"gnome-calculator": true, "weston-terminal": true, "gedit": true,
+				"mousepad": true, "xclock": true, "xeyes": true, "xfce4-terminal": true,
+			}
+			parts := strings.Fields(cmd)
+			if len(parts) > 0 && allowed[parts[0]] {
+				spawnApp(cmd, Display)
+			}
+		}
+	}
+}
+
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -269,39 +309,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		msgType, _ := msg["type"].(string)
 
 		switch msgType {
-		case "keydown", "keyup", "key":
-			if key, ok := msg["key"].(string); ok {
-				injectKey(key, msgType, Display)
-			}
-		case "mousemove":
-			if x, ok1 := msg["x"].(float64); ok1 {
-				if y, ok2 := msg["y"].(float64); ok2 {
-					injectMouseMove(x, y, Display)
-				}
-			}
-		case "mousebtn":
-			if btn, ok := msg["button"].(float64); ok {
-				if action, ok2 := msg["action"].(string); ok2 {
-					injectMouseButton(int(btn), action, Display)
-				}
-			}
-		case "wheel":
-			if dx, ok1 := msg["deltaX"].(float64); ok1 {
-				if dy, ok2 := msg["deltaY"].(float64); ok2 {
-					injectMouseWheel(dx, dy, Display)
-				}
-			}
-		case "spawn":
-			if cmd, ok := msg["command"].(string); ok {
-				allowed := map[string]bool{
-					"gnome-calculator": true, "weston-terminal": true, "gedit": true,
-					"mousepad": true, "xclock": true, "xeyes": true, "xfce4-terminal": true,
-				}
-				parts := strings.Fields(cmd)
-				if len(parts) > 0 && allowed[parts[0]] {
-					spawnApp(cmd, Display)
-				}
-			}
+		case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
+			handleInputMessage(msg)
 		case "config":
 			hasBwOrQuality := false
 			if hdpiFloat, ok := msg["hdpi"].(float64); ok {

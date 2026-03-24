@@ -47,7 +47,13 @@ webrtc = new WebRTCManager(
 );
 window.webrtcManager = webrtc;
 
-setupInput((data) => network.sendMsg(data));
+setupInput((data) => {
+    if (webrtc.inputChannel && webrtc.inputChannel.readyState === 'open') {
+        webrtc.inputChannel.send(data);
+    } else {
+        network.sendMsg(data);
+    }
+});
 
 interface ConfigMessage {
     type: 'config';

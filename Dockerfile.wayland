@@ -17,10 +17,8 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
   labwc \
-  wlrctl \
   wf-recorder \
   swaybg \
-  ydotool \
   ffmpeg \
   xfce4-session \
   xfce4-panel \
@@ -29,6 +27,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   dbus-x11 \
   ca-certificates \
   sudo \
+  gcc \
+  libc6-dev \
+  libwayland-dev \
+  wayland-protocols \
+  libwayland-bin \
+  pkg-config \
   && rm -rf /var/lib/apt/lists/*
 
 ARG UID=1000
@@ -40,6 +44,13 @@ RUN userdel -r ubuntu || true \
 WORKDIR /app
 COPY --from=node-builder /app/public/ ./public/
 COPY --from=builder /app/llrdc /app/llrdc
+COPY cmd/server/wayland_mouse_client.c ./
+COPY cmd/server/wlr-virtual-pointer-unstable-v1.xml ./
+
+# Generate protocol and build helper
+RUN wayland-scanner client-header wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-client-protocol.h \
+    && wayland-scanner private-code wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-client-protocol.c \
+    && gcc -o wayland_mouse_client wayland_mouse_client.c wlr-virtual-pointer-unstable-v1-client-protocol.c $(pkg-config --cflags --libs wayland-client)
 
 RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/

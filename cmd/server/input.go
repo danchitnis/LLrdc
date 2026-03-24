@@ -1,8 +1,13 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"log"
 	"math"
+	"os"
+	"os/exec"
+	"time"
 )
 
 type inputTask struct {
@@ -13,30 +18,52 @@ type inputTask struct {
 }
 
 var inputChan = make(chan inputTask, 5000)
-var uinputDev *UinputDevice
+var mouseStdin io.WriteCloser
 
-func init() {
+func startWaylandInputHelper() {
 	go func() {
-		var err error
-		uinputDev, err = CreateUinputDevice()
-		if err != nil {
-			log.Printf("Warning: Failed to create uinput device: %v. Mouse will not work.", err)
-		} else {
-			log.Println("Created virtual uinput mouse device.")
-			cleanupTasks = append(cleanupTasks, func() {
-				uinputDev.Close()
-			})
-		}
-
-		for task := range inputChan {
-			if uinputDev != nil {
-				execTask(task)
+		for {
+			// Start the Wayland mouse helper
+			cmd := exec.Command("./wayland_mouse_client")
+			cmd.Env = os.Environ()
+			cmd.Stderr = os.Stderr
+			
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				log.Printf("Failed to create stdin for mouse helper: %v", err)
+				time.Sleep(2 * time.Second)
+				continue
 			}
+			mouseStdin = stdin
+
+			if err := cmd.Start(); err != nil {
+				log.Printf("Failed to start mouse helper: %v", err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			log.Println("Wayland persistent mouse helper started.")
+
+			// Process tasks for this process instance
+			for task := range inputChan {
+				if err := execTask(task); err != nil {
+					log.Printf("Mouse helper communication error: %v", err)
+					break
+				}
+			}
+			
+			_ = cmd.Wait()
+			log.Println("Wayland mouse helper exited, restarting...")
+			time.Sleep(1 * time.Second)
 		}
 	}()
 }
 
-func execTask(task inputTask) {
+func execTask(task inputTask) error {
+	if mouseStdin == nil {
+		return fmt.Errorf("no mouse helper")
+	}
+
 	switch task.Type {
 	case "mousemove":
 		width, height := GetScreenSize()
@@ -47,27 +74,34 @@ func execTask(task inputTask) {
 		targetY := int(math.Round(task.NY * float64(height)))
 
 		if UseDebugInput {
-			log.Printf("Uinput mouse move to absolute: %d, %d", targetX, targetY)
+			log.Printf("Wayland mouse move: %d, %d", targetX, targetY)
 		}
 
-		uinputDev.MoveAbs(targetX, targetY)
+		_, err := fmt.Fprintf(mouseStdin, "move %d %d %d %d\n", targetX, targetY, width, height)
+		return err
 
 	case "mousebtn":
-		btnCode := uint16(BTN_LEFT)
+		// BTN_LEFT is 272 in Linux input
+		btnCode := 272
 		if task.Button == 1 {
-			btnCode = BTN_MIDDLE
+			btnCode = 274 // Middle
 		} else if task.Button == 2 {
-			btnCode = BTN_RIGHT
+			btnCode = 273 // Right
 		}
 
-		down := (task.Action == "mousedown")
+		state := 1 // Down
+		if task.Action == "mouseup" {
+			state = 0 // Up
+		}
 
 		if UseDebugInput {
-			log.Printf("Uinput mouse button %d down=%v", btnCode, down)
+			log.Printf("Wayland mouse button %d %s", btnCode, task.Action)
 		}
 
-		uinputDev.Button(btnCode, down)
+		_, err := fmt.Fprintf(mouseStdin, "button %d %d\n", btnCode, state)
+		return err
 	}
+	return nil
 }
 
 func injectMouseMove(nx, ny float64, display string) {

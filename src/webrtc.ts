@@ -2,6 +2,7 @@ import { log, statusEl, videoEl, displayEl, sharpnessLayerEl, ctx, updateStatusT
 
 export class WebRTCManager {
     public rtcPeer: RTCPeerConnection | null = null;
+    public inputChannel: RTCDataChannel | null = null;
     public isWebRtcActive = false;
     public fps = 0;
     public videoCodec = 'vp8';
@@ -50,6 +51,14 @@ export class WebRTCManager {
             bundlePolicy: 'max-bundle'
         });
         window.rtcPeer = this.rtcPeer;
+
+        this.inputChannel = this.rtcPeer.createDataChannel('input', {
+            ordered: false,
+            maxRetransmits: 0
+        });
+
+        this.inputChannel.onopen = () => log('Input DataChannel Opened');
+        this.inputChannel.onclose = () => log('Input DataChannel Closed');
 
         this.statsInterval = setInterval(() => this.pollStats(), 1000);
 

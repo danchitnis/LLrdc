@@ -11,9 +11,8 @@ test.describe('Wayland Mouse E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for mouse test...');
-    // Directly use docker run to avoid potential wrapper script issues in E2E.
-    // Mounting uinput and adding SYS_ADMIN is required for ydotool.
-    execSync(`docker run -d --name ${CONTAINER_NAME} --cap-add=SYS_ADMIN --device /dev/uinput:/dev/uinput -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:wayland-latest`);
+    // No longer need --device /dev/uinput or SYS_ADMIN as we use Wayland protocols.
+    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:wayland-latest`);
     
     await new Promise(r => setTimeout(r, 10000));
   });
@@ -52,9 +51,9 @@ test.describe('Wayland Mouse E2E', () => {
     console.log(logs);
     console.log('--- END LOGS ---');
     
-    // Check for "Uinput mouse move to absolute: 500, 300" (or close)
-    expect(logs).toContain('Uinput mouse move to absolute:');
-    expect(logs).toContain('Uinput mouse button 272 down=true');
+    // Check for "Wayland mouse move: 490, 300" (or close)
+    expect(logs).toContain('Wayland mouse move:');
+    expect(logs).toContain('Wayland mouse button 272 mousedown');
     
     await expect(statusEl).toHaveText(/WebRTC/i);
   });

@@ -39,6 +39,22 @@ func handleWebRTCOffer(msg map[string]interface{}, pc **webrtc.PeerConnection, w
 			}
 		})
 
+		(*pc).OnDataChannel(func(dc *webrtc.DataChannel) {
+			if dc.Label() == "input" {
+				log.Println("Input DataChannel opened")
+				dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+					if UseDebugInput {
+						log.Printf("Input DataChannel message received: %s", string(msg.Data))
+					}
+					var inputMsg map[string]interface{}
+					if err := json.Unmarshal(msg.Data, &inputMsg); err != nil {
+						return
+					}
+					handleInputMessage(inputMsg)
+				})
+			}
+		})
+
 		if err := (*pc).SetRemoteDescription(sdp); err != nil {
 			log.Printf("SetRemoteDescription error: %v", err)
 			return

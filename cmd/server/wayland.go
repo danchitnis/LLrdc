@@ -86,6 +86,9 @@ func startWayland(displayNum string) error {
 
 	log.Println("Wayland socket is ready.")
 
+	// Start native wayland input helper
+	startWaylandInputHelper()
+
 	// Create a dark green gradient background using ffmpeg
 	bgPath := "/tmp/bg.png"
 	_ = exec.Command("ffmpeg", "-f", "lavfi", "-i", "color=s=1280x720:c=0x001100", "-vf", "vignette=PI/4", "-frames:v", "1", bgPath).Run()
