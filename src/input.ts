@@ -49,7 +49,11 @@ export function setupInput(sendMsg: (data: string) => void) {
         sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
     });
 
+    overlayEl.tabIndex = 0;
+    overlayEl.style.outline = 'none';
+
     overlayEl.addEventListener('mousedown', (e: MouseEvent) => {
+        overlayEl.focus();
         const pos = getNormalizedPos(e);
         if (pos) {
             sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
@@ -62,6 +66,21 @@ export function setupInput(sendMsg: (data: string) => void) {
         sendMsg(JSON.stringify({ type: 'mousebtn', button: e.button, action: 'mouseup' }));
         e.preventDefault();
     });
+
+    overlayEl.addEventListener('keydown', (e: KeyboardEvent) => {
+        sendMsg(JSON.stringify({ type: 'keydown', key: e.code }));
+        e.preventDefault();
+    });
+
+    overlayEl.addEventListener('keyup', (e: KeyboardEvent) => {
+        sendMsg(JSON.stringify({ type: 'keyup', key: e.code }));
+        e.preventDefault();
+    });
+
+    overlayEl.addEventListener('wheel', (e: WheelEvent) => {
+        sendMsg(JSON.stringify({ type: 'wheel', deltaX: e.deltaX, deltaY: e.deltaY }));
+        e.preventDefault();
+    }, { passive: false });
 
     overlayEl.addEventListener('contextmenu', (e: MouseEvent) => {
         e.preventDefault();

@@ -74,10 +74,6 @@ func startWayland(displayNum string) error {
   /usr/lib/x86_64-linux-gnu/xfce4/xfconf/xfconfd &
   sleep 1
 
-  # Force 1080p resolution using wlr-randr
-  # Connector name is usually HEADLESS-1
-  wlr-randr --output HEADLESS-1 --custom-mode 1920x1080 || wlr-randr --output WL-1 --custom-mode 1920x1080 || wlr-randr --output None-1 --custom-mode 1920x1080
-
   # Set Icon Theme (Elementary is very high quality for XFCE)
   xfconf-query -c xsettings -p /Net/IconThemeName -s "elementary-Xfce-darker" --create
   xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s 1 --create
@@ -86,6 +82,7 @@ func startWayland(displayNum string) error {
   xfconf-query -c xsettings -p /Net/ThemeName -s "Greybird" --create
   
   # Set Background (The XFCE Mouse image)
+  # We try multiple property paths to ensure it sticks across versions
   BG_FILE="/usr/share/backgrounds/xfce/xfce-blue.jpg"
   xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorHEADLESS-1/workspace0/last-image -s "$BG_FILE" --create
   xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s "$BG_FILE" --create
@@ -94,8 +91,8 @@ func startWayland(displayNum string) error {
   # Disable session management warnings
   xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
   
-  # Ensure components use Wayland where possible
-  export GDK_BACKEND=wayland
+  # Ensure components use Xwayland for stability with XFCE 4.18
+  export GDK_BACKEND=x11
   
   xfsettingsd &
   xfce4-panel &
@@ -105,8 +102,8 @@ func startWayland(displayNum string) error {
 `
 	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
 
-	// Outputs for headless fallback
-	outputs := "HEADLESS-1 1920x1080\nWL-1 1920x1080\nNone-1 1920x1080\n"
+	// Outputs for headless
+	outputs := "HEADLESS-1 1920x1080\n"
 	_ = os.WriteFile(filepath.Join(configDir, "outputs"), []byte(outputs), 0644)
 
 	// Set global screen size

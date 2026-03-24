@@ -150,7 +150,7 @@ func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time) {
 
 func createPeerConnection() (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
-	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
+	// s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port)) // Removed restrictive port pinning
 
 	// Optionally allow overriding the public IP (e.g., if behind a strict NAT)
 	publicIP := WebRTCPublicIP

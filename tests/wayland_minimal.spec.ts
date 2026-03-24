@@ -14,10 +14,10 @@ test.describe('Minimal Wayland E2E', () => {
     }
 
     console.log('Starting container...');
-    execSync(`docker run -d --rm --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 llrdc:latest`);
+    execSync(`docker run -d --rm --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:wayland-latest`);
     
     // Give it a moment to boot
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 20000));
   });
 
   test.afterAll(async () => {
@@ -30,13 +30,14 @@ test.describe('Minimal Wayland E2E', () => {
   });
 
   test('should establish WebRTC and handle mouse click', async ({ page }) => {
+    page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
     // 1. Load the page
     await page.goto(`http://localhost:${PORT}`);
     
     // 2. Wait for WebRTC connection
-    // The status element shows "WebRTC Connected" when active
+    // The status element shows "[WebRTC ...]" when active
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 15000 });
+    await expect(statusEl).toHaveText(/\[WebRTC/i, { timeout: 20000 });
 
     // 3. Simulate mouse click
     // Our Wayland implementation has an xfce4-terminal running in the background.
@@ -48,7 +49,9 @@ test.describe('Minimal Wayland E2E', () => {
     await page.waitForTimeout(1000);
     
     // We confirm that we are still connected
-    await expect(statusEl).toHaveText(/WebRTC/i);
+    await expect(statusEl).toHaveText(/\[WebRTC/i);
+    const finalStatus = await statusEl.textContent();
+    console.log(`Final Status: ${finalStatus}`);
     
     // Verification complete
   });

@@ -16,16 +16,11 @@ RUN npm run build
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list \
-  && apt-get update && apt-get install -y --no-install-recommends \
-  software-properties-common \
-  gpg-agent \
-  && add-apt-repository ppa:xubuntu-dev/experimental -y \
-  && apt-get update --fix-missing && apt-get full-upgrade -y \
-  && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
   labwc \
   xwayland \
   wlr-randr \
+  wlrctl \
   x11-utils \
   dbus-x11 \
   wf-recorder \
@@ -45,6 +40,7 @@ RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://archive.ubuntu.com/ubuntu
   gcc \
   libc6-dev \
   libwayland-dev \
+  libxkbcommon-dev \
   wayland-protocols \
   libwayland-bin \
   pkg-config \
@@ -59,13 +55,16 @@ RUN userdel -r ubuntu || true \
 WORKDIR /app
 COPY --from=node-builder /app/public/ ./public/
 COPY --from=builder /app/llrdc /app/llrdc
-COPY cmd/server/wayland_mouse_client.c ./
+COPY cmd/server/wayland_input_client.c ./
 COPY cmd/server/wlr-virtual-pointer-unstable-v1.xml ./
+COPY cmd/server/virtual-keyboard-unstable-v1.xml ./
 
-# Generate protocol and build helper
+# Generate protocols and build helper
 RUN wayland-scanner client-header wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-client-protocol.h \
     && wayland-scanner private-code wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-client-protocol.c \
-    && gcc -o wayland_mouse_client wayland_mouse_client.c wlr-virtual-pointer-unstable-v1-client-protocol.c $(pkg-config --cflags --libs wayland-client)
+    && wayland-scanner client-header virtual-keyboard-unstable-v1.xml virtual-keyboard-unstable-v1-client-protocol.h \
+    && wayland-scanner private-code virtual-keyboard-unstable-v1.xml virtual-keyboard-unstable-v1-client-protocol.c \
+    && gcc -o wayland_input_client wayland_input_client.c wlr-virtual-pointer-unstable-v1-client-protocol.c virtual-keyboard-unstable-v1-client-protocol.c $(pkg-config --cflags --libs wayland-client xkbcommon)
 
 RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/

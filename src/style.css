@@ -150,10 +150,10 @@ body {
   z-index: 2;
   background-color: transparent;
 }
-
 #webrtc-video {
-  z-index: -1;
-  opacity: 0.01;
+  z-index: 0;
+  opacity: 0.001;
+  pointer-events: none;
 }
 
 #input-overlay {

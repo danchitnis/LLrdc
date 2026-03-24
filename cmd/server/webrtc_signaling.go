@@ -29,6 +29,10 @@ func handleWebRTCOffer(msg map[string]interface{}, pc **webrtc.PeerConnection, w
 		}
 		*pc = newPC
 
+		(*pc).OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+			log.Printf("WebRTC PeerConnection state changed: %s", s.String())
+		})
+
 		(*pc).OnICECandidate(func(candidate *webrtc.ICECandidate) {
 			if candidate != nil {
 				cJSON := candidate.ToJSON()
