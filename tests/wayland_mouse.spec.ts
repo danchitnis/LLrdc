@@ -12,7 +12,8 @@ test.describe('Wayland Mouse E2E', () => {
 
     console.log('Starting container for mouse test...');
     // Directly use docker run to avoid potential wrapper script issues in E2E.
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:wayland-latest`);
+    // Mounting uinput and adding SYS_ADMIN is required for ydotool.
+    execSync(`docker run -d --name ${CONTAINER_NAME} --cap-add=SYS_ADMIN --device /dev/uinput:/dev/uinput -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:wayland-latest`);
     
     await new Promise(r => setTimeout(r, 10000));
   });
