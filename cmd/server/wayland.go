@@ -98,15 +98,13 @@ func startWayland(displayNum string) error {
 	bg.Env = os.Environ()
 	_ = bg.Start()
 
-	// Launch a terminal so there's something to interact with
-	term := exec.Command("xfce4-terminal")
-	term.Env = os.Environ()
-	_ = term.Start()
-
-	// Damage loop is removed as it causes cursor flicker/drift and isn't needed with active background
+	// Launch a full XFCE session
+	session := exec.Command("xfce4-session")
+	session.Env = os.Environ()
+	_ = session.Start()
 
 	// Wait a moment for Xwayland and UI to initialize
-	time.Sleep(3 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	return nil
 }
