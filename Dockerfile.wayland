@@ -15,15 +15,23 @@ RUN npm run build
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
+  software-properties-common \
+  gpg-agent \
+  && add-apt-repository ppa:xubuntu-dev/experimental -y \
+  && apt-get update && apt-get full-upgrade -y \
+  && apt-get install -y --no-install-recommends \
   labwc \
+  xwayland \
+  x11-utils \
+  dbus-x11 \
   wf-recorder \
   swaybg \
   ffmpeg \
   xfce4 \
   xfce4-goodies \
   coreutils \
-  dbus-x11 \
   ca-certificates \
   sudo \
   gcc \
