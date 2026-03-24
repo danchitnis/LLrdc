@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -230,6 +231,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			}
 			ffmpegMutex.Unlock()
 
+			w, h := GetScreenSize()
 			// Hardcoded minimal VP8 config using wf-recorder
 			args := []string{
 				"-o0", "wf-recorder",
@@ -238,7 +240,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				"-m", "ivf",
 				"-x", "yuv420p",
 				"-r", "30",
-				"-g", "0,0 1920x1080",     // Force 1080p capture region
+				"-g", fmt.Sprintf("0,0 %dx%d", w, h),     // Dynamic capture region
 				"-p", "deadline=realtime",
 				"-p", "cpu-used=6",
 				"-p", "threads=4",

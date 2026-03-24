@@ -43,13 +43,11 @@ func startWayland(displayNum string) error {
 		os.Setenv("XDG_CONFIG_DIRS", "/etc/xdg")
 	}
 
-	// Labwc config dir
-	home := os.Getenv("HOME")
-	if home == "" {
-		home = "/home/remote"
-	}
-	configDir := filepath.Join(home, ".config", "labwc")
+	// Labwc config dir in a reliable location
+	configDir := "/tmp/labwc"
+	_ = os.RemoveAll(configDir)
 	_ = os.MkdirAll(configDir, 0755)
+	os.Setenv("XDG_CONFIG_HOME", "/tmp") // labwc looks for XDG_CONFIG_HOME/labwc
 
 	rc := `<?xml version="1.0"?>
 <labwc_config>
@@ -66,51 +64,60 @@ func startWayland(displayNum string) error {
 
 	// Autostart script for XFCE components (Native Wayland)
 	// We use xfconf-query to force high-res icons and standard background
-	autostart := `#!/bin/sh
+	autostart := fmt.Sprintf(`#!/bin/sh
 (
-  sleep 4
+  set -x
+  sleep 5
   
-  # Ensure xfconfd is running
-  /usr/lib/x86_64-linux-gnu/xfce4/xfconf/xfconfd &
-  sleep 1
-
-  # Set Icon Theme (Elementary is very high quality for XFCE)
-  xfconf-query -c xsettings -p /Net/IconThemeName -s "elementary-Xfce-darker" --create
-  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s 1 --create
+  # Force resolution for headless output
+  XDG_RUNTIME_DIR=/tmp/llrdc-run WAYLAND_DISPLAY=wayland-0 wlr-randr --output HEADLESS-1 --mode 1920x1080
   
-  # Set Theme
-  xfconf-query -c xsettings -p /Net/ThemeName -s "Greybird" --create
+  sleep 2
   
-  # Set Background (The XFCE Mouse image)
-  # We try multiple property paths to ensure it sticks across versions
-  BG_FILE="/usr/share/backgrounds/xfce/xfce-blue.jpg"
-  xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorHEADLESS-1/workspace0/last-image -s "$BG_FILE" --create
-  xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s "$BG_FILE" --create
-  xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitorHEADLESS-1/workspace0/image-style -n -t int -s 5 --create
-  
-  # Disable session management warnings
-  xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
-  
-  # Ensure components run on Wayland natively with XFCE 4.20
-  
+  # Start background and panel
   xfsettingsd &
   xfce4-panel &
   xfdesktop &
-  xfce4-terminal &
-) &
-`
-	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
+  
+  sleep 3
+  
+  # Set properties for XFCE components
+  BG_FILE="%s"
+  if [ -z "$BG_FILE" ]; then
+    BG_FILE="/usr/share/backgrounds/xfce/xfce-blue.jpg"
+  fi
+  
+  for m in monitor0 monitorHEADLESS-1 monitor1 monitorHDMI-A-1 default; do
+    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "$BG_FILE" --create
+    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/image-style -n -t int -s 5 --create
+  done
+  
+  # Set Icon Theme (Elementary is very high quality for XFCE)
+  xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
+  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s 1 --create
+  
+  # Set Theme
+  xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
+  
+  # Disable session management warnings
+  xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
 
-	// Outputs for headless
-	outputs := "HEADLESS-1 1920x1080\n"
-	_ = os.WriteFile(filepath.Join(configDir, "outputs"), []byte(outputs), 0644)
+  # Trigger background update
+  xfdesktop --next
+) &
+`, Wallpaper)
+	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
 
 	// Set global screen size
 	initScreenSize(1920, 1080)
 
 	// Start labwc inside dbus-run-session
-	cmd := exec.Command("dbus-run-session", "labwc")
-	cmd.Env = os.Environ()
+	cmd := exec.Command("dbus-run-session", "labwc", "-c", configDir)
+	cmd.Env = append(os.Environ(), 
+		"XDG_RUNTIME_DIR="+runDir,
+		"WLR_BACKENDS=headless",
+		"WLR_HEADLESS_OUTPUTS=1920x1080",
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

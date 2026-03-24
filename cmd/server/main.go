@@ -15,7 +15,7 @@ func main() {
 
 	// Initialize config
 	initConfig()
-	initScreenSize(3840, 2160)
+	initScreenSize(1920, 1080)
 
 	// Setup signal handling
 	sigs := make(chan os.Signal, 1)
@@ -27,6 +27,9 @@ func main() {
 
 	// 1. Start Wayland unless TEST_PATTERN is set
 	if !TestPattern {
+		if os.Getenv("USE_WAYLAND") == "true" {
+			UseWayland = true
+		}
 		if err := startWayland(DisplayNum); err != nil {
 			log.Fatalf("Failed to initialize Wayland: %v", err)
 		}

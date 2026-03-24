@@ -15,6 +15,7 @@ RUN npm run build
 
 FROM ubuntu:25.04
 ENV DEBIAN_FRONTEND=noninteractive
+ENV USE_WAYLAND=true
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   labwc \

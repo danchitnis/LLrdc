@@ -27,6 +27,7 @@ var (
 	UseDebugInput           bool
 	TestPattern             bool
 	TestMinimalX11          bool
+	UseWayland              bool
 	EnableClipboard         bool
 	EnableHybrid            bool
 	EnableAudio             bool
@@ -138,6 +139,7 @@ func initConfig() {
 	flag.StringVar(&DisplayNum, "display-num", defaultDisplayNum, "X11 Display number (e.g., 99 for :99)")
 	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of X11")
 	flag.BoolVar(&TestMinimalX11, "test-minimal-x11", defaultTestMinimalX11, "Start minimal X11 without full DE")
+	flag.BoolVar(&UseWayland, "use-wayland", os.Getenv("USE_WAYLAND") == "true", "Run in Wayland mode")
 	flag.StringVar(&Wallpaper, "wallpaper", defaultWallpaper, "Path to wallpaper image")
 	flag.StringVar(&WebRTCPublicIP, "webrtc-public-ip", defaultWebRTCPublicIP, "Public IP for WebRTC")
 	flag.StringVar(&WebRTCInterfaces, "webrtc-interfaces", defaultWebRTCInterfaces, "Comma-separated allowed network interfaces for WebRTC")
