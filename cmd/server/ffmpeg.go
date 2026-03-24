@@ -238,12 +238,14 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				"-m", "ivf",
 				"-x", "yuv420p",
 				"-r", "30",
+				"-g", "0,0 1920x1080",     // Force 1080p capture region
 				"-p", "deadline=realtime",
 				"-p", "cpu-used=6",
 				"-p", "threads=4",
-				"-p", "b:v=1M",
-				"-p", "static-thresh=0", // Reduce shimmering by disabling bit skipping on static areas
-				"-p", "lag-in-frames=0", // Lowest latency
+				"-p", "b=5M",             // Target bitrate 5 Mbps
+				"-p", "maxrate=5M",       // Max bitrate 5 Mbps
+				"-p", "static-thresh=0",  // Reduce shimmering
+				"-p", "lag-in-frames=0",  // Lowest latency
 				"-f", "pipe:1",
 			}
 
