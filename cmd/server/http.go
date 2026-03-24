@@ -279,9 +279,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					injectMouseMove(x, y, Display)
 				}
 			}
-		case "mousedown", "mouseup":
+		case "mousebtn":
 			if btn, ok := msg["button"].(float64); ok {
-				injectMouseButton(int(btn), msgType, Display)
+				if action, ok2 := msg["action"].(string); ok2 {
+					injectMouseButton(int(btn), action, Display)
+				}
 			}
 		case "wheel":
 			if dx, ok1 := msg["deltaX"].(float64); ok1 {

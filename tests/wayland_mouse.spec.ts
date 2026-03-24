@@ -52,8 +52,9 @@ test.describe('Wayland Mouse E2E', () => {
     console.log(logs);
     console.log('--- END LOGS ---');
     
-    // Check for "Wayland mouse move to absolute: 500, 300" (or close, due to normalization)
-    expect(logs).toContain('Wayland mouse move to absolute:');
+    // Check for "Uinput mouse move to absolute: 500, 300" (or close)
+    expect(logs).toContain('Uinput mouse move to absolute:');
+    expect(logs).toContain('Uinput mouse button 272 down=true');
     
     await expect(statusEl).toHaveText(/WebRTC/i);
   });

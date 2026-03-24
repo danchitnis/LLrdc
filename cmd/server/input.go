@@ -3,9 +3,6 @@ package main
 import (
 	"log"
 	"math"
-	"os"
-	"os/exec"
-	"strconv"
 )
 
 type inputTask struct {
@@ -16,11 +13,25 @@ type inputTask struct {
 }
 
 var inputChan = make(chan inputTask, 5000)
+var uinputDev *UinputDevice
 
 func init() {
 	go func() {
+		var err error
+		uinputDev, err = CreateUinputDevice()
+		if err != nil {
+			log.Printf("Warning: Failed to create uinput device: %v. Mouse will not work.", err)
+		} else {
+			log.Println("Created virtual uinput mouse device.")
+			cleanupTasks = append(cleanupTasks, func() {
+				uinputDev.Close()
+			})
+		}
+
 		for task := range inputChan {
-			execTask(task)
+			if uinputDev != nil {
+				execTask(task)
+			}
 		}
 	}()
 }
@@ -30,41 +41,32 @@ func execTask(task inputTask) {
 	case "mousemove":
 		width, height := GetScreenSize()
 		if width <= 0 || height <= 0 {
-			return
+			width, height = 1280, 720
 		}
 		targetX := int(math.Round(task.NX * float64(width)))
 		targetY := int(math.Round(task.NY * float64(height)))
 
 		if UseDebugInput {
-			log.Printf("Wayland mouse move to absolute: %d, %d", targetX, targetY)
+			log.Printf("Uinput mouse move to absolute: %d, %d", targetX, targetY)
 		}
 
-		// Using ydotool for absolute movement. ydotoold must be running.
-		cmd := exec.Command("ydotool", "mousemove", "--absolute", strconv.Itoa(targetX), strconv.Itoa(targetY))
-		cmd.Env = os.Environ()
-		_ = cmd.Run()
+		uinputDev.MoveAbs(targetX, targetY)
 
 	case "mousebtn":
-		// ydotool key codes for mouse buttons: Left=272, Right=273, Middle=274
-		btnCode := 272
+		btnCode := uint16(BTN_LEFT)
 		if task.Button == 1 {
-			btnCode = 274 // Middle
+			btnCode = BTN_MIDDLE
 		} else if task.Button == 2 {
-			btnCode = 273 // Right
+			btnCode = BTN_RIGHT
 		}
 
-		state := "1" // Down
-		if task.Action == "mouseup" {
-			state = "0" // Up
-		}
+		down := (task.Action == "mousedown")
 
 		if UseDebugInput {
-			log.Printf("Wayland mouse button %d %s", btnCode, task.Action)
+			log.Printf("Uinput mouse button %d down=%v", btnCode, down)
 		}
 
-		cmd := exec.Command("ydotool", "key", strconv.Itoa(btnCode)+":"+state)
-		cmd.Env = os.Environ()
-		_ = cmd.Run()
+		uinputDev.Button(btnCode, down)
 	}
 }
 

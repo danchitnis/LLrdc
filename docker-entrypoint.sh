@@ -10,5 +10,9 @@ if [ -n "${HOST_UID}" ]; then
     fi
 fi
 
+if [ -e /dev/uinput ]; then
+    chmod 666 /dev/uinput || true
+fi
+
 # Execute the main process as the remote user, preserving environment
 exec sudo -E -H -u remote "$@"
