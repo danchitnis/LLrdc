@@ -241,7 +241,9 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				"-p", "deadline=realtime",
 				"-p", "cpu-used=6",
 				"-p", "threads=4",
-				"-p", "b:v=2M",
+				"-p", "b:v=1M",
+				"-p", "static-thresh=0", // Reduce shimmering by disabling bit skipping on static areas
+				"-p", "lag-in-frames=0", // Lowest latency
 				"-f", "pipe:1",
 			}
 

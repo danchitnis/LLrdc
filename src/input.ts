@@ -11,8 +11,8 @@ export function setupInput(sendMsg: (data: string) => void) {
         const rect = overlayEl.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return null;
 
-        let videoW = videoEl?.videoWidth || displayEl?.width || 1280;
-        let videoH = videoEl?.videoHeight || displayEl?.height || 720;
+        let videoW = videoEl?.videoWidth || displayEl?.width || 1920;
+        let videoH = videoEl?.videoHeight || displayEl?.height || 1080;
 
         const containerRatio = rect.width / rect.height;
         const videoRatio = videoW / videoH;

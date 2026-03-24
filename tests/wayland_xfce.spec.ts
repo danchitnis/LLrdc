@@ -7,7 +7,7 @@ const PORT = '8083';
 test.describe('Wayland XFCE Verification', () => {
   test.beforeAll(async () => {
     try {
-      execSync(`docker rm -f ${CONTAINER_NAME}`);
+      execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
     } catch (e) {}
 
     console.log('Starting container for XFCE verification...');
@@ -20,7 +20,7 @@ test.describe('Wayland XFCE Verification', () => {
   test.afterAll(async () => {
     console.log('Cleaning up container...');
     try {
-      execSync(`docker rm -f ${CONTAINER_NAME}`);
+      execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
     } catch (e) {}
   });
 

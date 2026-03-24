@@ -8,7 +8,7 @@ test.describe('Minimal Wayland E2E', () => {
   test.beforeAll(async () => {
     // Ensure any dangling container from a previous failed run is removed
     try {
-      execSync(`docker rm -f ${CONTAINER_NAME}`);
+      execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
     } catch (e) {
       // ignore
     }
@@ -23,7 +23,7 @@ test.describe('Minimal Wayland E2E', () => {
   test.afterAll(async () => {
     console.log('Cleaning up container...');
     try {
-      execSync(`docker rm -f ${CONTAINER_NAME}`);
+      execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
     } catch (e) {
       // ignore
     }

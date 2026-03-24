@@ -102,8 +102,12 @@ func startWayland(displayNum string) error {
 `
 	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
 
+	// Outputs for headless
+	outputs := "HEADLESS-1 1920x1080\n"
+	_ = os.WriteFile(filepath.Join(configDir, "outputs"), []byte(outputs), 0644)
+
 	// Set global screen size
-	initScreenSize(1280, 720)
+	initScreenSize(1920, 1080)
 
 	// Start labwc inside dbus-run-session
 	cmd := exec.Command("dbus-run-session", "labwc")

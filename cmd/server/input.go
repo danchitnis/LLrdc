@@ -68,7 +68,7 @@ func execTask(task inputTask) error {
 	case "mousemove":
 		width, height := GetScreenSize()
 		if width <= 0 || height <= 0 {
-			width, height = 1280, 720
+			width, height = 1920, 1080
 		}
 		targetX := int(math.Round(task.NX * float64(width)))
 		targetY := int(math.Round(task.NY * float64(height)))
