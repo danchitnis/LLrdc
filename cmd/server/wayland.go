@@ -118,7 +118,7 @@ xfdesktop &
 	initScreenSize(1920, 1080)
 
 	// Start labwc inside dbus-run-session
-	cmd := exec.Command("dbus-run-session", "sh", "-c", fmt.Sprintf("labwc -c %s", configDir))
+	cmd := exec.Command("dbus-run-session", "sh", "-c", "labwc")
 	cmd.Env = append(os.Environ(), 
 		"XDG_RUNTIME_DIR="+runDir,
 		"WLR_BACKENDS=headless",
