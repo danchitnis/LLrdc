@@ -42,12 +42,7 @@ export function setupInput(sendMsg: (data: string) => void) {
         };
     };
 
-    let lastMove = 0;
     overlayEl.addEventListener('mousemove', (e: MouseEvent) => {
-        const now = Date.now();
-        if (now - lastMove < 16) return; // ~60hz
-        lastMove = now;
-
         const pos = getNormalizedPos(e);
         if (!pos) return;
 

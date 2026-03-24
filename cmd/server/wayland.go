@@ -98,11 +98,6 @@ func startWayland(displayNum string) error {
 	bg.Env = os.Environ()
 	_ = bg.Start()
 
-	// Start xfce4-panel
-	panel := exec.Command("xfce4-panel")
-	panel.Env = os.Environ()
-	_ = panel.Start()
-
 	// Launch a terminal so there's something to interact with
 	term := exec.Command("xfce4-terminal")
 	term.Env = os.Environ()

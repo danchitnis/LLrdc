@@ -20,8 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   wf-recorder \
   swaybg \
   ffmpeg \
-  xfce4-session \
-  xfce4-panel \
   xfce4-terminal \
   coreutils \
   dbus-x11 \
