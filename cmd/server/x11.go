@@ -136,7 +136,7 @@ func resizeDisplay(width, height int) error {
 		log.Printf("Resizing Wayland display (HEADLESS-1) to %s", mode)
 		// Use wlr-randr for Wayland resizing
 		env := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
-		if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--mode", mode}, env); err != nil {
+		if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--custom-mode", mode}, env); err != nil {
 			return fmt.Errorf("wlr-randr failed: %v", err)
 		}
 		return nil
@@ -210,7 +210,12 @@ func waitForXServer(socketPath string, timeout time.Duration) error {
 func runWithEnv(cmd string, args []string, env []string) error {
 	c := exec.Command(cmd, args...)
 	c.Env = env
-	return c.Run()
+	out, err := c.CombinedOutput()
+	if err != nil {
+		log.Printf("Command %s failed: %v, Output: %s", cmd, err, string(out))
+		return fmt.Errorf("%s failed: %v", cmd, err)
+	}
+	return nil
 }
 
 func applyHdpiSettings(baseEnv []string) {

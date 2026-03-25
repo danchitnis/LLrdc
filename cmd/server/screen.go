@@ -13,10 +13,20 @@ var screenHeight atomic.Int64
 var maxScreenWidth atomic.Int64
 var maxScreenHeight atomic.Int64
 
-func initScreenSize(width, height int) {
-	maxScreenWidth.Store(int64(width))
-	maxScreenHeight.Store(int64(height))
-	setScreenSize(width, height)
+func initScreenSize(maxW, maxH int) {
+	maxScreenWidth.Store(int64(maxW))
+	maxScreenHeight.Store(int64(maxH))
+
+	initialW := 1920
+	initialH := 1080
+	if initialW > maxW {
+		initialW = maxW
+	}
+	if initialH > maxH {
+		initialH = maxH
+	}
+
+	setScreenSize(initialW, initialH)
 }
 
 func setScreenSize(width, height int) {

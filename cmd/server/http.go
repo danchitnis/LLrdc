@@ -312,7 +312,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 			handleInputMessage(msg)
 		case "config":
-			hasBwOrQuality := false
+			// Allow multiple rapid WebSocket messages to settle
+			time.Sleep(100 * time.Millisecond)
+
 			if hdpiFloat, ok := msg["hdpi"].(float64); ok {
 				hdpi := int(hdpiFloat)
 				log.Printf("Received HDPI config: %d%%", hdpi)
@@ -323,50 +325,50 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			if vCodec, ok := msg["video_codec"].(string); ok {
 				log.Printf("Received Video Codec config: %s", vCodec)
-				SetVideoCodec(vCodec)
+				VideoCodec = vCodec
 			}
 			if chromaStr, ok := msg["chroma"].(string); ok {
 				log.Printf("Received Chroma config: %s", chromaStr)
-				SetChroma(chromaStr)
+				Chroma = chromaStr
 			}
 			if vbrBool, ok := msg["vbr"].(bool); ok {
 				log.Printf("Received VBR config: %v", vbrBool)
-				SetVBR(vbrBool)
+				targetVBR = vbrBool
 			}
 			if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
 				log.Printf("Received mpdecimate config: %v", mpdecimateBool)
-				SetMpdecimate(mpdecimateBool)
+				targetMpdecimate = mpdecimateBool
 			}
 			if keyframeFloat, ok := msg["keyframe_interval"].(float64); ok {
 				interval := int(keyframeFloat)
 				log.Printf("Received keyframe interval config: %d", interval)
-				SetKeyframeInterval(interval)
+				targetKeyframeInterval = interval
 			}
 			if effortFloat, ok := msg["cpu_effort"].(float64); ok {
 				effort := int(effortFloat)
 				log.Printf("Received CPU effort config: %d", effort)
-				SetCpuEffort(effort)
+				targetCpuEffort = effort
 			}
 			if threadsFloat, ok := msg["cpu_threads"].(float64); ok {
 				threads := int(threadsFloat)
 				log.Printf("Received CPU threads config: %d", threads)
-				SetCpuThreads(threads)
+				targetCpuThreads = threads
 			}
 			if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
 				log.Printf("Received Enable Desktop Mouse config: %v", mouseBool)
-				SetDrawMouse(mouseBool)
+				targetDrawMouse = mouseBool
 			}
 			if hybridBool, ok := msg["enable_hybrid"].(bool); ok {
 				log.Printf("Received Enable Hybrid Sharpness config: %v", hybridBool)
-				SetEnableHybrid(hybridBool)
+				EnableHybrid = hybridBool
 			}
 			if settleTime, ok := msg["settle_time"].(float64); ok {
 				log.Printf("Received Settle Time config: %vms", settleTime)
-				SetSettleTime(int(settleTime))
+				SettleTime = int(settleTime)
 			}
 			if tileSize, ok := msg["tile_size"].(float64); ok {
 				log.Printf("Received Tile Size config: %vpx", tileSize)
-				SetTileSize(int(tileSize))
+				TileSize = int(tileSize)
 			}
 			if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
 				log.Printf("Received Enable Audio config: %v", enableAudioBool)
@@ -376,42 +378,34 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Received Audio Bitrate config: %s", audioBitrateStr)
 				SetAudioBitrate(audioBitrateStr)
 			}
+			
 			if bwFloat, ok := msg["bandwidth"].(float64); ok {
-				hasBwOrQuality = true
 				bw := int(bwFloat)
 				log.Printf("Received bandwidth config: %d Mbps", bw)
-				// If framerate is also changing, set FPS first (without kill) so the
-				// restarted ffmpeg picks up the new fps immediately.
-				if fpsFloat, ok2 := msg["framerate"].(float64); ok2 {
-					fps := int(fpsFloat)
-					log.Printf("Received framerate config: %d fps", fps)
-					ffmpegMutex.Lock()
-					FPS = fps
-					log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
-					ffmpegMutex.Unlock()
-				}
-				SetBandwidth(bw)
+				targetMode = "bandwidth"
+				targetBandwidthMbps = bw
 			} else if qFloat, ok := msg["quality"].(float64); ok {
-				hasBwOrQuality = true
 				q := int(qFloat)
 				log.Printf("Received quality config: %d", q)
-				if fpsFloat, ok2 := msg["framerate"].(float64); ok2 {
-					fps := int(fpsFloat)
-					log.Printf("Received framerate config: %d fps", fps)
-					ffmpegMutex.Lock()
-					FPS = fps
-					log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
-					ffmpegMutex.Unlock()
-				}
-				SetQuality(q)
+				targetMode = "quality"
+				targetQuality = q
 			}
-			if !hasBwOrQuality {
-				if fpsFloat, ok := msg["framerate"].(float64); ok {
-					fps := int(fpsFloat)
-					log.Printf("Received framerate config: %d fps", fps)
-					SetFramerate(fps)
-				}
+			
+			if fpsFloat, ok := msg["framerate"].(float64); ok {
+				fps := int(fpsFloat)
+				log.Printf("Received framerate config: %d fps", fps)
+				ffmpegMutex.Lock()
+				FPS = fps
+				ffmpegMutex.Unlock()
 			}
+			
+			log.Println("Config updated, sending SIGINT to gracefully restart stream...")
+			ffmpegMutex.Lock()
+			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+				ffmpegCmd.Process.Signal(os.Interrupt)
+			}
+			ffmpegMutex.Unlock()
+
 			broadcastConfig(true)
 		case "resize":
 			widthFloat, wOk := msg["width"].(float64)

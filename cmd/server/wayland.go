@@ -43,6 +43,8 @@ func startWayland(displayNum string) error {
 		os.Setenv("XDG_CONFIG_DIRS", "/etc/xdg")
 	}
 
+	w, h := GetScreenSize()
+
 	// Labwc config dir in a standard location
 	home := os.Getenv("HOME")
 	if home == "" {
@@ -67,12 +69,17 @@ func startWayland(displayNum string) error {
 	_ = os.WriteFile(filepath.Join(configDir, "rc.xml"), []byte(rc), 0644)
 
 	// Outputs file to map the headless output name
-	outputs := "HEADLESS-1 1920x1080\n"
+	outputs := fmt.Sprintf("HEADLESS-1 %dx%d\n", w, h)
 	_ = os.WriteFile(filepath.Join(configDir, "outputs"), []byte(outputs), 0644)
 
 	bgFile := Wallpaper
 	if bgFile == "" {
 		bgFile = "/usr/share/backgrounds/xfce/xfce-blue.jpg"
+	}
+
+	scale := 1
+	if HDPI >= 200 {
+		scale = HDPI / 100
 	}
 
 	// Native labwc autostart script
@@ -81,7 +88,7 @@ func startWayland(displayNum string) error {
 sleep 1
 
 # Force headless output resolution
-wlr-randr --output HEADLESS-1 --mode 1920x1080
+wlr-randr --output HEADLESS-1 --custom-mode %dx%d
 
 # Set Wayland native backend for GTK/XFCE
 export GDK_BACKEND=wayland
@@ -95,7 +102,7 @@ xfdesktop &
 (
   sleep 3
   xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
-  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s 1 --create
+  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create
   xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
   
   for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
@@ -108,14 +115,10 @@ xfdesktop &
   xfdesktop --reload
   
   # swaybg is more reliable for Wayland backgrounds on labwc
-  # It will draw below xfdesktop if xfdesktop decides to work, or visible if xfdesktop is transparent
   swaybg -o HEADLESS-1 -i "%s" -m stretch &
 ) &
-`, bgFile, bgFile)
+`, w, h, scale, bgFile, bgFile)
 	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
-
-	// Set global screen size
-	initScreenSize(1920, 1080)
 
 	// Start labwc inside dbus-run-session
 	cmd := exec.Command("dbus-run-session", "sh", "-c", "labwc")
