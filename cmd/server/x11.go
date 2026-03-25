@@ -136,7 +136,7 @@ func resizeDisplay(width, height int) error {
 		log.Printf("Resizing Wayland display (HEADLESS-1) to %s", mode)
 		// Use wlr-randr for Wayland resizing
 		env := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
-		if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--custom-mode", mode}, env); err != nil {
+		if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--custom-mode", fmt.Sprintf("%s@60", mode)}, env); err != nil {
 			return fmt.Errorf("wlr-randr failed: %v", err)
 		}
 		return nil

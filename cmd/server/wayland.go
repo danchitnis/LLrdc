@@ -88,7 +88,7 @@ func startWayland(displayNum string) error {
 sleep 1
 
 # Force headless output resolution
-wlr-randr --output HEADLESS-1 --custom-mode %dx%d
+wlr-randr --output HEADLESS-1 --custom-mode %dx%d@60
 
 # Set Wayland native backend for GTK/XFCE
 export GDK_BACKEND=wayland
