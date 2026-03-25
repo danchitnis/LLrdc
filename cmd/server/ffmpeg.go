@@ -232,20 +232,34 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			ffmpegMutex.Unlock()
 
 			w, h := GetScreenSize()
-			// Hardcoded minimal VP8 config using wf-recorder
+			
+			codec := "libvpx"
+			format := "ivf"
+			if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
+				codec = "libx264"
+				format = "h264"
+			} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
+				codec = "libx265"
+				format = "hevc"
+			} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
+				codec = "libaom-av1"
+				format = "ivf"
+			}
+
+			// Hardcoded minimal config using wf-recorder
 			args := []string{
 				"-o0", "wf-recorder",
 				"-D", // Disable damage tracking to continuously emit frames
-				"-c", "libvpx",
-				"-m", "ivf",
+				"-c", codec,
+				"-m", format,
 				"-x", "yuv420p",
-				"-r", "30",
+				"-r", fmt.Sprintf("%d", FPS),
 				"-g", fmt.Sprintf("0,0 %dx%d", w, h),     // Dynamic capture region
 				"-p", "deadline=realtime",
-				"-p", "cpu-used=6",
-				"-p", "threads=4",
-				"-p", "b=5M",             // Target bitrate 5 Mbps
-				"-p", "maxrate=5M",       // Max bitrate 5 Mbps
+				"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
+				"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
+				"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),             // Target bitrate
+				"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),       // Max bitrate
 				"-p", "static-thresh=0",  // Reduce shimmering
 				"-p", "lag-in-frames=0",  // Lowest latency
 				"-f", "pipe:1",
@@ -273,9 +287,24 @@ func startStreaming(onFrame func([]byte, uint32)) {
 
 			doneCh := make(chan struct{})
 			go func() {
-				splitIVF(stdout, func(frame []byte) {
-					onFrame(frame, currentStreamID)
-				})
+				if format == "ivf" {
+					splitIVF(stdout, func(frame []byte) {
+						onFrame(frame, currentStreamID)
+					})
+				} else if format == "h264" {
+					splitH264AnnexB(stdout, func(frame []byte) {
+						onFrame(frame, currentStreamID)
+					})
+				} else if format == "hevc" {
+					splitH265AnnexB(stdout, func(frame []byte) {
+						onFrame(frame, currentStreamID)
+					})
+				} else {
+					log.Printf("Unknown format: %s, defaulting to splitIVF", format)
+					splitIVF(stdout, func(frame []byte) {
+						onFrame(frame, currentStreamID)
+					})
+				}
 				close(doneCh)
 			}()
 
