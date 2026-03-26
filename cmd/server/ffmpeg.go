@@ -284,7 +284,7 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				"-f", "pipe:1",
 			}
 
-			log.Printf("Starting wf-recorder capture (stdbuf pipe:1)...")
+			log.Printf("Starting wf-recorder capture: %v", args)
 			cmd := exec.Command("stdbuf", args...)
 			cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0")
 
