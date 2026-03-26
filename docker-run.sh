@@ -24,6 +24,7 @@ USE_DEBUG_INPUT="false"
 WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
 WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
 SERVER_HDPI="${HDPI:-0}"
+CONTAINER_WEBRTC_INTERFACES=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -173,6 +174,9 @@ if [ -z "${WEBRTC_PUBLIC_IP:-}" ]; then
 fi
 
 echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP:-none} (auto-detected)"
+if [ -n "${WEBRTC_INTERFACES:-}" ]; then
+  echo "  WebRTC Iface : ${WEBRTC_INTERFACES} (host IP selection only in Docker bridge mode)"
+fi
 UINPUT_ARGS=""
 if [ -e /dev/uinput ]; then
   UINPUT_ARGS="--device /dev/uinput:/dev/uinput"
@@ -199,7 +203,7 @@ docker run \
   --env USE_GPU="${USE_GPU}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP}" \
-  --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}" \
+  --env WEBRTC_INTERFACES="${CONTAINER_WEBRTC_INTERFACES}" \
   --env WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}" \
   --env HDPI="${SERVER_HDPI}" \
   --env USE_DEBUG_X11="${USE_DEBUG_X11}" \

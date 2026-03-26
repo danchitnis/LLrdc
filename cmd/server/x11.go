@@ -133,10 +133,14 @@ func resizeDisplay(width, height int) error {
 	mode := fmt.Sprintf("%dx%d", width, height)
 
 	if UseWayland {
-		log.Printf("Resizing Wayland display (HEADLESS-1) to %s", mode)
+		scale := 1.0
+		if HDPI > 100 {
+			scale = float64(HDPI) / 100.0
+		}
+		log.Printf("Resizing Wayland display (HEADLESS-1) to %s with scale %f", mode, scale)
 		// Use wlr-randr for Wayland resizing
 		env := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
-		if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--custom-mode", fmt.Sprintf("%s@60", mode)}, env); err != nil {
+		if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--custom-mode", fmt.Sprintf("%s@60", mode), "--scale", fmt.Sprintf("%f", scale)}, env); err != nil {
 			return fmt.Errorf("wlr-randr failed: %v", err)
 		}
 		return nil
@@ -218,12 +222,23 @@ func runWithEnv(cmd string, args []string, env []string) error {
 	return nil
 }
 
+func getSessionDbusAddressWithRetry() string {
+	for i := 0; i < 20; i++ {
+		addr := getSessionDbusAddress()
+		if addr != "" {
+			return addr
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return ""
+}
+
 func applyHdpiSettings(baseEnv []string) {
 	if HDPI <= 0 {
 		return
 	}
 
-	dbusAddr := getSessionDbusAddress()
+	dbusAddr := getSessionDbusAddressWithRetry()
 	if dbusAddr == "" {
 		log.Println("Warning: Could not find DBUS session bus address; HDPI settings not applied.")
 		return
@@ -234,7 +249,18 @@ func applyHdpiSettings(baseEnv []string) {
 	dpi := (96 * HDPI) / 100
 	log.Printf("Applying HDPI scaling: %d%% (DPI: %d)", HDPI, dpi)
 
-	// Set Xft DPI
+	if UseWayland {
+		waylandScale := 1.0
+		if HDPI > 100 {
+			waylandScale = float64(HDPI) / 100.0
+		}
+		waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
+		log.Printf("Applying Wayland compositor scale: %f", waylandScale)
+		runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--scale", fmt.Sprintf("%f", waylandScale)}, waylandEnv)
+		return // Wayland compositor handles the rest
+	}
+
+	// Set Xft DPI (Scales fonts including menu bar text)
 	runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Xft/DPI", "-n", "-t", "int", "-s", strconv.Itoa(dpi)}, env)
 
 	// Set GDK Window Scaling Factor
@@ -252,11 +278,18 @@ func applyHdpiSettings(baseEnv []string) {
 	cursorSize := 24 * HDPI / 100
 	runWithEnv("xfconf-query", []string{"-c", "xsettings", "-p", "/Gtk/CursorThemeSize", "-n", "-t", "int", "-s", strconv.Itoa(cursorSize)}, env)
 
-	// Set Panel Size
+	// --- PANEL 1 (Top Bar) ---
 	panelSize := 30 * HDPI / 100
+	panelIconSize := 16 * HDPI / 100
 	runWithEnv("xfconf-query", []string{"-c", "xfce4-panel", "-p", "/panels/panel-1/size", "-n", "-t", "int", "-s", strconv.Itoa(panelSize)}, env)
-	
+	runWithEnv("xfconf-query", []string{"-c", "xfce4-panel", "-p", "/panels/panel-1/icon-size", "-n", "-t", "int", "-s", strconv.Itoa(panelIconSize)}, env)
+
+	// --- PANEL 2 (Bottom Dock, if exists) ---
+	panel2Size := 48 * HDPI / 100
+	panel2IconSize := 32 * HDPI / 100
+	runWithEnv("xfconf-query", []string{"-c", "xfce4-panel", "-p", "/panels/panel-2/size", "-n", "-t", "int", "-s", strconv.Itoa(panel2Size)}, env)
+	runWithEnv("xfconf-query", []string{"-c", "xfce4-panel", "-p", "/panels/panel-2/icon-size", "-n", "-t", "int", "-s", strconv.Itoa(panel2IconSize)}, env)
+
 	// Restart panel to apply size changes effectively
 	runWithEnv("xfce4-panel", []string{"-r"}, env)
 }
-

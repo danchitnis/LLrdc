@@ -36,7 +36,7 @@ func startHTTPServer() {
 	go func() {
 		for {
 			time.Sleep(2 * time.Second)
-			
+
 			ffmpegMutex.Lock()
 			cmd := ffmpegCmd
 			ffmpegMutex.Unlock()
@@ -55,7 +55,7 @@ func startHTTPServer() {
 			}
 
 			statsMsg := map[string]interface{}{
-				"type": "stats",
+				"type":      "stats",
 				"ffmpegCpu": cpuUsage,
 			}
 
@@ -151,27 +151,27 @@ func broadcastVideoFrame(frame []byte, streamID uint32) {
 
 func broadcastConfig(restarted bool) {
 	configMsg := map[string]interface{}{
-		"type":             "config",
-		"videoCodec":       VideoCodec,
-		"chroma":           Chroma,
-		"gpuAvailable":     UseGPU,
-		"av1NvencAvailable":    AV1NVENCAvailable,
+		"type":                  "config",
+		"videoCodec":            VideoCodec,
+		"chroma":                Chroma,
+		"gpuAvailable":          UseGPU,
+		"av1NvencAvailable":     AV1NVENCAvailable,
 		"h264Nvenc444Available": H264NVENC444Available,
 		"h265Nvenc444Available": H265NVENC444Available,
-		"framerate":        FPS,
-		"bandwidth":        targetBandwidthMbps,
-		"quality":          targetQuality,
-		"vbr":              targetVBR,
-		"mpdecimate":       targetMpdecimate,
-		"keyframe_interval": targetKeyframeInterval,
-		"enableClipboard":   EnableClipboard,
-		"enable_hybrid":     EnableHybrid,
-		"settle_time":       SettleTime,
-		"tile_size":         TileSize,
-		"enable_audio":      EnableAudio,
-		"audio_bitrate":     AudioBitrate,
-		"hdpi":              HDPI,
-		"restarted":         restarted,
+		"framerate":             FPS,
+		"bandwidth":             targetBandwidthMbps,
+		"quality":               targetQuality,
+		"vbr":                   targetVBR,
+		"mpdecimate":            targetMpdecimate,
+		"keyframe_interval":     targetKeyframeInterval,
+		"enableClipboard":       EnableClipboard,
+		"enable_hybrid":         EnableHybrid,
+		"settle_time":           SettleTime,
+		"tile_size":             TileSize,
+		"enable_audio":          EnableAudio,
+		"audio_bitrate":         AudioBitrate,
+		"hdpi":                  HDPI,
+		"restarted":             restarted,
 	}
 	broadcastJSON(configMsg)
 }
@@ -258,26 +258,26 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial codec and config to client
 	initialConfig := map[string]interface{}{
-		"type":             "config",
-		"videoCodec":       VideoCodec,
-		"chroma":           Chroma,
-		"gpuAvailable":     UseGPU,
-		"av1NvencAvailable":    AV1NVENCAvailable,
+		"type":                  "config",
+		"videoCodec":            VideoCodec,
+		"chroma":                Chroma,
+		"gpuAvailable":          UseGPU,
+		"av1NvencAvailable":     AV1NVENCAvailable,
 		"h264Nvenc444Available": H264NVENC444Available,
 		"h265Nvenc444Available": H265NVENC444Available,
-		"framerate":        FPS,
-		"bandwidth":        targetBandwidthMbps,
-		"quality":          targetQuality,
-		"vbr":              targetVBR,
-		"mpdecimate":       targetMpdecimate,
-		"keyframe_interval": targetKeyframeInterval,
-		"enableClipboard":   EnableClipboard,
-		"enable_hybrid":     EnableHybrid,
-		"settle_time":       SettleTime,
-		"tile_size":         TileSize,
-		"enable_audio":      EnableAudio,
-		"audio_bitrate":     AudioBitrate,
-		"hdpi":              HDPI,
+		"framerate":             FPS,
+		"bandwidth":             targetBandwidthMbps,
+		"quality":               targetQuality,
+		"vbr":                   targetVBR,
+		"mpdecimate":            targetMpdecimate,
+		"keyframe_interval":     targetKeyframeInterval,
+		"enableClipboard":       EnableClipboard,
+		"enable_hybrid":         EnableHybrid,
+		"settle_time":           SettleTime,
+		"tile_size":             TileSize,
+		"enable_audio":          EnableAudio,
+		"audio_bitrate":         AudioBitrate,
+		"hdpi":                  HDPI,
 	}
 	_ = writeJSON(initialConfig)
 
@@ -315,98 +315,100 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			// Allow multiple rapid WebSocket messages to settle
 			time.Sleep(100 * time.Millisecond)
 
-			if hdpiFloat, ok := msg["hdpi"].(float64); ok {
-				hdpi := int(hdpiFloat)
-				log.Printf("Received HDPI config: %d%%", hdpi)
-				if HDPI != hdpi {
-					HDPI = hdpi
-					applyHdpiSettings(os.Environ())
-				}
-			}
-			if vCodec, ok := msg["video_codec"].(string); ok {
-				log.Printf("Received Video Codec config: %s", vCodec)
-				VideoCodec = vCodec
-			}
-			if chromaStr, ok := msg["chroma"].(string); ok {
-				log.Printf("Received Chroma config: %s", chromaStr)
-				Chroma = chromaStr
-			}
-			if vbrBool, ok := msg["vbr"].(bool); ok {
-				log.Printf("Received VBR config: %v", vbrBool)
-				targetVBR = vbrBool
-			}
-			if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
-				log.Printf("Received mpdecimate config: %v", mpdecimateBool)
-				targetMpdecimate = mpdecimateBool
-			}
-			if keyframeFloat, ok := msg["keyframe_interval"].(float64); ok {
-				interval := int(keyframeFloat)
-				log.Printf("Received keyframe interval config: %d", interval)
-				targetKeyframeInterval = interval
-			}
-			if effortFloat, ok := msg["cpu_effort"].(float64); ok {
-				effort := int(effortFloat)
-				log.Printf("Received CPU effort config: %d", effort)
-				targetCpuEffort = effort
-			}
-			if threadsFloat, ok := msg["cpu_threads"].(float64); ok {
-				threads := int(threadsFloat)
-				log.Printf("Received CPU threads config: %d", threads)
-				targetCpuThreads = threads
-			}
-			if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
-				log.Printf("Received Enable Desktop Mouse config: %v", mouseBool)
-				targetDrawMouse = mouseBool
-			}
-			if hybridBool, ok := msg["enable_hybrid"].(bool); ok {
-				log.Printf("Received Enable Hybrid Sharpness config: %v", hybridBool)
-				EnableHybrid = hybridBool
-			}
-			if settleTime, ok := msg["settle_time"].(float64); ok {
-				log.Printf("Received Settle Time config: %vms", settleTime)
-				SettleTime = int(settleTime)
-			}
-			if tileSize, ok := msg["tile_size"].(float64); ok {
-				log.Printf("Received Tile Size config: %vpx", tileSize)
-				TileSize = int(tileSize)
-			}
-			if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
-				log.Printf("Received Enable Audio config: %v", enableAudioBool)
-				SetEnableAudio(enableAudioBool)
-			}
-			if audioBitrateStr, ok := msg["audio_bitrate"].(string); ok {
-				log.Printf("Received Audio Bitrate config: %s", audioBitrateStr)
-				SetAudioBitrate(audioBitrateStr)
-			}
-			
-			if bwFloat, ok := msg["bandwidth"].(float64); ok {
-				bw := int(bwFloat)
-				log.Printf("Received bandwidth config: %d Mbps", bw)
-				targetMode = "bandwidth"
-				targetBandwidthMbps = bw
-			} else if qFloat, ok := msg["quality"].(float64); ok {
-				q := int(qFloat)
-				log.Printf("Received quality config: %d", q)
-				targetMode = "quality"
-				targetQuality = q
-			}
-			
-			if fpsFloat, ok := msg["framerate"].(float64); ok {
-				fps := int(fpsFloat)
-				log.Printf("Received framerate config: %d fps", fps)
-				ffmpegMutex.Lock()
-				FPS = fps
-				ffmpegMutex.Unlock()
-			}
-			
-			log.Println("Config updated, sending SIGINT to gracefully restart stream...")
-			ffmpegMutex.Lock()
-			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-				ffmpegCmd.Process.Signal(os.Interrupt)
-			}
-			ffmpegMutex.Unlock()
+			go func() {
+				PauseStreaming()
 
-			broadcastConfig(true)
+				if hdpiFloat, ok := msg["hdpi"].(float64); ok {
+					hdpi := int(hdpiFloat)
+					log.Printf("Received HDPI config: %d%%", hdpi)
+					if HDPI != hdpi {
+						HDPI = hdpi
+						applyHdpiSettings(os.Environ())
+						injectMouseMove(0.5, 0.5, Display)
+						injectMouseMove(0.501, 0.501, Display)
+					}
+				}
+				if vCodec, ok := msg["video_codec"].(string); ok {
+					log.Printf("Received Video Codec config: %s", vCodec)
+					VideoCodec = vCodec
+				}
+				if chromaStr, ok := msg["chroma"].(string); ok {
+					log.Printf("Received Chroma config: %s", chromaStr)
+					Chroma = chromaStr
+				}
+				if vbrBool, ok := msg["vbr"].(bool); ok {
+					log.Printf("Received VBR config: %v", vbrBool)
+					targetVBR = vbrBool
+				}
+				if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
+					log.Printf("Received mpdecimate config: %v", mpdecimateBool)
+					targetMpdecimate = mpdecimateBool
+				}
+				if keyframeFloat, ok := msg["keyframe_interval"].(float64); ok {
+					interval := int(keyframeFloat)
+					log.Printf("Received keyframe interval config: %d", interval)
+					targetKeyframeInterval = interval
+				}
+				if effortFloat, ok := msg["cpu_effort"].(float64); ok {
+					effort := int(effortFloat)
+					log.Printf("Received CPU effort config: %d", effort)
+					targetCpuEffort = effort
+				}
+				if threadsFloat, ok := msg["cpu_threads"].(float64); ok {
+					threads := int(threadsFloat)
+					log.Printf("Received CPU threads config: %d", threads)
+					targetCpuThreads = threads
+				}
+				if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
+					log.Printf("Received Enable Desktop Mouse config: %v", mouseBool)
+					targetDrawMouse = mouseBool
+				}
+				if hybridBool, ok := msg["enable_hybrid"].(bool); ok {
+					log.Printf("Received Enable Hybrid Sharpness config: %v", hybridBool)
+					EnableHybrid = hybridBool
+				}
+				if settleTime, ok := msg["settle_time"].(float64); ok {
+					log.Printf("Received Settle Time config: %vms", settleTime)
+					SettleTime = int(settleTime)
+				}
+				if tileSize, ok := msg["tile_size"].(float64); ok {
+					log.Printf("Received Tile Size config: %vpx", tileSize)
+					TileSize = int(tileSize)
+				}
+				if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
+					log.Printf("Received Enable Audio config: %v", enableAudioBool)
+					SetEnableAudio(enableAudioBool)
+				}
+				if audioBitrateStr, ok := msg["audio_bitrate"].(string); ok {
+					log.Printf("Received Audio Bitrate config: %s", audioBitrateStr)
+					SetAudioBitrate(audioBitrateStr)
+				}
+
+				if bwFloat, ok := msg["bandwidth"].(float64); ok {
+					bw := int(bwFloat)
+					log.Printf("Received bandwidth config: %d Mbps", bw)
+					targetMode = "bandwidth"
+					targetBandwidthMbps = bw
+				} else if qFloat, ok := msg["quality"].(float64); ok {
+					q := int(qFloat)
+					log.Printf("Received quality config: %d", q)
+					targetMode = "quality"
+					targetQuality = q
+				}
+
+				if fpsFloat, ok := msg["framerate"].(float64); ok {
+					fps := int(fpsFloat)
+					log.Printf("Received framerate config: %d fps", fps)
+					ffmpegMutex.Lock()
+					FPS = fps
+					ffmpegMutex.Unlock()
+				}
+
+				time.Sleep(1000 * time.Millisecond)
+				log.Println("Config updated, resuming stream gracefully...")
+				ResumeStreaming()
+				broadcastConfig(true)
+			}()
 		case "resize":
 			widthFloat, wOk := msg["width"].(float64)
 			heightFloat, hOk := msg["height"].(float64)
@@ -418,12 +420,24 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					clampedW, clampedH := GetScreenSize()
 					log.Printf("Received resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
 					if !TestPattern {
-						if err := resizeDisplay(clampedW, clampedH); err != nil {
-							log.Printf("Resize failed: %v", err)
-						}
+						go func() {
+							PauseStreaming()
+							if err := resizeDisplay(clampedW, clampedH); err != nil {
+								log.Printf("Resize failed: %v", err)
+							}
+
+							// Force Wayland compositor damage to allocate the new sized buffer
+							injectMouseMove(0.5, 0.5, Display)
+							injectMouseMove(0.501, 0.501, Display)
+
+							time.Sleep(1000 * time.Millisecond)
+							ResumeStreaming()
+							broadcastConfig(true)
+						}()
+					} else {
+						RestartForResize()
+						broadcastConfig(true)
 					}
-					RestartForResize()
-					broadcastConfig(true)
 				}
 			}
 		case "webrtc_ready":

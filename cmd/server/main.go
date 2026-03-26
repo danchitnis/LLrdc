@@ -25,16 +25,23 @@ func main() {
 		shutdown()
 	}()
 
-	// 1. Start Wayland unless TEST_PATTERN is set
+	// 1. Start Window System unless TEST_PATTERN is set
 	if !TestPattern {
 		if os.Getenv("USE_WAYLAND") == "true" {
 			UseWayland = true
 		}
-		if err := startWayland(DisplayNum); err != nil {
-			log.Fatalf("Failed to initialize Wayland: %v", err)
+
+		if UseWayland {
+			if err := startWayland(DisplayNum); err != nil {
+				log.Fatalf("Failed to initialize Wayland: %v", err)
+			}
+		} else {
+			if err := startX11(DisplayNum); err != nil {
+				log.Fatalf("Failed to initialize X11: %v", err)
+			}
 		}
 	} else {
-		log.Println("TEST_PATTERN mode: skipping Wayland setup.")
+		log.Println("TEST_PATTERN mode: skipping display server setup.")
 	}
 
 	// 2. Initialize WebRTC and RTP Listener

@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	targetMode          = "bandwidth" // "bandwidth" or "quality"
-	targetBandwidthMbps = 5           // Initial default: 5 Mbps
-	targetQuality       = 70          // 10-100
+	targetMode             = "bandwidth" // "bandwidth" or "quality"
+	targetBandwidthMbps    = 5           // Initial default: 5 Mbps
+	targetQuality          = 70          // 10-100
 	targetVBR              = true        // Default VBR to true
 	targetMpdecimate       = false       // Default mpdecimate to false
 	targetCpuEffort        = 6           // Default: 6
@@ -24,7 +24,24 @@ var (
 	ffmpegMutex            sync.Mutex
 	ffmpegShouldRun        = true
 	ffmpegStreamID         uint32
+	isResizing             = false
 )
+
+func PauseStreaming() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+	isResizing = true
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Println("Pausing wf-recorder for resize...")
+		ffmpegCmd.Process.Kill()
+	}
+}
+
+func ResumeStreaming() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+	isResizing = false
+}
 
 func SetChroma(chroma string) {
 	if chroma != "420" && chroma != "444" {
@@ -39,7 +56,7 @@ func SetChroma(chroma string) {
 	log.Printf("Target chroma changed to %s, restarting ffmpeg...", chroma)
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -54,11 +71,11 @@ func SetVideoCodec(codec string) {
 
 	VideoCodec = codec
 	log.Printf("Target video codec changed to %s, reinitializing WebRTC track and restarting ffmpeg...", codec)
-	
+
 	initWebRTCTrack() // Re-create track
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -75,7 +92,7 @@ func SetKeyframeInterval(interval int) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target keyframe interval changed to %d, restarting ffmpeg...", interval)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -87,7 +104,7 @@ func SetMpdecimate(mpdecimate bool) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target mpdecimate changed to %v, restarting ffmpeg...", mpdecimate)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -99,7 +116,7 @@ func SetCpuEffort(effort int) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target CPU effort changed to %d, restarting ffmpeg...", effort)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -111,7 +128,7 @@ func SetCpuThreads(threads int) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target CPU threads changed to %d, restarting ffmpeg...", threads)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -123,7 +140,7 @@ func SetDrawMouse(draw bool) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target draw mouse changed to %v, restarting ffmpeg...", draw)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -135,7 +152,7 @@ func SetVBR(vbr bool) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target VBR changed to %v, restarting ffmpeg...", vbr)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -148,7 +165,7 @@ func SetBandwidth(bwMbps int) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target bandwidth changed to %d Mbps, restarting ffmpeg...", bwMbps)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -161,7 +178,7 @@ func SetQuality(quality int) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target quality changed to %d, restarting ffmpeg...", quality)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -173,7 +190,7 @@ func SetFramerate(fps int) {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Printf("Target framerate changed to %d fps, restarting ffmpeg...", fps)
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -183,7 +200,7 @@ func RestartForResize() {
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 		log.Println("Screen size changed, restarting ffmpeg...")
-		ffmpegCmd.Process.Signal(os.Interrupt)
+		ffmpegCmd.Process.Kill()
 	}
 }
 
@@ -218,10 +235,9 @@ func startStreaming(onFrame func([]byte, uint32)) {
 		ffmpegShouldRun = false
 		if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 			log.Println("Killing wf-recorder (cleanup)...")
-			ffmpegCmd.Process.Signal(os.Interrupt)
+			ffmpegCmd.Process.Kill()
 		}
 	})
-
 	go func() {
 		for {
 			ffmpegMutex.Lock()
@@ -229,10 +245,14 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				ffmpegMutex.Unlock()
 				break
 			}
+			resizing := isResizing
 			ffmpegMutex.Unlock()
 
-			w, h := GetScreenSize()
-			
+			if resizing {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
 			codec := "libvpx"
 			format := "ivf"
 			if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
@@ -254,14 +274,13 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				"-m", format,
 				"-x", "yuv420p",
 				"-r", fmt.Sprintf("%d", FPS),
-				"-g", fmt.Sprintf("0,0 %dx%d", w, h),     // Dynamic capture region
 				"-p", "deadline=realtime",
 				"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
 				"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
-				"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),             // Target bitrate
-				"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),       // Max bitrate
-				"-p", "static-thresh=0",  // Reduce shimmering
-				"-p", "lag-in-frames=0",  // Lowest latency
+				"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps), // Target bitrate
+				"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps), // Max bitrate
+				"-p", "static-thresh=0", // Reduce shimmering
+				"-p", "lag-in-frames=0", // Lowest latency
 				"-f", "pipe:1",
 			}
 

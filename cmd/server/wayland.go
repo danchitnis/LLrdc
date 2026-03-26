@@ -25,16 +25,16 @@ func startWayland(displayNum string) error {
 	os.Setenv("WLR_NO_HARDWARE_CURSORS", "1")
 	os.Setenv("WLR_RENDERER", "pixman")
 	os.Setenv("WLR_BACKENDS", "headless")
-	
+
 	// Force Native Wayland for GDK/GTK applications (XFCE 4.20)
 	os.Setenv("GDK_BACKEND", "wayland")
 	os.Setenv("QT_QPA_PLATFORM", "wayland")
-	
+
 	// Reduce warnings and improve theming
 	os.Setenv("NO_AT_BRIDGE", "1")
 	os.Setenv("XDG_MENU_PREFIX", "xfce-")
 	os.Setenv("XDG_CURRENT_DESKTOP", "XFCE")
-	
+
 	// Ensure data dirs are set for icons/themes
 	if os.Getenv("XDG_DATA_DIRS") == "" {
 		os.Setenv("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
@@ -77,9 +77,9 @@ func startWayland(displayNum string) error {
 		bgFile = "/usr/share/backgrounds/xfce/xfce-blue.jpg"
 	}
 
-	scale := 1
-	if HDPI >= 200 {
-		scale = HDPI / 100
+	scale := 1.0
+	if HDPI > 100 {
+		scale = float64(HDPI) / 100.0
 	}
 
 	// Native labwc autostart script
@@ -87,8 +87,8 @@ func startWayland(displayNum string) error {
 # Wait for the compositor to settle
 sleep 1
 
-# Force headless output resolution
-wlr-randr --output HEADLESS-1 --custom-mode %dx%d@60
+# Force headless output resolution and Native Wayland scale
+wlr-randr --output HEADLESS-1 --custom-mode %dx%d@60 --scale %f
 
 # Set Wayland native backend for GTK/XFCE
 export GDK_BACKEND=wayland
@@ -102,7 +102,6 @@ xfdesktop &
 (
   sleep 3
   xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
-  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create
   xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
   
   for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
@@ -122,7 +121,7 @@ xfdesktop &
 
 	// Start labwc inside dbus-run-session
 	cmd := exec.Command("dbus-run-session", "sh", "-c", "labwc")
-	cmd.Env = append(os.Environ(), 
+	cmd.Env = append(os.Environ(),
 		"XDG_RUNTIME_DIR="+runDir,
 		"WLR_BACKENDS=headless",
 		"WLR_HEADLESS_OUTPUTS=1",
@@ -161,6 +160,10 @@ xfdesktop &
 
 	// Wait a moment for UI components to stabilize
 	time.Sleep(5 * time.Second)
+
+	// Apply HDPI settings fully (this covers everything that the autostart script might miss)
+	env := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:0")
+	applyHdpiSettings(env)
 
 	return nil
 }

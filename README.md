@@ -54,7 +54,7 @@ To see verbose debug logs, you can use the following flags:
 
 By default, the server auto-detects your primary IP address for WebRTC. If you have multiple network interfaces (e.g., Tailscale, VPNs, or multiple LANs), you can use the following flags to control which interfaces are used for the stream:
 
-- `--iface <name>` or `-i <name>`: Only allow WebRTC to use the specified interface (e.g., `eth0`).
+- `--iface <name>` or `-i <name>`: Prefer the specified host interface when selecting the public WebRTC IP (for Docker bridge mode, this does not map directly to container NIC names such as `eth0`).
 - `--exclude-iface <name>` or `-x <name>`: Prevent WebRTC from using the specified interface (e.g., `tailscale0`).
 
 ```bash

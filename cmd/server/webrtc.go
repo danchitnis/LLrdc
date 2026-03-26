@@ -150,7 +150,7 @@ func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time) {
 
 func createPeerConnection() (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
-	// s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port)) // Removed restrictive port pinning
+	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
 
 	// Optionally allow overriding the public IP (e.g., if behind a strict NAT)
 	publicIP := WebRTCPublicIP
@@ -163,31 +163,26 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 		}
 	}
 
-	webrtcInterfaces := WebRTCInterfaces
-	webrtcExcludeInterfaces := WebRTCExcludeInterfaces
+	webrtcInterfaces := strings.TrimSpace(WebRTCInterfaces)
+	webrtcExcludeInterfaces := strings.TrimSpace(WebRTCExcludeInterfaces)
 	if webrtcInterfaces != "" || webrtcExcludeInterfaces != "" {
-		interfaces := strings.Split(webrtcInterfaces, ",")
-		excludeInterfaces := strings.Split(webrtcExcludeInterfaces, ",")
+		interfaces := splitAndTrimCSV(webrtcInterfaces)
+		excludeInterfaces := splitAndTrimCSV(webrtcExcludeInterfaces)
 		s.SetInterfaceFilter(func(i string) bool {
-			// Check exclusions first
-			if webrtcExcludeInterfaces != "" {
-				for _, excl := range excludeInterfaces {
-					if i == excl || strings.HasPrefix(i, excl) {
-						return false
-					}
+			for _, excl := range excludeInterfaces {
+				if i == excl || strings.HasPrefix(i, excl) {
+					return false
 				}
 			}
-			// If allowed interfaces are specified, check those
-			if webrtcInterfaces != "" {
-				for _, iface := range interfaces {
-					if i == iface {
-						return true
-					}
-				}
-				return false
+			if len(interfaces) == 0 {
+				return true
 			}
-			// Otherwise allow
-			return true
+			for _, iface := range interfaces {
+				if i == iface {
+					return true
+				}
+			}
+			return false
 		})
 		log.Printf("WebRTC Setting InterfaceFilter: allow=%v, exclude=%v", interfaces, excludeInterfaces)
 	}
@@ -223,4 +218,20 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 	}
 
 	return pc, nil
+}
+
+func splitAndTrimCSV(value string) []string {
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			filtered = append(filtered, part)
+		}
+	}
+	return filtered
 }
