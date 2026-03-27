@@ -18,12 +18,21 @@ struct input_client {
 	struct zwp_virtual_keyboard_manager_v1 *keyboard_manager;
 	struct zwp_virtual_keyboard_v1 *keyboard;
 	struct wl_seat *seat;
+	struct xkb_keymap *keymap;
+	struct xkb_state *xkb_state;
 };
+
+static uint32_t last_time = 0;
 
 static uint32_t get_time_ms(void) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+	uint32_t t = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+	if (t <= last_time) {
+		t = last_time + 1;
+	}
+	last_time = t;
+	return t;
 }
 
 static void registry_handle_global(void *data, struct wl_registry *registry,
@@ -67,8 +76,9 @@ static void setup_keyboard(struct input_client *client) {
 
 	struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 	struct xkb_rule_names names = { .layout = "us" };
-	struct xkb_keymap *keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
-	char *keymap_str = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
+	client->keymap = xkb_keymap_new_from_names(context, &names, XKB_KEYMAP_COMPILE_NO_FLAGS);
+	client->xkb_state = xkb_state_new(client->keymap);
+	char *keymap_str = xkb_keymap_get_as_string(client->keymap, XKB_KEYMAP_FORMAT_TEXT_V1);
 	size_t keymap_size = strlen(keymap_str) + 1;
 
 	int fd = create_anonymous_file(keymap_size);
@@ -79,7 +89,6 @@ static void setup_keyboard(struct input_client *client) {
 	zwp_virtual_keyboard_v1_keymap(client->keyboard, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, fd, keymap_size);
 	close(fd);
 	free(keymap_str);
-	xkb_keymap_unref(keymap);
 	xkb_context_unref(context);
 }
 
@@ -125,6 +134,14 @@ int main(int argc, char *argv[]) {
 			int key, state;
 			if (sscanf(line, "key %d %d", &key, &state) == 2) {
 				zwp_virtual_keyboard_v1_key(client.keyboard, t, key, state);
+				
+				xkb_state_update_key(client.xkb_state, key + 8, state ? XKB_KEY_DOWN : XKB_KEY_UP);
+				uint32_t depressed = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_DEPRESSED);
+				uint32_t latched = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_LATCHED);
+				uint32_t locked = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_LOCKED);
+				uint32_t group = xkb_state_serialize_layout(client.xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
+				zwp_virtual_keyboard_v1_modifiers(client.keyboard, depressed, latched, locked, group);
+				wl_display_roundtrip(client.display);
 			}
 		} else if (strcmp(type, "axis") == 0) {
 			int axis;
