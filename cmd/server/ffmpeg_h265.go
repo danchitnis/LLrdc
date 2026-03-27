@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -80,36 +81,35 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 func splitH265AnnexB(reader io.Reader, onFrame func([]byte)) {
 	buffer := make([]byte, 0, 1024*1024)
 	temp := make([]byte, 16384)
+	// AUD markers for H.265 (NAL type 35 is 0x46 in the first byte)
+	marker4 := []byte{0x00, 0x00, 0x00, 0x01, 0x46}
+	marker3 := []byte{0x00, 0x00, 0x01, 0x46}
 
 	for {
 		n, err := reader.Read(temp)
 		if n > 0 {
 			buffer = append(buffer, temp[:n]...)
 			for {
-				if len(buffer) < 10 {
+				if len(buffer) < 6 {
 					break
 				}
 
+				// Find next AUD marker, skipping the first 4 bytes
 				nextIdx := -1
-				// Skip the first few bytes assuming they might be the start of the current frame
-				for i := 4; i <= len(buffer)-6; i++ {
-					if buffer[i] == 0x00 && buffer[i+1] == 0x00 && buffer[i+2] == 0x00 && buffer[i+3] == 0x01 {
-						nalType := (buffer[i+4] & 0x7E) >> 1
-						if nalType == 35 { // AUD NAL Unit in H.265 is 35
-							nextIdx = i
-							break
-						}
-					}
+				m4Idx := bytes.Index(buffer[4:], marker4)
+				m3Idx := bytes.Index(buffer[4:], marker3)
+
+				if m4Idx != -1 && (m3Idx == -1 || m4Idx <= m3Idx) {
+					nextIdx = m4Idx + 4
+				} else if m3Idx != -1 {
+					nextIdx = m3Idx + 4
 				}
 
 				if nextIdx != -1 {
 					frame := make([]byte, nextIdx)
 					copy(frame, buffer[:nextIdx])
 					onFrame(frame)
-
-					newBuf := make([]byte, len(buffer)-nextIdx)
-					copy(newBuf, buffer[nextIdx:])
-					buffer = newBuf
+					buffer = buffer[nextIdx:]
 				} else {
 					break
 				}

@@ -286,8 +286,8 @@ func startStreaming(onFrame func([]byte, uint32)) {
 
 			if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
 				// NVENC direct buffer hardware encoding
+				// We OMIT -x nv12 to allow NVENC to handle the BGR0->YUV conversion on the GPU.
 				args = append(args,
-					"-x", "nv12",
 					"-p", "preset=p1",
 					"-p", "tune=ull",
 					"-p", "delay=0",
