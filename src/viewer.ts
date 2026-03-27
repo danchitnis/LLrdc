@@ -304,6 +304,7 @@ if (videoCodecSelect) {
 if (clientGpuCheckbox) {
     clientGpuCheckbox.addEventListener('change', () => {
         webcodecs.initDecoder();
+        sendConfig();
     });
 }
 
@@ -671,7 +672,6 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 }
 
 window.getStats = () => {
-    console.log('[getStats-DEBUG] Entering getStats');
     const webrtcTotal = (webrtc && webrtc.lastTotalDecoded >= 0) ? webrtc.lastTotalDecoded : 0;
     const webcodecsTotal = (webcodecs && webcodecs.totalDecoded >= 0) ? webcodecs.totalDecoded : 0;
     

@@ -62,16 +62,6 @@ export class WebRTCManager {
 
         this.statsInterval = setInterval(() => this.pollStats(), 1000);
 
-        (window as any).getStats = () => {
-            return {
-                fps: this.fps,
-                bandwidth: this.bandwidthMbps,
-                bytesReceived: this.lastBytesReceived,
-                latency: this.webrtcLatency,
-                totalDecoded: this.lastTotalDecoded
-            };
-        };
-
         this.rtcPeer.onicecandidate = (e: RTCPeerConnectionIceEvent) => {
             if (e.candidate) {
                 this.sendWs(JSON.stringify({ type: 'webrtc_ice', candidate: e.candidate }));
