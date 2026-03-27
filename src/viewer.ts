@@ -481,16 +481,15 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             }
         }
 
-        if (webrtc.rtcPeer && codecChanged) {
-            log('Codec change triggered WebRTC re-initialization...');
-            isReinitializingWebRTC = true;
+        if (webrtc.rtcPeer && (codecChanged || msg.restarted === true)) {
+            log('Stream restart or codec change triggered WebRTC re-initialization...');
             webrtc.initWebRTC();
             // Clear flag after 2 seconds or when WebRTC becomes active again
             setTimeout(() => { isReinitializingWebRTC = false; }, 2000);
         }
 
         if (msg.restarted === true && !codecChanged) {
-            log('Server restarted (resize/config), keeping existing WebRTC connection');
+            log('Server restarted (resize/config), handled via WebRTC re-initialization if needed');
         }
 
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {

@@ -331,6 +331,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				if vCodec, ok := msg["video_codec"].(string); ok {
 					log.Printf("Received Video Codec config: %s", vCodec)
 					VideoCodec = vCodec
+					initWebRTCTrack()
+					broadcastConfig(false)
 				}
 				if chromaStr, ok := msg["chroma"].(string); ok {
 					log.Printf("Received Chroma config: %s", chromaStr)
@@ -400,7 +402,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					fps := int(fpsFloat)
 					log.Printf("Received framerate config: %d fps", fps)
 					ffmpegMutex.Lock()
-					FPS = fps
+					if FPS != fps {
+						FPS = fps
+						initWebRTCTrack()
+					}
 					ffmpegMutex.Unlock()
 				}
 

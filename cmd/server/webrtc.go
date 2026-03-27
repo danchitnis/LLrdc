@@ -15,6 +15,7 @@ type WebRTCFrame struct {
 	Data        []byte
 	StreamID    uint32
 	CaptureTime time.Time
+	Codec       string
 }
 
 var (
@@ -88,6 +89,11 @@ func initWebRTC() {
 				lastTrack = vt
 			}
 
+			// DROP frames from a different codec to prevent browser decoder from freezing
+			if frame.Codec != VideoCodec {
+				continue
+			}
+
 			if bufferedFrame == nil {
 				// First frame for this track
 				f := frame // Copy
@@ -142,7 +148,7 @@ func initWebRTC() {
 
 func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time) {
 	select {
-	case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime}:
+	case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: VideoCodec}:
 	default:
 		log.Println("WARNING: webrtcFrameChan is full, dropping frame!")
 	}

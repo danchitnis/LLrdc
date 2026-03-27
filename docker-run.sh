@@ -102,9 +102,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ "$USE_WAYLAND" = "true" ]; then
-  SERVER_VIDEO_CODEC="vp8"
-  USE_GPU="false"
-  echo "  Mode  : Wayland (Minimal VP8 CPU)"
+  if [ "$USE_GPU" = "false" ]; then
+    SERVER_VIDEO_CODEC="vp8"
+    echo "  Mode  : Wayland (Minimal VP8 CPU)"
+  else
+    echo "  Mode  : Wayland (GPU)"
+  fi
 fi
 
 GPU_ARGS=""
@@ -121,7 +124,9 @@ if [ "$USE_GPU" = "true" ]; then
     fi
   fi
 
-  SERVER_VIDEO_CODEC="h264_nvenc"
+  if [ -z "${VIDEO_CODEC:-}" ]; then
+    SERVER_VIDEO_CODEC="h264_nvenc"
+  fi
   NVCC_PATH=$(command -v nvcc || true)
   if [ -n "$NVCC_PATH" ]; then
     CUDA_DIR=$(dirname $(dirname "$NVCC_PATH"))

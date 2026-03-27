@@ -255,34 +255,64 @@ func startStreaming(onFrame func([]byte, uint32)) {
 
 			codec := "libvpx"
 			format := "ivf"
-			if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
+			if VideoCodec == "h264" {
 				codec = "libx264"
 				format = "h264"
-			} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
+			} else if VideoCodec == "h264_nvenc" {
+				codec = "h264_nvenc"
+				format = "h264"
+			} else if VideoCodec == "h265" {
 				codec = "libx265"
 				format = "hevc"
-			} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
+			} else if VideoCodec == "h265_nvenc" {
+				codec = "hevc_nvenc"
+				format = "hevc"
+			} else if VideoCodec == "av1" {
 				codec = "libaom-av1"
+				format = "ivf"
+			} else if VideoCodec == "av1_nvenc" {
+				codec = "av1_nvenc"
 				format = "ivf"
 			}
 
-			// Hardcoded minimal config using wf-recorder
+			// Base config using wf-recorder
 			args := []string{
 				"-o0", "wf-recorder",
 				"-D", // Disable damage tracking to continuously emit frames
 				"-c", codec,
 				"-m", format,
-				"-x", "yuv420p",
 				"-r", fmt.Sprintf("%d", FPS),
-				"-p", "deadline=realtime",
-				"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
-				"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
-				"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps), // Target bitrate
-				"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps), // Max bitrate
-				"-p", "static-thresh=0", // Reduce shimmering
-				"-p", "lag-in-frames=0", // Lowest latency
-				"-f", "pipe:1",
 			}
+
+			if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
+				// NVENC direct buffer hardware encoding
+				args = append(args,
+					"-x", "nv12",
+					"-p", "preset=p1",
+					"-p", "tune=ull",
+					"-p", "delay=0",
+					"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
+					"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
+					"-p", "g=60",
+				)
+				if codec == "h264_nvenc" || codec == "hevc_nvenc" {
+					args = append(args, "-p", "aud=1")
+				}
+			} else {
+				// CPU encoding
+				args = append(args,
+					"-x", "yuv420p",
+					"-p", "deadline=realtime",
+					"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
+					"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
+					"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
+					"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
+					"-p", "static-thresh=0",
+					"-p", "lag-in-frames=0",
+				)
+			}
+			
+			args = append(args, "-f", "pipe:1")
 
 			log.Printf("Starting wf-recorder capture: %v", args)
 			cmd := exec.Command("stdbuf", args...)
