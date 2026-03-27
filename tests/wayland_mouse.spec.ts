@@ -58,4 +58,37 @@ test.describe('Wayland Mouse E2E', () => {
     
     await expect(statusEl).toHaveText(/WebRTC/i);
   });
+
+  test('should handle rapid mouse movements without stalling', async ({ page }) => {
+    test.setTimeout(60000);
+    await page.goto(`http://localhost:${PORT}`);
+    
+    const statusEl = page.locator('#status');
+    await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 30000 });
+
+    const displayContainer = page.locator('#display-container');
+    const box = await displayContainer.boundingBox();
+    if (!box) throw new Error('Could not find display container bounding box');
+
+    console.log('Dispatching 1000 rapid mousemove events...');
+    const duration = await page.evaluate(async (b) => {
+        const start = Date.now();
+        const overlay = document.querySelector('#video-container') || document.body;
+        for (let i = 0; i < 1000; i++) {
+            const ev = new MouseEvent('mousemove', {
+                clientX: b.x + 100 + (i % 100),
+                clientY: b.y + 100 + (i % 100),
+                bubbles: true,
+            });
+            overlay.dispatchEvent(ev);
+            // minimal delay to allow event loop
+            if (i % 10 === 0) await new Promise(r => setTimeout(r, 1));
+        }
+        return Date.now() - start;
+    }, box);
+    
+    console.log(`Dispatched 1000 mouse moves in ${duration}ms`);
+
+    expect(duration).toBeLessThan(5000);
+  });
 });
