@@ -1,0 +1,143 @@
+import { test, expect } from '@playwright/test';
+import { execSync } from 'child_process';
+
+const CONTAINER_NAME = 'llrdc-vbr-ui-test';
+const PORT = '8086';
+
+test.describe('Wayland VBR UI Metrics Verification', () => {
+    test.beforeAll(async () => {
+        test.setTimeout(60000);
+        try {
+            execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
+        } catch (e) {}
+
+        console.log('Starting container for Wayland VBR UI test...');
+        // VBR is enabled by default in the new implementation
+        execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_WAYLAND=true danchitnis/llrdc:wayland-latest`);
+        
+        await new Promise(r => setTimeout(r, 15000));
+    });
+
+    test.afterAll(async () => {
+        console.log('Cleaning up container...');
+        try {
+            execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
+        } catch (e) {}
+    });
+
+    test('should show 0 FPS and low BW when screen is static with VBR', async ({ page }) => {
+        await page.goto(`http://localhost:${PORT}`);
+
+        const statusEl = page.locator('#status');
+        await expect(statusEl).toHaveText(/FPS:/i, { timeout: 60000 });
+
+        // Wait for it to settle and initially show some FPS/BW
+        await page.waitForTimeout(5000);
+        let statusText = await statusEl.textContent() || '';
+        console.log('Initial Status:', statusText);
+
+        // Extract initial FPS to make sure it WAS active
+        const initialFpsMatch = statusText.match(/FPS: (\d+)/);
+        const initialFps = initialFpsMatch ? parseInt(initialFpsMatch[1], 10) : 0;
+        console.log(`Initial FPS: ${initialFps}`);
+        
+        // Wait 10 seconds for metrics to drop to zero
+        console.log('Waiting for idle metrics...');
+        await page.waitForTimeout(10000);
+
+        statusText = await statusEl.textContent() || '';
+        console.log('Idle Status:', statusText);
+
+        // Extract FPS and BW
+        const fpsMatch = statusText.match(/FPS: (\d+)/);
+        const bwMatch = statusText.match(/BW: ([\d.]+)/);
+
+        const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : -1;
+        const bw = bwMatch ? parseFloat(bwMatch[1]) : -1;
+
+        console.log(`Parsed metrics - FPS: ${fps}, BW: ${bw}`);
+
+        // Expectations:
+        expect(fps).toBeGreaterThanOrEqual(0);
+        expect(fps).toBeLessThanOrEqual(2);
+        expect(bw).toBeLessThan(0.1);
+
+        // Now generate some activity and check FPS
+        console.log('Generating activity...');
+        
+        // Launch mousepad or terminal to have something visible that might blink or move
+        execSync(`docker exec -u remote -d ${CONTAINER_NAME} xfce4-terminal`);
+        await page.waitForTimeout(2000);
+
+        let maxActiveFps = 0;
+        const overlay = page.locator('#input-overlay');
+        await overlay.hover();
+        
+        console.log('Moving mouse and polling FPS...');
+        for (let i = 0; i < 30; i++) {
+            await page.mouse.move(100 + (i % 10) * 50, 100 + (i % 10) * 50);
+            await page.waitForTimeout(200);
+            
+            statusText = await statusEl.textContent() || '';
+            const match = statusText.match(/FPS: (\d+)/);
+            if (match) {
+                const currentFps = parseInt(match[1], 10);
+                if (currentFps > maxActiveFps) maxActiveFps = currentFps;
+            }
+            if (maxActiveFps > 5) break; // Found activity
+        }
+
+        console.log(`Max Observed Active FPS: ${maxActiveFps}`);
+        expect(maxActiveFps).toBeGreaterThan(5);
+    });
+
+    test('should show 0 FPS and low BW when screen is static with VBR (WebCodecs)', async ({ page }) => {
+        // Force WebCodecs by blocking WebRTC or just not using it.
+        // Easiest is to set a flag or just wait for it to fallback if we can block it.
+        // Or we can just call the webcodecs init manually in console.
+        await page.goto(`http://localhost:${PORT}`);
+        
+        await page.evaluate(() => {
+            if (window.webrtcManager) {
+                window.webrtcManager.isWebRtcActive = false;
+                if (window.webrtcManager.rtcPeer) window.webrtcManager.rtcPeer.close();
+            }
+        });
+
+        const statusEl = page.locator('#status');
+        await expect(statusEl).toHaveText(/WebCodecs/i, { timeout: 30000 });
+        await expect(statusEl).toHaveText(/FPS:/i, { timeout: 60000 });
+
+        // Wait for it to settle
+        await page.waitForTimeout(10000);
+        let statusText = await statusEl.textContent() || '';
+        console.log('Idle WebCodecs Status:', statusText);
+
+        const fpsMatch = statusText.match(/FPS: (\d+)/);
+        const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : -1;
+        
+        console.log(`Idle WebCodecs FPS: ${fps}`);
+        expect(fps).toBeLessThanOrEqual(2);
+
+        // Activity check for WebCodecs
+        console.log('Generating activity for WebCodecs...');
+        const overlay = page.locator('#input-overlay');
+        await overlay.hover();
+        
+        let maxActiveFps = 0;
+        for (let i = 0; i < 20; i++) {
+            await page.mouse.move(100 + (i % 10) * 50, 100 + (i % 10) * 50);
+            await page.waitForTimeout(200);
+            
+            statusText = await statusEl.textContent() || '';
+            const match = statusText.match(/FPS: (\d+)/);
+            if (match) {
+                const currentFps = parseInt(match[1], 10);
+                if (currentFps > maxActiveFps) maxActiveFps = currentFps;
+            }
+            if (maxActiveFps > 5) break;
+        }
+        console.log(`Max Observed WebCodecs Active FPS: ${maxActiveFps}`);
+        expect(maxActiveFps).toBeGreaterThan(5);
+    });
+});

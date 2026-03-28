@@ -452,6 +452,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				c.webrtcReady = true
 			}
 			clientsMutex.Unlock()
+			// Trigger a ping to push the first frame in VBR mode
+			TriggerPing()
 		case "ping":
 			if ts, ok := msg["timestamp"].(float64); ok {
 				resp := map[string]interface{}{"type": "pong", "timestamp": ts}

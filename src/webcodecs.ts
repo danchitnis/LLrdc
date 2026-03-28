@@ -16,12 +16,28 @@ export class WebCodecsManager {
     private getIsWebRtcActive: () => boolean;
     private getNetworkLatency: () => number;
     private getWsBandwidthMbps: () => number;
+    private statsInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(getIsWebRtcActive: () => boolean, getNetworkLatency: () => number, getWsBandwidthMbps: () => number) {
         this.getIsWebRtcActive = getIsWebRtcActive;
         this.getNetworkLatency = getNetworkLatency;
         this.getWsBandwidthMbps = getWsBandwidthMbps;
         this.initDecoder();
+        this.statsInterval = setInterval(() => this.pollStats(), 1000);
+    }
+
+    public pollStats() {
+        const now = Date.now();
+        const deltaMs = now - this.lastFPSUpdate;
+        if (deltaMs >= 1000) {
+            this.fps = Math.round((this.frameCount * 1000) / deltaMs);
+            this.frameCount = 0;
+            this.lastFPSUpdate = now;
+            // Only update UI if WebRTC is NOT active (WebRTCManager handles its own updates)
+            if (!this.getIsWebRtcActive()) {
+                updateStatusText(false, this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps(), displayEl.width, displayEl.height, this.videoCodec);
+            }
+        }
     }
 
     public initDecoder() {
@@ -148,13 +164,7 @@ export class WebCodecsManager {
     }
 
     public updateStats() {
-        const now = Date.now();
-        if (now - this.lastFPSUpdate >= 1000) {
-            this.fps = this.frameCount;
-            this.frameCount = 0;
-            this.lastFPSUpdate = now;
-            updateStatusText(this.getIsWebRtcActive(), this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps(), displayEl.width, displayEl.height, this.videoCodec);
-        }
+        // No longer calls updateStatusText here to avoid fighting with the pollStats interval
     }
 
     public decodeChunk(isKey: boolean, timestamp: number, chunkData: Uint8Array) {

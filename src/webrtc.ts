@@ -224,7 +224,13 @@ export class WebRTCManager {
                     this.fps = Math.round((decodedDelta * 1000) / deltaMs);
                 }
                 this.lastTotalDecoded = framesDecoded;
+            } else if (this.lastTotalDecoded !== -1) {
+                // If we had stats before but now they are missing (unlikely but possible during reconnect)
+                this.fps = 0;
             }
+
+            const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
+            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
         }).catch(() => { });
     }
 
@@ -235,6 +241,8 @@ export class WebRTCManager {
             // Only use frameCount fallback if RTC stats haven't initialized
             if (this.lastTotalDecoded === -1) {
                 this.fps = Math.round((this.frameCount * 1000) / deltaMs);
+                const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
+                updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
             }
 
             if (this.fps > 0 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
@@ -244,9 +252,6 @@ export class WebRTCManager {
 
             this.frameCount = 0;
             this.lastFPSUpdate = now;
-
-            const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
-            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
         }
     }
 

@@ -278,11 +278,17 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			// Base config using wf-recorder
 			args := []string{
 				"-o0", "wf-recorder",
-				"-D", // Disable damage tracking to continuously emit frames
+			}
+
+			if !targetVBR {
+				args = append(args, "-D") // Disable damage tracking to continuously emit frames
+			}
+
+			args = append(args,
 				"-c", codec,
 				"-m", format,
 				"-r", fmt.Sprintf("%d", FPS),
-			}
+			)
 
 			if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
 				// NVENC direct buffer hardware encoding
@@ -300,22 +306,32 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				}
 			} else {
 				// CPU encoding
+				args = append(args, "-x", "yuv420p")
+				
+				if codec == "libvpx" {
+					args = append(args,
+						"-p", "deadline=realtime",
+						"-p", "static-thresh=0",
+						"-p", "lag-in-frames=0",
+					)
+				} else if codec == "libx264" || codec == "libx265" {
+					args = append(args, "-p", "tune=zerolatency")
+				} else if codec == "libaom-av1" {
+					args = append(args, "-p", "usage=realtime")
+				}
+
 				args = append(args,
-					"-x", "yuv420p",
-					"-p", "deadline=realtime",
 					"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
 					"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
 					"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
 					"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
-					"-p", "static-thresh=0",
-					"-p", "lag-in-frames=0",
 				)
 			}
 			
 			args = append(args, "-f", "pipe:1")
 
 			log.Printf("Starting wf-recorder capture: %v", args)
-			cmd := exec.Command("stdbuf", args...)
+			cmd := exec.Command("stdbuf", append([]string{"-i0", "-o0"}, args[1:]...)...)
 			cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0")
 
 			stdout, err := cmd.StdoutPipe()
@@ -333,6 +349,14 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			if err := cmd.Start(); err != nil {
 				log.Fatalf("Failed to start wf-recorder: %v", err)
 			}
+
+			// Trigger multiple startup pings to ensure a frame is sent in VBR mode
+			go func() {
+				for i := 0; i < 3; i++ {
+					time.Sleep(500 * time.Millisecond)
+					TriggerPing()
+				}
+			}()
 
 			doneCh := make(chan struct{})
 			go func() {

@@ -93,6 +93,7 @@ static void setup_keyboard(struct input_client *client) {
 }
 
 int main(int argc, char *argv[]) {
+	setvbuf(stdin, NULL, _IONBF, 0);
 	struct input_client client = {0};
 	client.display = wl_display_connect(NULL);
 	if (!client.display) {
@@ -150,6 +151,16 @@ int main(int argc, char *argv[]) {
 				zwlr_virtual_pointer_v1_axis(client.pointer, t, axis, wl_fixed_from_double(value));
 				zwlr_virtual_pointer_v1_frame(client.pointer);
 			}
+		} else if (strcmp(type, "ping") == 0) {
+			// Trigger a tiny 1-pixel jitter to force a damage update.
+			// This is invisible to the user but forces a frame through the VBR encoder.
+			zwlr_virtual_pointer_v1_motion(client.pointer, t, wl_fixed_from_double(1.0), wl_fixed_from_double(1.0));
+			zwlr_virtual_pointer_v1_frame(client.pointer);
+			wl_display_roundtrip(client.display);
+			
+			zwlr_virtual_pointer_v1_motion(client.pointer, t + 1, wl_fixed_from_double(-1.0), wl_fixed_from_double(-1.0));
+			zwlr_virtual_pointer_v1_frame(client.pointer);
+			wl_display_roundtrip(client.display);
 		}
 		wl_display_flush(client.display);
 	}

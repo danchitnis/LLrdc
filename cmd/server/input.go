@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -21,6 +22,15 @@ type inputTask struct {
 
 var inputChan = make(chan inputTask, 5000)
 var inputStdin io.WriteCloser
+
+var (
+	// lastInputTime tracks the last time any user interaction was received.
+	lastInputTime      time.Time
+	// inputActivityMutex protects access to lastInputTime and pulseStarted.
+	inputActivityMutex sync.Mutex
+	// pulseStarted indicates if the background activity pulse goroutine is running.
+	pulseStarted      bool
+)
 
 func startWaylandInputHelper() {
 	go func() {
@@ -59,10 +69,48 @@ func startWaylandInputHelper() {
 	}()
 }
 
+func updateActivity() {
+	inputActivityMutex.Lock()
+	lastInputTime = time.Now()
+	// If the pulse goroutine isn't running, start it now.
+	if !pulseStarted {
+		pulseStarted = true
+		go runActivityPulse()
+	}
+	inputActivityMutex.Unlock()
+}
+
+// runActivityPulse pings the compositor periodically for a short time after input.
+// This is critical for Wayland VBR mode (Damage Tracking).
+// 1. It ensures that animations (like window closing or button hovers) are fully captured.
+// 2. It forces the encoder to push out any buffered frames, fixing "one-key-behind" latency.
+// 3. It automatically stops after 1 second of inactivity to preserve bandwidth.
+func runActivityPulse() {
+	for {
+		inputActivityMutex.Lock()
+		elapsed := time.Since(lastInputTime)
+		// Pulse for 1 second after the last input event.
+		if elapsed > 1000*time.Millisecond {
+			pulseStarted = false
+			inputActivityMutex.Unlock()
+			return
+		}
+		inputActivityMutex.Unlock()
+
+		// Trigger a tiny, invisible damage event in the compositor.
+		TriggerPing()
+		// 10Hz heartbeat is sufficient to capture smooth-looking animations and push frames.
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func execTask(task inputTask) error {
 	if inputStdin == nil {
 		return fmt.Errorf("no input helper")
 	}
+
+	// Any input task updates the activity timer to keep the pulse running
+	updateActivity()
 
 	switch task.Type {
 	case "mousemove":
@@ -134,8 +182,21 @@ func execTask(task inputTask) error {
 			_, _ = fmt.Fprintf(inputStdin, "axis 1 %f\n", task.DX)
 		}
 		return nil
+		
+	case "ping":
+		TriggerPing()
+		return nil
 	}
 	return nil
+}
+
+// TriggerPing sends a 'ping' command to the wayland_input_client.
+// This command performs a tiny 1-pixel jitter which is invisible to the user
+// but forces the Wayland compositor to generate damage and the encoder to emit a frame.
+func TriggerPing() {
+	if inputStdin != nil {
+		fmt.Fprintln(inputStdin, "ping")
+	}
 }
 
 func injectMouseMove(nx, ny float64, display string) {
