@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 
 const CONTAINER_NAME = 'llrdc-wayland-test';
 const PORT = '8081';
@@ -14,7 +14,11 @@ test.describe('Minimal Wayland E2E', () => {
     }
 
     console.log('Starting container...');
-    execSync(`docker run -d --rm --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:wayland-latest`);
+    const containerImage = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:wayland-latest';
+    execSync(`docker run -d --rm --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 ${containerImage}`);
+    
+    // Log container output
+    spawn('docker', ['logs', '-f', CONTAINER_NAME], { stdio: 'inherit' });
     
     // Give it a moment to boot
     await new Promise(r => setTimeout(r, 20000));
@@ -45,11 +49,17 @@ test.describe('Minimal Wayland E2E', () => {
     const displayContainer = page.locator('#display-container');
     await displayContainer.click({ position: { x: 100, y: 100 } });
     
-    // Wait a bit to ensure no crash
-    await page.waitForTimeout(1000);
+    // Move the mouse and verify video frames are arriving (FPS > 0)
+    await expect(async () => {
+        await page.mouse.move(200 + Math.random() * 400, 150 + Math.random() * 300);
+        await page.waitForTimeout(100);
+        const status = await statusEl.textContent() || '';
+        expect(status).toMatch(/\[WebRTC/i);
+        const fpsMatch = status.match(/FPS: (\d+)/);
+        const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : 0;
+        expect(fps).toBeGreaterThan(0);
+    }).toPass({ timeout: 10000 });
     
-    // We confirm that we are still connected
-    await expect(statusEl).toHaveText(/\[WebRTC/i);
     const finalStatus = await statusEl.textContent();
     console.log(`Final Status: ${finalStatus}`);
     

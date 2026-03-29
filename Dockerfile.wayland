@@ -29,11 +29,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ffmpeg \
   xfce4 \
   xfce4-goodies \
+  xfce4-pulseaudio-plugin \
+  pavucontrol \
+  python3 \
   adwaita-icon-theme-full \
   elementary-xfce-icon-theme \
   gnome-themes-extra \
   hicolor-icon-theme \
   libpulse0 \
+  pulseaudio \
+  pulseaudio-utils \
+  alsa-utils \
+  libasound2-plugins \
   librsvg2-common \
   coreutils \
   ca-certificates \

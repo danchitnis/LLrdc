@@ -145,6 +145,7 @@ func initConfig() {
 	flag.StringVar(&WebRTCInterfaces, "webrtc-interfaces", defaultWebRTCInterfaces, "Comma-separated allowed network interfaces for WebRTC")
 	flag.StringVar(&WebRTCExcludeInterfaces, "webrtc-exclude-interfaces", defaultWebRTCExcludeInterfaces, "Comma-separated excluded network interfaces for WebRTC")
 	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
+	EnableAudio = true
 	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
 	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.BoolVar(&EnableHybrid, "enable-hybrid", defaultEnableHybrid, "Enable RDP-style hybrid sharpness patches")

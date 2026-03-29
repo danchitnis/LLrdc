@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	targetMode             = "bandwidth" // "bandwidth" or "quality"
-	targetBandwidthMbps    = 5           // Initial default: 5 Mbps
-	targetQuality          = 70          // 10-100
+	targetMode          = "bandwidth" // "bandwidth" or "quality"
+	targetBandwidthMbps = 5           // Initial default: 5 Mbps
+	targetQuality       = 70          // 10-100
 	targetVBR              = true        // Default VBR to true
 	targetMpdecimate       = false       // Default mpdecimate to false
 	targetCpuEffort        = 6           // Default: 6
@@ -24,28 +24,7 @@ var (
 	ffmpegMutex            sync.Mutex
 	ffmpegShouldRun        = true
 	ffmpegStreamID         uint32
-	isResizing             = false
 )
-
-func PauseStreaming() {
-	ffmpegMutex.Lock()
-	defer ffmpegMutex.Unlock()
-	isResizing = true
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Println("Pausing wf-recorder for resize...")
-		ffmpegCmd.Process.Kill()
-	}
-	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
-		log.Println("Pausing audio ffmpeg for resize...")
-		ffmpegAudioCmd.Process.Kill()
-	}
-}
-
-func ResumeStreaming() {
-	ffmpegMutex.Lock()
-	defer ffmpegMutex.Unlock()
-	isResizing = false
-}
 
 func SetChroma(chroma string) {
 	if chroma != "420" && chroma != "444" {
@@ -75,7 +54,7 @@ func SetVideoCodec(codec string) {
 
 	VideoCodec = codec
 	log.Printf("Target video codec changed to %s, reinitializing WebRTC track and restarting ffmpeg...", codec)
-
+	
 	initWebRTCTrack() // Re-create track
 
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
@@ -206,11 +185,6 @@ func RestartForResize() {
 		log.Println("Screen size changed, restarting ffmpeg...")
 		ffmpegCmd.Process.Kill()
 	}
-	
-	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
-		log.Println("Screen size changed, restarting audio ffmpeg...")
-		ffmpegAudioCmd.Process.Kill()
-	}
 }
 
 func SetEnableAudio(enable bool) {
@@ -238,15 +212,22 @@ func SetAudioBitrate(bitrate string) {
 }
 
 func startStreaming(onFrame func([]byte, uint32)) {
+	ffmpegPath := "/app/bin/ffmpeg"
+	if _, err := os.Stat(ffmpegPath); os.IsNotExist(err) {
+		log.Println("Warning: /app/bin/ffmpeg not found, relying on system PATH")
+		ffmpegPath = "ffmpeg"
+	}
+
 	cleanupTasks = append(cleanupTasks, func() {
 		ffmpegMutex.Lock()
 		defer ffmpegMutex.Unlock()
 		ffmpegShouldRun = false
 		if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-			log.Println("Killing wf-recorder (cleanup)...")
+			log.Println("Killing ffmpeg (cleanup)...")
 			ffmpegCmd.Process.Kill()
 		}
 	})
+
 	go func() {
 		for {
 			ffmpegMutex.Lock()
@@ -254,100 +235,115 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				ffmpegMutex.Unlock()
 				break
 			}
-			resizing := isResizing
+			mode := targetMode
+			bw := targetBandwidthMbps
+			quality := targetQuality
+			fps := FPS
+			vbr := targetVBR
+			mpdecimate := targetMpdecimate
+			cpuEffort := targetCpuEffort
+			cpuThreads := targetCpuThreads
+			drawMouse := targetDrawMouse
+			keyframeInterval := targetKeyframeInterval
 			ffmpegMutex.Unlock()
 
-			if resizing {
-				time.Sleep(100 * time.Millisecond)
-				continue
+			width, height := GetScreenSize()
+			size := fmt.Sprintf("%dx%d", width, height)
+
+			drawMouseStr := "0"
+			if drawMouse {
+				drawMouseStr = "1"
 			}
 
-			codec := "libvpx"
-			format := "ivf"
-			if VideoCodec == "h264" {
-				codec = "libx264"
-				format = "h264"
-			} else if VideoCodec == "h264_nvenc" {
-				codec = "h264_nvenc"
-				format = "h264"
-			} else if VideoCodec == "h265" {
-				codec = "libx265"
-				format = "hevc"
-			} else if VideoCodec == "h265_nvenc" {
-				codec = "hevc_nvenc"
-				format = "hevc"
-			} else if VideoCodec == "av1" {
-				codec = "libaom-av1"
-				format = "ivf"
-			} else if VideoCodec == "av1_nvenc" {
-				codec = "av1_nvenc"
-				format = "ivf"
+			inputArgs := []string{"-framerate", fmt.Sprintf("%d", fps), "-f", "x11grab", "-draw_mouse", drawMouseStr, "-video_size", size, "-i", Display + ".0"}
+			if TestPattern {
+				inputArgs = []string{"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", size, fps)}
 			}
 
-			// Base config using wf-recorder
-			args := []string{
-				"-o0", "wf-recorder",
-			}
-
-			if !targetVBR {
-				args = append(args, "-D") // Disable damage tracking to continuously emit frames
-			}
-
-			args = append(args,
-				"-c", codec,
-				"-m", format,
-				"-r", fmt.Sprintf("%d", FPS),
-			)
-
-			if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
-				// NVENC direct buffer hardware encoding
-				// We OMIT -x nv12 to allow NVENC to handle the BGR0->YUV conversion on the GPU.
-				args = append(args,
-					"-p", "preset=p1",
-					"-p", "tune=ull",
-					"-p", "delay=0",
-					"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
-					"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
-					"-p", "g=60",
-				)
-				if codec == "h264_nvenc" || codec == "hevc_nvenc" {
-					args = append(args, "-p", "aud=1")
-				}
-			} else {
-				// CPU encoding
-				args = append(args, "-x", "yuv420p")
-				
-				if codec == "libvpx" {
-					args = append(args,
-						"-p", "deadline=realtime",
-						"-p", "static-thresh=0",
-						"-p", "lag-in-frames=0",
-					)
-				} else if codec == "libx264" || codec == "libx265" {
-					args = append(args, "-p", "tune=zerolatency")
-				} else if codec == "libaom-av1" {
-					args = append(args, "-p", "usage=realtime")
-				}
-
-				args = append(args,
-					"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
-					"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
-					"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
-					"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
-				)
-			}
+			useNVENC := VideoCodec == "h264_nvenc" || VideoCodec == "h265_nvenc" || VideoCodec == "av1_nvenc"
 			
-			args = append(args, "-f", "pipe:1")
+			var filterStr string
+			if mpdecimate {
+				filterStr = "mpdecimate=max=15,setpts=N/FRAME_RATE/TB"
+			} else {
+				filterStr = "setpts=N/FRAME_RATE/TB"
+			}
 
-			log.Printf("Starting wf-recorder capture: %v", args)
-			cmd := exec.Command("stdbuf", append([]string{"-i0", "-o0"}, args[1:]...)...)
-			cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0")
+			outputArgs := []string{}
+			if useNVENC {
+				if filterStr != "" {
+					filterStr += ","
+				}
+				// For NVENC, ensure even dimensions on CPU, then upload to GPU.
+				if Chroma == "444" {
+					// CPU-side format=yuv444p is required because:
+					// 1. NVENC won't auto-convert BGR0→YUV444p even with high444p profile
+					// 2. scale_cuda doesn't support rgb0→yuv444p conversion
+					// This does increase CPU usage at high resolutions (~50-85%).
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv444p,hwupload_cuda"
+				} else {
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,hwupload_cuda"
+				}
+				outputArgs = append(outputArgs, "-vf", filterStr)
+			} else {
+				if filterStr != "" {
+					filterStr += ","
+				}
+				if Chroma == "444" {
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv444p"
+				} else {
+					filterStr += "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p"
+				}
+				outputArgs = append(outputArgs, "-vf", filterStr)
+			}
+
+			useH264 := VideoCodec == "h264" || VideoCodec == "h264_nvenc"
+			useH265 := VideoCodec == "h265" || VideoCodec == "h265_nvenc"
+			useAV1 := VideoCodec == "av1" || VideoCodec == "av1_nvenc"
+
+			if useH264 {
+				outputArgs = append(outputArgs, buildH264Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
+			} else if useH265 {
+				outputArgs = append(outputArgs, buildH265Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
+			} else if useAV1 {
+				outputArgs = append(outputArgs, buildAV1Args(mode, bw, quality, fps, vbr, keyframeInterval)...)
+			} else {
+				outputArgs = append(outputArgs, buildVP8Args(mode, bw, quality, fps, cpuEffort, cpuThreads, vbr, keyframeInterval)...)
+			}
+
+			log.Printf("Starting ffmpeg capture (%s) from %s at %s target...", VideoCodec, Display, mode)
+
+			initialArgs := []string{
+				"-probesize", "32",
+				"-analyzeduration", "0",
+				"-fflags", "nobuffer+genpts",
+				"-threads", "2",
+			}
+			if !UseDebugFFmpeg {
+				initialArgs = append(initialArgs, "-nostats")
+			}
+			if useNVENC {
+				initialArgs = append(initialArgs, "-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu")
+			}
+
+			args := append(initialArgs, inputArgs...)
+			if vbr {
+				args = append(args, "-fps_mode", "vfr")
+			}
+			log.Printf("ffmpeg args: %v", args)
+			args = append(args, outputArgs...)
+
+			cmd := exec.Command(ffmpegPath, args...)
+			cmd.Env = append(os.Environ(), "DISPLAY="+Display)
 
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
-				log.Fatalf("Failed to get stdout from wf-recorder: %v", err)
+				log.Fatalf("Failed to get stdout from ffmpeg: %v", err)
 			}
-			cmd.Stderr = os.Stderr
+			stderr, err := cmd.StderrPipe()
+			if err != nil {
+				log.Fatalf("Failed to get stderr from ffmpeg: %v", err)
+			}
 
 			ffmpegMutex.Lock()
 			ffmpegStreamID++
@@ -356,33 +352,36 @@ func startStreaming(onFrame func([]byte, uint32)) {
 			ffmpegMutex.Unlock()
 
 			if err := cmd.Start(); err != nil {
-				log.Fatalf("Failed to start wf-recorder: %v", err)
+				log.Fatalf("Failed to start ffmpeg: %v", err)
 			}
 
-			// Trigger multiple startup pings to ensure a frame is sent in VBR mode
+			// Log stderr in background
 			go func() {
-				for i := 0; i < 3; i++ {
-					time.Sleep(500 * time.Millisecond)
-					TriggerPing()
+				buf := make([]byte, 1024)
+				for {
+					n, err := stderr.Read(buf)
+					if n > 0 {
+						log.Printf("[ffmpeg stderr]: %s", string(buf[:n]))
+					}
+					if err != nil {
+						break
+					}
 				}
 			}()
 
+			// Start frame splitting in a bounded way
 			doneCh := make(chan struct{})
 			go func() {
-				if format == "ivf" {
-					splitIVF(stdout, func(frame []byte) {
-						onFrame(frame, currentStreamID)
-					})
-				} else if format == "h264" {
+				if useH264 {
 					splitH264AnnexB(stdout, func(frame []byte) {
 						onFrame(frame, currentStreamID)
 					})
-				} else if format == "hevc" {
+				} else if useH265 {
 					splitH265AnnexB(stdout, func(frame []byte) {
 						onFrame(frame, currentStreamID)
 					})
 				} else {
-					log.Printf("Unknown format: %s, defaulting to splitIVF", format)
+					// Both VP8 and AV1 use IVF splitter
 					splitIVF(stdout, func(frame []byte) {
 						onFrame(frame, currentStreamID)
 					})
@@ -390,8 +389,11 @@ func startStreaming(onFrame func([]byte, uint32)) {
 				close(doneCh)
 			}()
 
+			// Wait for splitter to finish reading pipeline to avoid Wait closing stdout prematurely
 			<-doneCh
-			_ = cmd.Wait()
+
+			err = cmd.Wait()
+			log.Printf("ffmpeg exited: %v", err)
 
 			ffmpegMutex.Lock()
 			shouldRun := ffmpegShouldRun

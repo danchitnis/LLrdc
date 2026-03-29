@@ -48,15 +48,16 @@ func initWebRTCTrack() {
 	}
 
 	videoTrack, err = webrtc.NewTrackLocalStaticSample(
-		capability, "video", "pion",
+		capability, "video", "llrdc-stream",
 	)
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)
 	}
 
 	if audioTrack == nil {
+		log.Printf("Initializing audio track (Opus)")
 		audioTrack, err = webrtc.NewTrackLocalStaticSample(
-			webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion",
+			webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "llrdc-stream",
 		)
 		if err != nil {
 			log.Fatalf("Failed to create audio track: %v", err)
@@ -213,11 +214,15 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 	at := audioTrack
 	videoTrackMutex.RUnlock()
 
-	if _, err = pc.AddTrack(vt); err != nil {
-		return nil, err
+	if vt != nil {
+		log.Printf("Adding video track to PeerConnection: %s", vt.ID())
+		if _, err = pc.AddTrack(vt); err != nil {
+			return nil, err
+		}
 	}
 
 	if at != nil {
+		log.Printf("Adding audio track to PeerConnection: %s", at.ID())
 		if _, err = pc.AddTrack(at); err != nil {
 			return nil, err
 		}
