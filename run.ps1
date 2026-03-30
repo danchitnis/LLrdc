@@ -29,9 +29,6 @@ while ($i -lt $args.Length) {
         "--gpu" {
             $UseGpu = "true"
         }
-        "--debug-x11" {
-            $UseDebugX11 = "true"
-        }
         "--debug-ffmpeg" {
             $UseDebugFfmpeg = "true"
         }
@@ -134,14 +131,12 @@ $DockerArgs += @(
     "--cap-add=SYS_NICE",
     "--env", "PORT=$ServerPort",
     "--env", "FPS=$ServerFps",
-    "--env", "DISPLAY_NUM=$ServerDisplayNum",
     "--env", "VIDEO_CODEC=$ServerVideoCodec",
     "--env", "USE_GPU=$UseGpu",
     "--env", "TEST_PATTERN=$($env:TEST_PATTERN)",
     "--env", "WEBRTC_PUBLIC_IP=$WebrtcPublicIp",
     "--env", "WEBRTC_INTERFACES=$WebrtcInterfaces",
     "--env", "WEBRTC_EXCLUDE_INTERFACES=$WebrtcExcludeInterfaces",
-    "--env", "USE_DEBUG_X11=$UseDebugX11",
     "--env", "USE_DEBUG_FFMPEG=$UseDebugFfmpeg",
     "--env", "HOST_UID=1000",
     "${ImageName}:${ImageTag}"
@@ -150,3 +145,8 @@ $DockerArgs += @(
 # Execute Docker
 & docker $DockerArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+ODE -ne 0) { exit $LASTEXITCODE }
+EXITCODE }
+$LASTEXITCODE }
+ODE -ne 0) { exit $LASTEXITCODE }
+EXITCODE }

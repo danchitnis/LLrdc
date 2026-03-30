@@ -8,7 +8,6 @@ CONTAINER_NAME="${CONTAINER_NAME:-llrdc}"
 
 SERVER_PORT="${PORT:-8080}"
 SERVER_FPS="${FPS:-30}"
-SERVER_DISPLAY_NUM="${DISPLAY_NUM:-99}"
 SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
 
 # Port mappings (override via env vars)
@@ -16,15 +15,13 @@ HOST_PORT="${HOST_PORT:-8080}"
 CONTAINER_PORT="${CONTAINER_PORT:-$SERVER_PORT}"
 
 USE_GPU="false"
-USE_WAYLAND="false"
 USE_DETACHED="false"
-USE_DEBUG_X11="false"
 USE_DEBUG_FFMPEG="false"
 USE_DEBUG_INPUT="false"
+WEBRTC_INTERFACES_ENV=""
 WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
 WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
 SERVER_HDPI="${HDPI:-0}"
-CONTAINER_WEBRTC_INTERFACES=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,17 +29,8 @@ while [[ $# -gt 0 ]]; do
       USE_DETACHED="true"
       shift
       ;;
-    --wayland)
-      USE_WAYLAND="true"
-      IMAGE_TAG="wayland-latest"
-      shift
-      ;;
     --gpu)
       USE_GPU="true"
-      shift
-      ;;
-    --debug-x11)
-      USE_DEBUG_X11="true"
       shift
       ;;
     --debug-ffmpeg)
@@ -54,7 +42,6 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --debug)
-      USE_DEBUG_X11="true"
       USE_DEBUG_FFMPEG="true"
       USE_DEBUG_INPUT="true"
       shift
@@ -62,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --iface|-i)
       if [ -n "${2:-}" ]; then
         WEBRTC_INTERFACES="$2"
+        WEBRTC_INTERFACES_ENV="$2"
         shift 2
       else
         echo "Error: --iface requires an argument."
@@ -101,13 +89,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ "$USE_WAYLAND" = "true" ]; then
-  if [ "$USE_GPU" = "false" ]; then
-    SERVER_VIDEO_CODEC="vp8"
-    echo "  Mode  : Wayland (Minimal VP8 CPU)"
-  else
-    echo "  Mode  : Wayland (GPU)"
-  fi
+if [ "$USE_GPU" = "false" ]; then
+  SERVER_VIDEO_CODEC="${VIDEO_CODEC:-vp8}"
+  echo "  Mode  : Wayland (Minimal ${SERVER_VIDEO_CODEC} CPU)"
+else
+  echo "  Mode  : Wayland (GPU)"
 fi
 
 GPU_ARGS=""
@@ -163,22 +149,17 @@ if [ "$USE_DETACHED" = "true" ]; then
   DETACHED_ARGS="--detach"
 fi
 
-# Detect IP for WebRTC. 
-# WEBRTC_PUBLIC_IP is what Pion will put in the ICE candidates.
-# If the user provides one, use it.
-if [ -z "${WEBRTC_PUBLIC_IP:-}" ]; then
-  # If we have an explicit interface preference, use that IP
-  if [ -n "${WEBRTC_INTERFACES:-}" ]; then
-    WEBRTC_PUBLIC_IP=$(ip -4 addr show "${WEBRTC_INTERFACES%%,*}" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 || true)
-  fi
-
-  # Fallback to general detection
-  if [ -z "${WEBRTC_PUBLIC_IP:-}" ]; then
-    WEBRTC_PUBLIC_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{print $7}' || true)
-  fi
+# Detect IP for WebRTC only when explicitly provided or when an interface was pinned.
+# Otherwise the server derives the advertised IP from the incoming request host.
+if [ -z "${WEBRTC_PUBLIC_IP:-}" ] && [ -n "${WEBRTC_INTERFACES:-}" ]; then
+  WEBRTC_PUBLIC_IP=$(ip -4 addr show "${WEBRTC_INTERFACES%%,*}" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 || true)
 fi
 
-echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP:-none} (auto-detected)"
+if [ -n "${WEBRTC_PUBLIC_IP:-}" ]; then
+  echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP}"
+else
+  echo "  WebRTC IP : request-host derived"
+fi
 if [ -n "${WEBRTC_INTERFACES:-}" ]; then
   echo "  WebRTC Iface : ${WEBRTC_INTERFACES} (host IP selection only in Docker bridge mode)"
 fi
@@ -203,15 +184,13 @@ docker run \
   --cap-add=SYS_ADMIN \
   --env PORT="${SERVER_PORT}" \
   --env FPS="${SERVER_FPS}" \
-  --env DISPLAY_NUM="${SERVER_DISPLAY_NUM}" \
   --env VIDEO_CODEC="${SERVER_VIDEO_CODEC}" \
   --env USE_GPU="${USE_GPU}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
-  --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP}" \
-  --env WEBRTC_INTERFACES="${CONTAINER_WEBRTC_INTERFACES}" \
+  --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP:-}" \
+  --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES_ENV}" \
   --env WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}" \
   --env HDPI="${SERVER_HDPI}" \
-  --env USE_DEBUG_X11="${USE_DEBUG_X11}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env USE_DEBUG_INPUT="${USE_DEBUG_INPUT}" \
   --env HOST_UID=$(id -u) \

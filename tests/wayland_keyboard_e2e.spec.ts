@@ -12,7 +12,7 @@ test.describe('Wayland Keyboard Fast Typing E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for keyboard fast typing verification...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:wayland-latest`);
+    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
     // Give it time to boot
     await new Promise(r => setTimeout(r, 20000));

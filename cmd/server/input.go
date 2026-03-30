@@ -199,35 +199,56 @@ func TriggerPing() {
 	}
 }
 
-func injectMouseMove(nx, ny float64, display string) {
+func PrimeFrameGeneration(delay time.Duration, count int, interval time.Duration) {
+	if count <= 0 {
+		return
+	}
+	go func() {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		for i := 0; i < count; i++ {
+			select {
+			case inputChan <- inputTask{Type: "ping"}:
+			default:
+				TriggerPing()
+			}
+			if interval > 0 && i != count-1 {
+				time.Sleep(interval)
+			}
+		}
+	}()
+}
+
+func injectMouseMove(nx, ny float64) {
 	select {
 	case inputChan <- inputTask{Type: "mousemove", NX: nx, NY: ny}:
 	default:
 	}
 }
 
-func injectMouseButton(button int, action, display string) {
+func injectMouseButton(button int, action string) {
 	select {
 	case inputChan <- inputTask{Type: "mousebtn", Button: button, Action: action}:
 	default:
 	}
 }
 
-func injectKey(key, action, display string) {
+func injectKey(key, action string) {
 	select {
 	case inputChan <- inputTask{Type: action, Key: key}:
 	default:
 	}
 }
 
-func injectMouseWheel(dx, dy float64, display string) {
+func injectMouseWheel(dx, dy float64) {
 	select {
 	case inputChan <- inputTask{Type: "wheel", DX: dx, DY: dy}:
 	default:
 	}
 }
 
-func spawnApp(command, display string) {
+func spawnApp(command string) {
 	log.Printf("Spawning app (stubbed): %s", command)
 }
 

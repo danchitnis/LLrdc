@@ -3,11 +3,12 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 )
 
-func handleWebRTCOffer(msg map[string]interface{}, pc **webrtc.PeerConnection, writeJSON func(interface{}) error) {
+func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webrtc.PeerConnection, writeJSON func(interface{}) error) {
 	log.Println("Received webrtc_offer")
 	if sdpMap, ok := msg["sdp"].(map[string]interface{}); ok {
 		b, _ := json.Marshal(sdpMap)
@@ -19,10 +20,12 @@ func handleWebRTCOffer(msg map[string]interface{}, pc **webrtc.PeerConnection, w
 		}
 
 		if *pc != nil {
+			log.Println("Closing previous PeerConnection")
 			(*pc).Close()
 		}
 
-		newPC, err := createPeerConnection()
+		log.Println("Creating new PeerConnection")
+		newPC, err := createPeerConnection(requestHost)
 		if err != nil {
 			log.Printf("Failed to create PeerConnection: %v", err)
 			return
@@ -33,12 +36,15 @@ func handleWebRTCOffer(msg map[string]interface{}, pc **webrtc.PeerConnection, w
 			log.Printf("WebRTC PeerConnection state changed: %s", s.String())
 		})
 
+		(*pc).OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
+			log.Printf("WebRTC ICE connection state changed: %s", s.String())
+		})
+
 		(*pc).OnICECandidate(func(candidate *webrtc.ICECandidate) {
 			if candidate != nil {
-				cJSON := candidate.ToJSON()
 				writeJSON(map[string]interface{}{
 					"type":      "webrtc_ice",
-					"candidate": cJSON,
+					"candidate": candidate.ToJSON(),
 				})
 			}
 		})
@@ -80,6 +86,17 @@ func handleWebRTCOffer(msg map[string]interface{}, pc **webrtc.PeerConnection, w
 			"type": "webrtc_answer",
 			"sdp":  (*pc).LocalDescription(),
 		})
+
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			ffmpegMutex.Lock()
+			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+				log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
+				_ = ffmpegCmd.Process.Kill()
+			}
+			ffmpegMutex.Unlock()
+			PrimeFrameGeneration(250*time.Millisecond, 10, 100*time.Millisecond)
+		}()
 	} else {
 		log.Println("webrtc_offer missing 'sdp' map")
 	}

@@ -8,11 +8,6 @@ DOCKERFILE="Dockerfile"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --wayland)
-      DOCKERFILE="Dockerfile.wayland"
-      IMAGE_TAG="wayland-latest"
-      shift
-      ;;
     --tag)
       if [ -n "${2:-}" ]; then
         IMAGE_TAG="$2"

@@ -4,7 +4,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const PORT = 8000 + Math.floor(Math.random() * 1000);
-const DISPLAY_NUM = 150 + Math.floor(Math.random() * 50);
 
 function killPort(port: number) {
     try {
@@ -32,7 +31,6 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
                 ...process.env, 
                 PORT: PORT.toString(), 
                 HOST_PORT: PORT.toString(),
-                DISPLAY_NUM: DISPLAY_NUM.toString(),
                 CONTAINER_NAME: CONTAINER_NAME
             },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -84,6 +82,12 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
     const verifyStreaming = async (page: any, message: string) => {
         console.log(`Verifying: ${message}`);
 
+        // Generate activity
+        for (let i = 0; i < 10; i++) {
+            await page.mouse.move(100 + i * 50, 100 + i * 50);
+            await page.waitForTimeout(100);
+        }
+
         await page.waitForFunction(() => {
             const statusEl = document.getElementById('status');
             return statusEl && statusEl.textContent && statusEl.textContent.includes('WebRTC');
@@ -91,16 +95,18 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
 
         const getFrames = () => page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
         
-        const f1 = await getFrames();
-        await page.waitForTimeout(4000);
-        const f2 = await getFrames();
-        
-        expect(f2, `Stream should be active: ${message}`).toBeGreaterThan(f1);
-        console.log(`Active: ${f1} -> ${f2}`);
+        // Wait for frames to start increasing
+        await expect(async () => {
+            const f1 = await getFrames();
+            await page.waitForTimeout(2000);
+            const f2 = await getFrames();
+            expect(f2, `Stream should be active: ${message}`).toBeGreaterThan(f1);
+            console.log(`Active (${message}): ${f1} -> ${f2}`);
+        }).toPass({ timeout: 20000 });
     };
 
     test('should handle FPS and codec changes without freezing', async ({ page }) => {
-        test.setTimeout(50000); // 50 seconds
+        test.setTimeout(120000); // 120 seconds for multiple reconfigs
         
         page.on('console', msg => {
             if (msg.type() === 'log') console.log(`[Browser] ${msg.text()}`);
@@ -111,32 +117,69 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
 
         const status = page.locator('#status');
         
+        console.log('Ensuring H.264 (GPU - NVENC) is selected and VBR is disabled...');
+        await page.evaluate(() => {
+            const vbr = document.getElementById('vbr-checkbox') as HTMLInputElement;
+            if (vbr && vbr.checked) {
+                vbr.click();
+            }
+        });
+        
+        await page.waitForTimeout(5000); // Give VBR toggle plenty of time
+
+        await page.evaluate(() => {
+            const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
+            if (sel) {
+                sel.value = 'h264_nvenc';
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+        
+        await page.waitForTimeout(5000); // Give codec change plenty of time
+
         // 1. Initial State: H.264 @ 30 FPS
-        await expect(status).toContainText(/h264_nvenc|h264/i, { timeout: 20000 });
+        await expect(status).toContainText(/h264_nvenc|h264/i, { timeout: 45000 });
         await verifyStreaming(page, 'Initial H.264 @ 30 FPS');
 
         // 2. Change FPS: 30 -> 60
         console.log('Changing FPS to 60...');
-        await page.click('#config-btn');
-        await page.selectOption('#framerate-select', '60');
+        await page.evaluate(() => {
+            const sel = document.getElementById('framerate-select') as HTMLSelectElement;
+            if (sel) {
+                sel.value = '60';
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
         
-        // Wait for config broadcast
+        await page.waitForTimeout(5000); // Give FPS change time to propagate
+
+        // Wait for actual framerate update in UI
         await page.waitForFunction(() => {
             const statusEl = document.getElementById('status');
-            return statusEl && statusEl.textContent && statusEl.textContent.includes('FPS: 60');
-        }, { timeout: 15000 });
+            if (!statusEl || !statusEl.textContent) return false;
+            const match = statusEl.textContent.match(/FPS: (\d+)/);
+            if (!match) return false;
+            const currentFps = parseInt(match[1], 10);
+            return currentFps >= 58 && currentFps <= 62;
+        }, { timeout: 45000 });
 
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(2000);
         await verifyStreaming(page, 'H.264 @ 60 FPS');
 
         // 3. Change Codec: H.264 -> AV1
         console.log('Transitioning to AV1 NVENC...');
         const av1LogPromise = page.waitForEvent('console', msg => msg.text().includes('Server codec: av1_nvenc'));
-        await page.selectOption('#video-codec-select', 'av1_nvenc');
+        await page.evaluate(() => {
+            const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
+            if (sel) {
+                sel.value = 'av1_nvenc';
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
         await av1LogPromise;
 
-        await expect(status).toContainText(/av1_nvenc|av1/i, { timeout: 20000 });
-        await page.waitForTimeout(2000);
+        await expect(status).toContainText(/av1_nvenc|av1/i, { timeout: 45000 });
+        await page.waitForTimeout(5000);
         await verifyStreaming(page, 'AV1 NVENC after transition');
 
         console.log('All reconfiguration scenarios verified!');

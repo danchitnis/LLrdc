@@ -31,7 +31,7 @@ func startDBus() error {
 	return nil
 }
 
-func startWayland(displayNum string) error {
+func startWayland() error {
 	log.Println("Starting Wayland session (labwc + XFCE 4.20 native)...")
 
 	runDir := "/tmp/llrdc-run"
@@ -117,7 +117,17 @@ ctl.!default {
 		bgFile = "/usr/share/backgrounds/xfce/xfce-blue.jpg"
 	}
 
-	// Native labwc autostart script
+	scale := 1.0
+	if HDPI > 100 {
+		scale = float64(HDPI) / 100.0
+	}
+	
+	gdkScale := int(scale)
+	if gdkScale < 1 {
+		gdkScale = 1
+	}
+
+	// Native labwc autostart script - Reverted to EXACT stable content
 	autostart := fmt.Sprintf(`#!/bin/sh
 # Wait for the compositor to settle
 sleep 1
@@ -138,26 +148,71 @@ xfdesktop &
 # Apply Theme & Background Properties after components start
 (
   sleep 5
-  
-  # 2. Add PulseAudio plugin safely (Append to existing plugins)
-  python3 -c '
-import os, subprocess
-def run(cmd):
-    try: return subprocess.check_output(cmd, shell=True).decode().strip()
-    except: return ""
-try:
-    ids_str = run("xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids")
-    ids = [i for i in ids_str.split("\n") if i.isdigit()] if ids_str else []
-    if "20" not in ids:
-        run("xfconf-query -c xfce4-panel -p /plugins/plugin-20 -n -t string -s pulseaudio --create")
-        cmd = "xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids " + " ".join(["-t int -s " + i for i in ids]) + " -t int -s 20"
-        run(cmd)
-        run("xfce4-panel -r")
-except Exception as e: print(f"Error adding panel plugin: {e}")
-' &
 
+  # Ensure the PulseAudio panel plugin exists in the default XFCE panel.
+  python3 - <<'PY' &
+import re
+import subprocess
+
+def run(cmd):
+    return subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
+def query(path):
+    res = run(f"xfconf-query -c xfce4-panel -p {path}")
+    return res.stdout.strip() if res.returncode == 0 else ""
+
+def query_ids(path):
+    raw = query(path)
+    return [int(line.strip()) for line in raw.splitlines() if line.strip().isdigit()]
+
+panel1_ids = query_ids("/panels/panel-1/plugin-ids")
+panel2_ids = query_ids("/panels/panel-2/plugin-ids")
+
+all_props = query("/").splitlines()
+used_ids = set(panel1_ids + panel2_ids)
+for prop in all_props:
+    m = re.search(r"/plugins/plugin-(\d+)$", prop.strip())
+    if m:
+        used_ids.add(int(m.group(1)))
+
+existing_pulseaudio = None
+for pid in sorted(used_ids):
+    plugin_name = query(f"/plugins/plugin-{pid}")
+    if plugin_name == "pulseaudio":
+        existing_pulseaudio = pid
+        break
+
+if existing_pulseaudio is None:
+    plugin_id = max([19] + sorted(used_ids)) + 1
+    run(f"xfconf-query -c xfce4-panel -p /plugins/plugin-{plugin_id} -n -t string -s pulseaudio --create")
+else:
+    plugin_id = existing_pulseaudio
+
+# Remove the pulseaudio plugin from panel-2 if a previous bad config put it there.
+if plugin_id in panel2_ids:
+    new_panel2_ids = [pid for pid in panel2_ids if pid != plugin_id]
+    if new_panel2_ids:
+        args = " ".join([f"-t int -s {pid}" for pid in new_panel2_ids])
+        run(f"xfconf-query -c xfce4-panel -p /panels/panel-2/plugin-ids {args}")
+
+# Append to the top panel if it's not already there.
+if plugin_id not in panel1_ids:
+    new_panel1_ids = list(panel1_ids)
+    insert_after = 6 if 6 in new_panel1_ids else None
+    if insert_after is not None:
+        insert_idx = new_panel1_ids.index(insert_after) + 1
+        new_panel1_ids.insert(insert_idx, plugin_id)
+    else:
+        new_panel1_ids.append(plugin_id)
+    args = " ".join([f"-t int -s {pid}" for pid in new_panel1_ids])
+    run(f"xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids {args}")
+
+run("xfce4-panel -r")
+PY
+  
   xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
   xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
+  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create
   
   for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
     xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "%s" --create
@@ -172,7 +227,7 @@ except Exception as e: print(f"Error adding panel plugin: {e}")
   # swaybg is more reliable for Wayland backgrounds on labwc
   swaybg -o HEADLESS-1 -i "%s" -m stretch &
 ) &
-`, bgFile, bgFile)
+`, gdkScale, bgFile, bgFile)
 	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
 
 	// Start labwc standalone (it will use the global DBUS session)
@@ -210,20 +265,22 @@ except Exception as e: print(f"Error adding panel plugin: {e}")
 	}
 
 	log.Println("Wayland socket is ready.")
-	time.Sleep(1 * time.Second) // Stabilize before RandR
 
-	// Apply HDPI and resolution settings fully BEFORE returning
-	env := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:0")
-	applyHdpiSettings(env)
+	// Start native wayland input helper
+	startWaylandInputHelper()
+
+	waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:0")
+
+	// Set initial resolution and apply HDPI
+	w, h = GetScreenSize()
+	log.Printf("Setting initial Wayland resolution to %dx%d", w, h)
+	_ = resizeDisplay(w, h)
+	applyHdpiSettings(waylandEnv)
 
 	// Start PulseAudio
 	log.Println("Starting pulseaudio with null-sink for desktop audio capture...")
 	paCmd := exec.Command("pulseaudio", "-D", "--exit-idle-time=-1")
-	paCmd.Env = env
-	if UseDebugX11 {
-		paCmd.Stdout = os.Stdout
-		paCmd.Stderr = os.Stderr
-	}
+	paCmd.Env = waylandEnv
 	if err := paCmd.Run(); err == nil {
 		// Wait for PA to be ready by polling pactl
 		paReady := false
@@ -236,10 +293,10 @@ except Exception as e: print(f"Error adding panel plugin: {e}")
 		}
 		if paReady {
 			// Create a virtual sink for "Desktop Audio"
-			_ = runWithEnv("pactl", []string{"load-module", "module-null-sink", "sink_name=remote", "sink_properties=device.description=Desktop-Audio"}, env)
-			_ = runWithEnv("pactl", []string{"set-default-sink", "remote"}, env)
+			_ = runWithEnv("pactl", []string{"load-module", "module-null-sink", "sink_name=remote", "sink_properties=device.description=Desktop-Audio"}, waylandEnv)
+			_ = runWithEnv("pactl", []string{"set-default-sink", "remote"}, waylandEnv)
 			// Prevent the sink from suspending to keep audio stream active
-			_ = runWithEnv("pactl", []string{"unload-module", "module-suspend-on-idle"}, env)
+			_ = runWithEnv("pactl", []string{"unload-module", "module-suspend-on-idle"}, waylandEnv)
 			log.Println("PulseAudio virtual sink 'remote' initialized.")
 		} else {
 			log.Printf("Warning: PulseAudio daemon started but pactl timed out.")
@@ -248,11 +305,9 @@ except Exception as e: print(f"Error adding panel plugin: {e}")
 		log.Printf("Warning: pulseaudio failed to start: %v", err)
 	}
 
-	// Start native wayland input helper
-	startWaylandInputHelper()
-
 	// Wait a moment for UI components to stabilize
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
+	PrimeFrameGeneration(250*time.Millisecond, 10, 100*time.Millisecond)
 
 	return nil
 }

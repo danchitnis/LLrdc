@@ -14,7 +14,7 @@ test.describe('Minimal Wayland E2E', () => {
     }
 
     console.log('Starting container...');
-    const containerImage = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:wayland-latest';
+    const containerImage = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';
     execSync(`docker run -d --rm --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 ${containerImage}`);
     
     // Log container output

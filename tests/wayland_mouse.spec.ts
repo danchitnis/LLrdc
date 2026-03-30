@@ -13,7 +13,7 @@ test.describe('Wayland Mouse E2E', () => {
 
     console.log('Starting container for mouse test...');
     // No longer need --device /dev/uinput or SYS_ADMIN as we use Wayland protocols.
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:wayland-latest`);
+    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:latest`);
     
     await new Promise(r => setTimeout(r, 30000));
   });

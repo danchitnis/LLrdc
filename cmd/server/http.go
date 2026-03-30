@@ -69,8 +69,6 @@ func startHTTPServer() {
 		}
 	}()
 
-	startClipboardPoller(Display, broadcastJSON)
-
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if websocket.IsWebSocketUpgrade(r) {
 			wsHandler(w, r)
@@ -121,12 +119,12 @@ func broadcastJSON(msg interface{}) {
 	}
 }
 
-func broadcastVideoFrame(frame []byte, streamID uint32) {
+func broadcastVideoFrame(frame []byte, streamID uint32, codec string) {
 	captureTime := time.Now()
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
 	webrtcCopy := make([]byte, len(frame))
 	copy(webrtcCopy, frame)
-	WriteWebRTCFrame(webrtcCopy, streamID, captureTime)
+	WriteWebRTCFrame(webrtcCopy, streamID, captureTime, codec)
 
 	timestamp := float64(captureTime.UnixNano()) / float64(time.Millisecond)
 	header := make([]byte, 9)
@@ -164,8 +162,6 @@ func broadcastConfig(restarted bool) {
 		"vbr":                   targetVBR,
 		"mpdecimate":            targetMpdecimate,
 		"keyframe_interval":     targetKeyframeInterval,
-		"enableClipboard":       EnableClipboard,
-		"enable_hybrid":         EnableHybrid,
 		"settle_time":           SettleTime,
 		"tile_size":             TileSize,
 		"enable_audio":          EnableAudio,
@@ -182,24 +178,24 @@ func handleInputMessage(msg map[string]interface{}) {
 	switch msgType {
 	case "keydown", "keyup", "key":
 		if key, ok := msg["key"].(string); ok {
-			injectKey(key, msgType, Display)
+			injectKey(key, msgType)
 		}
 	case "mousemove":
 		if x, ok1 := msg["x"].(float64); ok1 {
 			if y, ok2 := msg["y"].(float64); ok2 {
-				injectMouseMove(x, y, Display)
+				injectMouseMove(x, y)
 			}
 		}
 	case "mousebtn":
 		if btn, ok := msg["button"].(float64); ok {
 			if action, ok2 := msg["action"].(string); ok2 {
-				injectMouseButton(int(btn), action, Display)
+				injectMouseButton(int(btn), action)
 			}
 		}
 	case "wheel":
 		if dx, ok1 := msg["deltaX"].(float64); ok1 {
 			if dy, ok2 := msg["deltaY"].(float64); ok2 {
-				injectMouseWheel(dx, dy, Display)
+				injectMouseWheel(dx, dy)
 			}
 		}
 	case "spawn":
@@ -210,7 +206,7 @@ func handleInputMessage(msg map[string]interface{}) {
 			}
 			parts := strings.Fields(cmd)
 			if len(parts) > 0 && allowed[parts[0]] {
-				spawnApp(cmd, Display)
+				spawnApp(cmd)
 			}
 		}
 	}
@@ -271,8 +267,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"vbr":                   targetVBR,
 		"mpdecimate":            targetMpdecimate,
 		"keyframe_interval":     targetKeyframeInterval,
-		"enableClipboard":       EnableClipboard,
-		"enable_hybrid":         EnableHybrid,
 		"settle_time":           SettleTime,
 		"tile_size":             TileSize,
 		"enable_audio":          EnableAudio,
@@ -280,12 +274,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		"hdpi":                  HDPI,
 	}
 	_ = writeJSON(initialConfig)
-
-	cursorMutex.Lock()
-	if cachedCursorMsg != nil {
-		_ = writeJSON(cachedCursorMsg)
-	}
-	cursorMutex.Unlock()
 
 	var pc *webrtc.PeerConnection
 
@@ -316,58 +304,39 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(100 * time.Millisecond)
 
 			go func() {
-				PauseStreaming()
-
 				if hdpiFloat, ok := msg["hdpi"].(float64); ok {
 					hdpi := int(hdpiFloat)
 					log.Printf("Received HDPI config: %d%%", hdpi)
 					if HDPI != hdpi {
 						HDPI = hdpi
 						applyHdpiSettings(os.Environ())
-						injectMouseMove(0.5, 0.5, Display)
-						injectMouseMove(0.501, 0.501, Display)
+						injectMouseMove(0.5, 0.5)
+						injectMouseMove(0.501, 0.501)
 					}
 				}
-				if vCodec, ok := msg["video_codec"].(string); ok {
-					log.Printf("Received Video Codec config: %s", vCodec)
-					VideoCodec = vCodec
-					initWebRTCTrack()
-					broadcastConfig(false)
+				if vCodec, ok := msg["videoCodec"].(string); ok {
+					SetVideoCodec(vCodec)
 				}
 				if chromaStr, ok := msg["chroma"].(string); ok {
-					log.Printf("Received Chroma config: %s", chromaStr)
-					Chroma = chromaStr
+					SetChroma(chromaStr)
 				}
 				if vbrBool, ok := msg["vbr"].(bool); ok {
-					log.Printf("Received VBR config: %v", vbrBool)
-					targetVBR = vbrBool
+					SetVBR(vbrBool)
 				}
 				if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
-					log.Printf("Received mpdecimate config: %v", mpdecimateBool)
-					targetMpdecimate = mpdecimateBool
+					SetMpdecimate(mpdecimateBool)
 				}
 				if keyframeFloat, ok := msg["keyframe_interval"].(float64); ok {
-					interval := int(keyframeFloat)
-					log.Printf("Received keyframe interval config: %d", interval)
-					targetKeyframeInterval = interval
+					SetKeyframeInterval(int(keyframeFloat))
 				}
 				if effortFloat, ok := msg["cpu_effort"].(float64); ok {
-					effort := int(effortFloat)
-					log.Printf("Received CPU effort config: %d", effort)
-					targetCpuEffort = effort
+					SetCpuEffort(int(effortFloat))
 				}
 				if threadsFloat, ok := msg["cpu_threads"].(float64); ok {
-					threads := int(threadsFloat)
-					log.Printf("Received CPU threads config: %d", threads)
-					targetCpuThreads = threads
+					SetCpuThreads(int(threadsFloat))
 				}
 				if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
-					log.Printf("Received Enable Desktop Mouse config: %v", mouseBool)
-					targetDrawMouse = mouseBool
-				}
-				if hybridBool, ok := msg["enable_hybrid"].(bool); ok {
-					log.Printf("Received Enable Hybrid Sharpness config: %v", hybridBool)
-					EnableHybrid = hybridBool
+					SetDrawMouse(mouseBool)
 				}
 				if settleTime, ok := msg["settle_time"].(float64); ok {
 					log.Printf("Received Settle Time config: %vms", settleTime)
@@ -378,42 +347,26 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					TileSize = int(tileSize)
 				}
 				if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
-					log.Printf("Received Enable Audio config: %v", enableAudioBool)
 					SetEnableAudio(enableAudioBool)
 				}
 				if audioBitrateStr, ok := msg["audio_bitrate"].(string); ok {
-					log.Printf("Received Audio Bitrate config: %s", audioBitrateStr)
 					SetAudioBitrate(audioBitrateStr)
 				}
 
 				if bwFloat, ok := msg["bandwidth"].(float64); ok {
-					bw := int(bwFloat)
-					log.Printf("Received bandwidth config: %d Mbps", bw)
-					targetMode = "bandwidth"
-					targetBandwidthMbps = bw
+					SetBandwidth(int(bwFloat))
 				} else if qFloat, ok := msg["quality"].(float64); ok {
-					q := int(qFloat)
-					log.Printf("Received quality config: %d", q)
-					targetMode = "quality"
-					targetQuality = q
+					SetQuality(int(qFloat))
 				}
 
 				if fpsFloat, ok := msg["framerate"].(float64); ok {
-					fps := int(fpsFloat)
-					log.Printf("Received framerate config: %d fps", fps)
-					ffmpegMutex.Lock()
-					if FPS != fps {
-						FPS = fps
-						initWebRTCTrack()
-					}
-					ffmpegMutex.Unlock()
+					SetFramerate(int(fpsFloat))
 				}
 
-				time.Sleep(1000 * time.Millisecond)
-				log.Println("Config updated, resuming stream gracefully...")
-				ResumeStreaming()
-				broadcastConfig(true)
-			}()
+					log.Println("Config updated, sending Kill() to restart stream...")
+					PrimeFrameGeneration(1250*time.Millisecond, 10, 100*time.Millisecond)
+					broadcastConfig(true)
+				}()
 		case "resize":
 			widthFloat, wOk := msg["width"].(float64)
 			heightFloat, hOk := msg["height"].(float64)
@@ -432,11 +385,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 							}
 
 							// Force Wayland compositor damage to allocate the new sized buffer
-							injectMouseMove(0.5, 0.5, Display)
-							injectMouseMove(0.501, 0.501, Display)
+							injectMouseMove(0.5, 0.5)
+							injectMouseMove(0.501, 0.501)
 
 							time.Sleep(1000 * time.Millisecond)
 							ResumeStreaming()
+							PrimeFrameGeneration(250*time.Millisecond, 10, 100*time.Millisecond)
 							broadcastConfig(true)
 						}()
 					} else {
@@ -459,10 +413,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				resp := map[string]interface{}{"type": "pong", "timestamp": ts}
 				writeJSON(resp)
 			}
-		case "clipboard_set":
-			handleClipboardSet(msg, Display)
 		case "webrtc_offer":
-			handleWebRTCOffer(msg, &pc, writeJSON)
+			handleWebRTCOffer(msg, r.Host, &pc, writeJSON)
 		case "webrtc_ice":
 			handleWebRTCICE(msg, pc)
 		}

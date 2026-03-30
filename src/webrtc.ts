@@ -45,6 +45,7 @@ export class WebRTCManager {
         if (this.statsInterval) clearInterval(this.statsInterval);
 
         if (this.rtcPeer) {
+            console.log('[WebRTCManager] Closing existing PeerConnection');
             this.rtcPeer.close();
         }
         if (videoEl) {
@@ -58,6 +59,7 @@ export class WebRTCManager {
         this.frameCount = 0;
         this.lastVideoFrameTime = 0;
         this.hasSentWebrtcReady = false;
+        
         this.rtcPeer = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
             bundlePolicy: 'max-bundle'
@@ -90,6 +92,12 @@ export class WebRTCManager {
             }
         };
 
+        this.rtcPeer.onconnectionstatechange = () => {
+            if (this.rtcPeer) {
+                log('Connection state: ' + this.rtcPeer.connectionState);
+            }
+        };
+
         this.rtcPeer.ontrack = (e: RTCTrackEvent) => {
             log('WebRTC track received: ' + e.track.kind);
             let stream = videoEl.srcObject as MediaStream;
@@ -99,20 +107,15 @@ export class WebRTCManager {
             }
             stream.addTrack(e.track);
 
-            if (videoEl.paused) {
-                this.isWebRtcActive = true;
-                videoEl.play().then(() => {
-                    log('WebRTC Video/Audio playing');
-                    if (statusEl) {
-                        statusEl.textContent = 'WebRTC Connected';
-                    }
-                    this.startVideoCanvasLoop(0);
-                }).catch((err: unknown) => {
-                    log('Media play error: ' + (err as Error).message);
-                    // Still active even if play() was interrupted, as stats will still flow
-                    this.startVideoCanvasLoop(0);
-                });
-            }
+            this.isWebRtcActive = true;
+            videoEl.play().then(() => {
+                log('WebRTC Video/Audio playing');
+                this.startVideoCanvasLoop(0);
+            }).catch((err: unknown) => {
+                log('Media play error: ' + (err as Error).message);
+                // Still active even if play() was interrupted, as stats will still flow
+                this.startVideoCanvasLoop(0);
+            });
         };
 
         this.rtcPeer.oniceconnectionstatechange = () => {
@@ -155,12 +158,8 @@ export class WebRTCManager {
         if (!this.isWebRtcActive) return;
         if (ctx && videoEl.videoWidth > 0) {
             if (metadata) {
-                // requestVideoFrameCallback natively throttles to the video frame rate.
-                // Safari WebKit has a bug where metadata.mediaTime is always 0 for WebRTC,
-                // so we simply count every callback invocation as a new frame.
                 this.frameCount++;
             } else {
-                // requestAnimationFrame fallback: deduplicate using currentTime
                 if (videoEl.currentTime !== this.lastVideoFrameTime) {
                     this.lastVideoFrameTime = videoEl.currentTime;
                     this.frameCount++;
@@ -189,11 +188,6 @@ export class WebRTCManager {
 
     private pollStats() {
         if (!this.rtcPeer) {
-            console.log('[pollStats] No rtcPeer');
-            return;
-        }
-        if (!this.isWebRtcActive) {
-            // console.log('[pollStats] isWebRtcActive is false');
             return;
         }
         this.rtcPeer.getStats(null).then(stats => {
@@ -212,13 +206,12 @@ export class WebRTCManager {
                         bytesReceived = report.bytesReceived || 0;
                         if (report.framesDecoded !== undefined) {
                             framesDecoded = report.framesDecoded;
+                        } else {
+                            console.log('[pollStats] inbound-rtp video found but framesDecoded is undefined');
                         }
                     } else if (kind === 'audio') {
                         hasAudioTrack = true;
                         audioBytes = report.bytesReceived || 0;
-                    } else if (report.bytesReceived > 0 && report.framesDecoded === undefined) {
-                        hasAudioTrack = true;
-                        audioBytes = report.bytesReceived;
                     }
                 }
                 if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime !== undefined) {
@@ -226,17 +219,21 @@ export class WebRTCManager {
                 }
             });
 
-            // Expose for Playwright
+            if (framesDecoded === -1) {
+                // Periodically log that we haven't found frames yet if bytes are flowing
+                if (bytesReceived > 0 && Math.random() < 0.1) {
+                    console.log('[pollStats] video bytes flowing but no framesDecoded found in stats');
+                }
+            }
+
             (window as any).audioStats = {
                 hasAudioTrack: hasAudioTrack,
                 bytesReceived: audioBytes
             };
 
-            // Fallback for some browsers/versions where kind might be missing in top level
             if (bytesReceived === 0) {
                 stats.forEach(report => {
                     if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number' && report.bytesReceived > 0) {
-                        // If we have multiple, this might sum audio + video but at least it's not 0
                         if (report.framesDecoded !== undefined) {
                             bytesReceived += report.bytesReceived;
                         }
@@ -251,7 +248,6 @@ export class WebRTCManager {
             } else if (this.lastBytesReceived > 0 && bytesReceived === this.lastBytesReceived) {
                 this.bandwidthMbps = 0;
             } else if (bytesReceived > 0 && this.lastBytesReceived === 0) {
-                // First non-zero sample
                 this.bandwidthMbps = 0;
             }
             this.lastBytesReceived = bytesReceived;
@@ -263,6 +259,10 @@ export class WebRTCManager {
                 }
                 this.lastTotalDecoded = framesDecoded;
             }
+
+            // Also update UI here so it changes from Negotiating -> Connected immediately
+            const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
+            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
         }).catch(() => { });
     }
 
@@ -270,7 +270,6 @@ export class WebRTCManager {
         const now = Date.now();
         const deltaMs = now - this.lastFPSUpdate;
         if (deltaMs >= 1000) {
-            // Only use frameCount fallback if RTC stats haven't initialized
             if (this.lastTotalDecoded === -1) {
                 this.fps = Math.round((this.frameCount * 1000) / deltaMs);
             }
@@ -289,10 +288,20 @@ export class WebRTCManager {
     }
 
     public handleAnswer(sdp: RTCSessionDescriptionInit) {
-        if (this.rtcPeer) this.rtcPeer.setRemoteDescription(new RTCSessionDescription(sdp));
+        if (this.rtcPeer) {
+            console.log('[WebRTCManager] Received WebRTC answer, setting remote description');
+            this.rtcPeer.setRemoteDescription(new RTCSessionDescription(sdp)).catch(err => {
+                console.error('[WebRTCManager] Error setting remote description:', err);
+                log('WebRTC remote description error: ' + err.message);
+            });
+        }
     }
 
     public handleIce(candidate: RTCIceCandidateInit) {
-        if (this.rtcPeer) this.rtcPeer.addIceCandidate(new RTCIceCandidate(candidate));
+        if (this.rtcPeer) {
+            this.rtcPeer.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
+                console.error('[WebRTCManager] Error adding remote ICE candidate:', err);
+            });
+        }
     }
 }

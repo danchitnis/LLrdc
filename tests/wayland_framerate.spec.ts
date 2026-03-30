@@ -12,7 +12,7 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for Wayland framerate test...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_WAYLAND=true danchitnis/llrdc:wayland-latest`);
+    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
     await new Promise(r => setTimeout(r, 30000));
   });
@@ -34,6 +34,11 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     await page.click('#config-btn');
     await expect(page.locator('#config-dropdown')).toBeVisible();
 
+    // Disable VBR to ensure constant frames for verification
+    const qualityTabLocator = page.locator('.config-tab-btn[data-tab="tab-quality"]');
+    await qualityTabLocator.click();
+    await page.uncheck('#vbr-checkbox');
+
     const streamTabLocator = page.locator('.config-tab-btn[data-tab="tab-stream"]');
     await streamTabLocator.click();
 
@@ -46,7 +51,7 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
 
     let logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
     expect(logs).toContain('Received framerate config: 60 fps');
-    expect(logs).toContain('Config updated, sending SIGINT to gracefully restart stream...');
+    expect(logs).toContain('Config updated, sending Kill() to restart stream...');
 
     // Select 15 FPS
     console.log('Selecting 15 FPS...');

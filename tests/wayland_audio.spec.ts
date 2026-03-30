@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { spawn, execSync } from 'child_process';
 
 // Use a local tag for testing
-const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'llrdc:wayland-local';
+const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';
 const CONTAINER_NAME = 'llrdc-wayland-audio-test';
 const PORT = '8088';
 
@@ -15,11 +15,11 @@ test.describe('Wayland Audio E2E', () => {
 
     console.log(`Starting container ${CONTAINER_NAME} using image ${CONTAINER_IMAGE}...`);
     try {
-        execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_WAYLAND=true -e ENABLE_AUDIO=true ${CONTAINER_IMAGE}`);
+        execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e ENABLE_AUDIO=true ${CONTAINER_IMAGE}`);
         // Log container output in background
         spawn('docker', ['logs', '-f', CONTAINER_NAME], { stdio: 'inherit' });
     } catch (e) {
-        throw new Error(`Failed to start container. Make sure you have built the image with: docker build -f Dockerfile.wayland -t ${CONTAINER_IMAGE} .`);
+        throw new Error(`Failed to start container. Make sure you have built the image with: docker build -t ${CONTAINER_IMAGE} .`);
     }
     
     // Wait for the server and components (XFCE, PulseAudio) to start

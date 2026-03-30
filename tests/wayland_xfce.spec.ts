@@ -12,7 +12,7 @@ test.describe('Wayland XFCE Verification', () => {
     } catch (e) {}
 
     console.log('Starting container for XFCE verification...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:wayland-latest`);
+    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
     // Give it plenty of time to boot XFCE
     await new Promise(r => setTimeout(r, 30000));

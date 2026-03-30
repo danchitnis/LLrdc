@@ -66,6 +66,7 @@ interface ConfigMessage {
     cpu_effort?: number;
     cpu_threads?: number;
     enable_desktop_mouse?: boolean;
+    videoCodec?: string;
     video_codec?: string;
     chroma?: string;
     hdpi?: number;
@@ -74,6 +75,7 @@ interface ConfigMessage {
     tile_size?: number;
     enable_audio?: boolean;
     audio_bitrate?: string;
+    restarted?: boolean;
 }
 
 let configDebounceTimer: number | null = null;
@@ -139,7 +141,7 @@ function sendConfig() {
         }
 
         if (videoCodecSelect) {
-            config.video_codec = videoCodecSelect.value;
+            config.videoCodec = videoCodecSelect.value;
         }
 
         if (enableAudioCheckbox) {
@@ -470,6 +472,8 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         }
 
         if (msg.framerate !== undefined && typeof msg.framerate === 'number') {
+            log(`Server framerate: ${msg.framerate} FPS`);
+            (window as any).serverFfmpegFps = msg.framerate;
             if (framerateSelect) {
                 framerateSelect.value = msg.framerate.toString();
             }
@@ -482,15 +486,15 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             }
         }
 
-        if (webrtc.rtcPeer && (codecChanged || msg.restarted === true)) {
-            log('Stream restart or codec change triggered WebRTC re-initialization...');
+        if (webrtc.rtcPeer && codecChanged) {
+            log('Codec change triggered WebRTC re-initialization...');
             webrtc.initWebRTC();
             // Clear flag after 2 seconds or when WebRTC becomes active again
             setTimeout(() => { isReinitializingWebRTC = false; }, 2000);
         }
 
-        if (msg.restarted === true && !codecChanged) {
-            log('Server restarted (resize/config), handled via WebRTC re-initialization if needed');
+        if (msg.restarted === true) {
+            log('Config updated, sending Kill() to restart stream...');
         }
 
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {

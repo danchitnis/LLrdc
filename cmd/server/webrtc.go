@@ -27,6 +27,19 @@ var (
 	currentStreamID uint32
 )
 
+func normalizeCodecFamily(codec string) string {
+	switch codec {
+	case "h264", "h264_nvenc":
+		return "h264"
+	case "h265", "h265_nvenc":
+		return "h265"
+	case "av1", "av1_nvenc":
+		return "av1"
+	default:
+		return codec
+	}
+}
+
 func initWebRTCTrack() {
 	videoTrackMutex.Lock()
 	defer videoTrackMutex.Unlock()
@@ -48,7 +61,7 @@ func initWebRTCTrack() {
 	}
 
 	videoTrack, err = webrtc.NewTrackLocalStaticSample(
-		capability, "video", "llrdc-stream",
+		capability, "video", "pion",
 	)
 	if err != nil {
 		log.Fatalf("Failed to create video track: %v", err)
@@ -57,7 +70,7 @@ func initWebRTCTrack() {
 	if audioTrack == nil {
 		log.Printf("Initializing audio track (Opus)")
 		audioTrack, err = webrtc.NewTrackLocalStaticSample(
-			webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "llrdc-stream",
+			webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "pion",
 		)
 		if err != nil {
 			log.Fatalf("Failed to create audio track: %v", err)
@@ -90,8 +103,8 @@ func initWebRTC() {
 				lastTrack = vt
 			}
 
-			// DROP frames from a different codec to prevent browser decoder from freezing
-			if frame.Codec != VideoCodec {
+			// Drop frames from a different codec family to prevent decoder freezes across reconfigurations.
+			if normalizeCodecFamily(frame.Codec) != normalizeCodecFamily(VideoCodec) {
 				continue
 			}
 
@@ -147,27 +160,76 @@ func initWebRTC() {
 	}()
 }
 
-func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time) {
+func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string) {
 	select {
-	case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: VideoCodec}:
+	case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}:
 	default:
 		log.Println("WARNING: webrtcFrameChan is full, dropping frame!")
 	}
 }
 
-func createPeerConnection() (*webrtc.PeerConnection, error) {
+func extractHostOnly(hostport string) string {
+	if hostport == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(hostport); err == nil {
+		return strings.Trim(host, "[]")
+	}
+	if strings.Count(hostport, ":") == 1 {
+		if host, _, err := net.SplitHostPort(hostport); err == nil {
+			return strings.Trim(host, "[]")
+		}
+		if idx := strings.LastIndex(hostport, ":"); idx != -1 {
+			return hostport[:idx]
+		}
+	}
+	return strings.Trim(hostport, "[]")
+}
+
+func resolveAdvertisedIP(requestHost string) string {
+	if publicIP := strings.TrimSpace(WebRTCPublicIP); publicIP != "" {
+		if net.ParseIP(publicIP) != nil {
+			return publicIP
+		}
+		log.Printf("Warning: WEBRTC_PUBLIC_IP '%s' is not a valid IP. Ignoring.", publicIP)
+	}
+
+	host := strings.TrimSpace(extractHostOnly(requestHost))
+	if host == "" {
+		return ""
+	}
+	if strings.EqualFold(host, "localhost") {
+		return "127.0.0.1"
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		log.Printf("Warning: failed to resolve request host '%s' for WebRTC advertisement: %v", host, err)
+		return ""
+	}
+	for _, ip := range ips {
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	if len(ips) > 0 {
+		return ips[0].String()
+	}
+	return ""
+}
+
+func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
 	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
 
-	// Optionally allow overriding the public IP (e.g., if behind a strict NAT)
-	publicIP := WebRTCPublicIP
+	// Prefer an explicit WEBRTC_PUBLIC_IP; otherwise derive from the browser request host.
+	publicIP := resolveAdvertisedIP(requestHost)
 	if publicIP != "" {
-		if net.ParseIP(publicIP) != nil {
-			s.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
-			log.Printf("WebRTC Setting NAT1To1IPs to %s", publicIP)
-		} else {
-			log.Printf("Warning: WEBRTC_PUBLIC_IP '%s' is not a valid IP. Ignoring.", publicIP)
-		}
+		s.SetNAT1To1IPs([]string{publicIP}, webrtc.ICECandidateTypeHost)
+		log.Printf("WebRTC Setting NAT1To1IPs to %s", publicIP)
 	}
 
 	webrtcInterfaces := strings.TrimSpace(WebRTCInterfaces)
@@ -175,21 +237,40 @@ func createPeerConnection() (*webrtc.PeerConnection, error) {
 	if webrtcInterfaces != "" || webrtcExcludeInterfaces != "" {
 		interfaces := splitAndTrimCSV(webrtcInterfaces)
 		excludeInterfaces := splitAndTrimCSV(webrtcExcludeInterfaces)
+
+		// Get local interfaces to see if the requested ones exist
+		localIfaces, _ := net.Interfaces()
+		ifaceMap := make(map[string]bool)
+		for _, iface := range localIfaces {
+			ifaceMap[iface.Name] = true
+		}
+
 		s.SetInterfaceFilter(func(i string) bool {
-			for _, excl := range excludeInterfaces {
-				if i == excl || strings.HasPrefix(i, excl) {
-					return false
+			// Check exclusions first
+			if webrtcExcludeInterfaces != "" {
+				for _, excl := range excludeInterfaces {
+					if i == excl || strings.HasPrefix(i, excl) {
+						return false
+					}
 				}
 			}
-			if len(interfaces) == 0 {
-				return true
-			}
-			for _, iface := range interfaces {
-				if i == iface {
-					return true
+			// If allowed interfaces are specified, check those
+			if len(interfaces) > 0 {
+				foundAny := false
+				for _, requested := range interfaces {
+					if ifaceMap[requested] {
+						foundAny = true
+						if i == requested {
+							return true
+						}
+					}
 				}
+				// If we found at least one of the requested interfaces in the container, 
+				// then we restrict to those. Otherwise, we allow all to prevent total lockout.
+				return !foundAny
 			}
-			return false
+			// Otherwise allow
+			return true
 		})
 		log.Printf("WebRTC Setting InterfaceFilter: allow=%v, exclude=%v", interfaces, excludeInterfaces)
 	}

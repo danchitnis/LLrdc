@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
 
 const CONTAINER_NAME = 'llrdc-wayland-vbr-test';
-const PORT = '8085';
+const PORT = '8095';
 
 test.describe('Wayland VBR E2E', () => {
   test.beforeAll(async () => {
@@ -12,7 +12,7 @@ test.describe('Wayland VBR E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for Wayland VBR test...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_WAYLAND=true danchitnis/llrdc:wayland-latest`);
+    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
     await new Promise(r => setTimeout(r, 30000));
   });

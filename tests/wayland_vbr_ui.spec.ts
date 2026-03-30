@@ -13,7 +13,7 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
 
         console.log('Starting container for Wayland VBR UI test...');
         // VBR is enabled by default in the new implementation
-        execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_WAYLAND=true danchitnis/llrdc:wayland-latest`);
+        execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
         
         await new Promise(r => setTimeout(r, 15000));
     });
@@ -92,35 +92,67 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
     });
 
     test('should show 0 FPS and low BW when screen is static with VBR (WebCodecs)', async ({ page }) => {
-        // Force WebCodecs by blocking WebRTC or just not using it.
-        // Easiest is to set a flag or just wait for it to fallback if we can block it.
-        // Or we can just call the webcodecs init manually in console.
-        await page.goto(`http://localhost:${PORT}`);
-        
-        await page.evaluate(() => {
-            if (window.webrtcManager) {
-                window.webrtcManager.isWebRtcActive = false;
-                if (window.webrtcManager.rtcPeer) window.webrtcManager.rtcPeer.close();
+        await page.addInitScript(() => {
+            class DisabledRTCPeerConnection {
+                public localDescription: RTCSessionDescriptionInit | null = null;
+                public connectionState: RTCPeerConnectionState = 'new';
+                public iceConnectionState: RTCIceConnectionState = 'new';
+                public onicecandidate: ((this: RTCPeerConnection, ev: RTCPeerConnectionIceEvent) => any) | null = null;
+                public onconnectionstatechange: ((this: RTCPeerConnection, ev: Event) => any) | null = null;
+                public oniceconnectionstatechange: ((this: RTCPeerConnection, ev: Event) => any) | null = null;
+                public ontrack: ((this: RTCPeerConnection, ev: RTCTrackEvent) => any) | null = null;
+
+                addTransceiver() {}
+                createDataChannel() {
+                    return {
+                        readyState: 'closed',
+                        onopen: null,
+                        onclose: null,
+                        close() {}
+                    };
+                }
+                createOffer() {
+                    return Promise.reject(new Error('WebRTC disabled for WebCodecs test'));
+                }
+                setLocalDescription() {
+                    return Promise.resolve();
+                }
+                setRemoteDescription() {
+                    return Promise.resolve();
+                }
+                addIceCandidate() {
+                    return Promise.resolve();
+                }
+                getStats() {
+                    return Promise.resolve(new Map());
+                }
+                close() {}
             }
+
+            // Force a genuine WebCodecs-only session so the websocket fallback remains active.
+            (window as unknown as { RTCPeerConnection: typeof RTCPeerConnection }).RTCPeerConnection =
+                DisabledRTCPeerConnection as unknown as typeof RTCPeerConnection;
         });
+
+        await page.goto(`http://localhost:${PORT}`);
 
         const statusEl = page.locator('#status');
         await expect(statusEl).toHaveText(/WebCodecs/i, { timeout: 30000 });
-        await expect(statusEl).toHaveText(/FPS:/i, { timeout: 60000 });
 
         // Wait for it to settle
         await page.waitForTimeout(10000);
         let statusText = await statusEl.textContent() || '';
-        console.log('Idle WebCodecs Status:', statusText);
+        const fps = await page.evaluate(() => window.webcodecsManager?.fps ?? -1);
 
-        const fpsMatch = statusText.match(/FPS: (\d+)/);
-        const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : -1;
-        
+        console.log('Idle WebCodecs Status:', statusText);
         console.log(`Idle WebCodecs FPS: ${fps}`);
         expect(fps).toBeLessThanOrEqual(2);
 
         // Activity check for WebCodecs
         console.log('Generating activity for WebCodecs...');
+        execSync(`docker exec -u remote -d ${CONTAINER_NAME} xfce4-terminal`);
+        await page.waitForTimeout(2000);
+
         const overlay = page.locator('#input-overlay');
         await overlay.hover();
         
@@ -128,13 +160,9 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
         for (let i = 0; i < 20; i++) {
             await page.mouse.move(100 + (i % 10) * 50, 100 + (i % 10) * 50);
             await page.waitForTimeout(200);
-            
-            statusText = await statusEl.textContent() || '';
-            const match = statusText.match(/FPS: (\d+)/);
-            if (match) {
-                const currentFps = parseInt(match[1], 10);
-                if (currentFps > maxActiveFps) maxActiveFps = currentFps;
-            }
+
+            const currentFps = await page.evaluate(() => window.webcodecsManager?.fps ?? 0);
+            if (currentFps > maxActiveFps) maxActiveFps = currentFps;
             if (maxActiveFps > 5) break;
         }
         console.log(`Max Observed WebCodecs Active FPS: ${maxActiveFps}`);

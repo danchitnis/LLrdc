@@ -95,10 +95,12 @@ func startAudioStreaming() {
 
 				pageCount++
 				// Do not skip any pages, pass everything to WriteSample
-				if pageCount <= 10 {
-					log.Printf("Parsed Ogg page %d, data len: %d", pageCount, len(pageData))
-				} else if pageCount%50 == 0 {
-					log.Printf("Parsed %d Ogg pages, data len: %d", pageCount, len(pageData))
+				if UseDebugFFmpeg {
+					if pageCount <= 10 {
+						log.Printf("Parsed Ogg page %d, data len: %d", pageCount, len(pageData))
+					} else if pageCount%50 == 0 {
+						log.Printf("Parsed %d Ogg pages, data len: %d", pageCount, len(pageData))
+					}
 				}
 
 				sampleCount := float64(pageHeader.GranulePosition - lastGranule)

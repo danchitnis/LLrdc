@@ -46,8 +46,7 @@ The script will automatically detect and map CUDA/NVCC paths and switch to `h264
 
 To see verbose debug logs, you can use the following flags:
 - `--debug-ffmpeg`: Shows real-time ffmpeg frame rate and encoder reports.
-- `--debug-x11`: Shows X11 keyboard warnings and XFCE session startup errors.
-- `--debug`: Enables both ffmpeg and X11 debug logging.
+- `--debug`: Enables both ffmpeg and input debug logging.
 - `--hdpi [percent]` or `-h [percent]`: Enables High DPI scaling for the XFCE desktop. If no percentage is provided, it defaults to `200` (2x scaling). Example: `--hdpi 150` for 1.5x scaling.
 
 ### Network and WebRTC Configuration
@@ -118,8 +117,7 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 - `--enable-clipboard`: Enable clipboard synchronization (default: `true`).
 
 #### Testing Flags
-- `--test-pattern`: Run with an FFmpeg `testsrc` pattern instead of capturing the X11 desktop.
-- `--test-minimal-x11`: Start a bare X11 session without the full XFCE desktop environment (useful for automated UI tests).
+- `--test-pattern`: Run with an FFmpeg `testsrc` pattern instead of capturing the Wayland session.
 
 ### Environment Variables
 
@@ -161,3 +159,5 @@ Chroma 4:4:4 avoids chroma subsampling, improving clarity for text and sharp edg
 | `vp8` | ❌ | VP8 does not support 4:4:4 |
 
 > **Note:** When using `h264_nvenc` or `h265_nvenc` with chroma 444, CPU usage increases because FFmpeg must convert frames from BGR0 to YUV444p on the CPU before uploading to the GPU. NVIDIA's `scale_cuda` filter does not support this conversion.
+from BGR0 to YUV444p on the CPU before uploading to the GPU. NVIDIA's `scale_cuda` filter does not support this conversion.
+ding to the GPU. NVIDIA's `scale_cuda` filter does not support this conversion.

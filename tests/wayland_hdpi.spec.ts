@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
 
 const CONTAINER_NAME = 'llrdc-wayland-hdpi-test';
-const PORT = '8082';
+const PORT = '8092';
 
 test.describe('Wayland HDPI Scaling', () => {
   test.beforeAll(async () => {
@@ -14,19 +14,27 @@ test.describe('Wayland HDPI Scaling', () => {
     }
 
     console.log('Starting container with HDPI=200...');
-    execSync(`docker run -d --rm --name ${CONTAINER_NAME} -p ${PORT}:8080/tcp -p ${PORT}:8080/udp -e PORT=8080 -e WEBRTC_PUBLIC_IP=127.0.0.1 -e HDPI=200 danchitnis/llrdc:wayland-latest`);
+    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080/tcp -p ${PORT}:8080/udp -e PORT=8080 -e WEBRTC_PUBLIC_IP=127.0.0.1 -e HDPI=200 danchitnis/llrdc:latest`);
     
     // Give it a moment to boot
     await new Promise(r => setTimeout(r, 20000));
   });
 
-  test.afterAll(async () => {
-    console.log('Cleaning up container...');
-    try {
-      execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
-    } catch (e) {
-      // ignore
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      console.log('Test failed, keeping container for inspection.');
+    } else {
+      console.log('Test passed, cleaning up container...');
+      try {
+        execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
+      } catch (e) {
+        // ignore
+      }
     }
+  });
+
+  test.afterAll(async () => {
+    // No-op to avoid double cleanup
   });
 
   test('should verify initial HDPI and change it dynamically', async ({ page }) => {

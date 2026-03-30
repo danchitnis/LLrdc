@@ -13,8 +13,6 @@ import (
 var (
 	Port                    int
 	FPS                     int
-	DisplayNum              string
-	Display                 string
 	VideoCodec              string
 	Chroma                  string
 	UseGPU                  bool
@@ -22,22 +20,18 @@ var (
 	AV1NVENCAvailable       bool
 	H264NVENC444Available   bool
 	H265NVENC444Available   bool
-	UseDebugX11             bool
 	UseDebugFFmpeg          bool
 	UseDebugInput           bool
 	TestPattern             bool
-	TestMinimalX11          bool
-	UseWayland              bool
-	EnableClipboard         bool
-	EnableHybrid            bool
 	EnableAudio             bool
 	AudioBitrate            string
-	TileSize                int
 	Wallpaper               string
 	WebRTCPublicIP          string
 	WebRTCInterfaces        string
 	WebRTCExcludeInterfaces string
 	HDPI                    int
+	SettleTime              int
+	TileSize                int
 )
 
 func initConfig() {
@@ -63,29 +57,13 @@ func initConfig() {
 	}
 
 	defaultUseGPU := os.Getenv("USE_GPU") == "true"
-	defaultUseDebugX11 := os.Getenv("USE_DEBUG_X11") == "true"
 	defaultUseDebugFFmpeg := os.Getenv("USE_DEBUG_FFMPEG") == "true"
 	defaultUseDebugInput := os.Getenv("USE_DEBUG_INPUT") == "true"
 	defaultTestPattern := os.Getenv("TEST_PATTERN") != ""
-	defaultTestMinimalX11 := os.Getenv("TEST_MINIMAL_X11") != ""
-	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
-	defaultEnableHybrid := os.Getenv("ENABLE_HYBRID") == "true"
 	defaultEnableAudio := os.Getenv("ENABLE_AUDIO") != "false"
 	defaultAudioBitrate := os.Getenv("AUDIO_BITRATE")
 	if defaultAudioBitrate == "" {
 		defaultAudioBitrate = "128k"
-	}
-	defaultTileSizeStr := os.Getenv("TILE_SIZE")
-	defaultTileSize := 512
-	if defaultTileSizeStr != "" {
-		if val, err := strconv.Atoi(defaultTileSizeStr); err == nil {
-			defaultTileSize = val
-		}
-	}
-
-	defaultDisplayNum := os.Getenv("DISPLAY_NUM")
-	if defaultDisplayNum == "" {
-		defaultDisplayNum = "99"
 	}
 
 	defaultWallpaper := os.Getenv("WALLPAPER")
@@ -96,6 +74,16 @@ func initConfig() {
 	defaultHDPI := 0
 	if hdpi, err := strconv.Atoi(os.Getenv("HDPI")); err == nil {
 		defaultHDPI = hdpi
+	}
+
+	defaultSettleTime := 500
+	if st, err := strconv.Atoi(os.Getenv("SETTLE_TIME")); err == nil {
+		defaultSettleTime = st
+	}
+
+	defaultTileSize := 128
+	if ts, err := strconv.Atoi(os.Getenv("TILE_SIZE")); err == nil {
+		defaultTileSize = ts
 	}
 
 	// Custom Usage format
@@ -110,51 +98,48 @@ func initConfig() {
 		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-gpu", "Enable GPU acceleration if available", UseGPU)
-		printFlag(os.Stderr, "use-debug-x11", "Enable X11 debugging", UseDebugX11)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
-		printFlag(os.Stderr, "display-num", "X11 Display number (e.g., 99 for :99)", DisplayNum)
 		printFlag(os.Stderr, "wallpaper", "Path to wallpaper image", Wallpaper)
 		printFlag(os.Stderr, "webrtc-public-ip", "Public IP for WebRTC", WebRTCPublicIP)
 		printFlag(os.Stderr, "webrtc-interfaces", "Comma-separated allowed network interfaces for WebRTC", WebRTCInterfaces)
 		printFlag(os.Stderr, "webrtc-exclude-interfaces", "Comma-separated excluded network interfaces for WebRTC", WebRTCExcludeInterfaces)
-		printFlag(os.Stderr, "enable-clipboard", "Enable clipboard synchronization", EnableClipboard)
 		printFlag(os.Stderr, "enable-audio", "Enable audio streaming", EnableAudio)
 		printFlag(os.Stderr, "audio-bitrate", "Audio bitrate (e.g. 64k, 128k)", AudioBitrate)
 		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
 
 		fmt.Fprintf(os.Stderr, "\nTesting Flags:\n")
-		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of X11", TestPattern)
-		printFlag(os.Stderr, "test-minimal-x11", "Start minimal X11 without full DE", TestMinimalX11)
+		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of Wayland session", TestPattern)
+		printFlag(os.Stderr, "settle-time", "Hybrid sharpness settle time (ms)", SettleTime)
+		printFlag(os.Stderr, "tile-size", "Hybrid sharpness tile size (px)", TileSize)
 	}
 
+	defaultVBR := true
+	if vbr, err := strconv.ParseBool(os.Getenv("VBR")); err == nil {
+		defaultVBR = vbr
+	}
+	
 	// Define flags
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
 	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseGPU, "use-gpu", defaultUseGPU, "Enable GPU acceleration if available")
-	flag.BoolVar(&UseDebugX11, "use-debug-x11", defaultUseDebugX11, "Enable X11 debugging")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")
 	flag.BoolVar(&UseDebugInput, "use-debug-input", defaultUseDebugInput, "Enable Input debugging")
-	flag.StringVar(&DisplayNum, "display-num", defaultDisplayNum, "X11 Display number (e.g., 99 for :99)")
-	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of X11")
-	flag.BoolVar(&TestMinimalX11, "test-minimal-x11", defaultTestMinimalX11, "Start minimal X11 without full DE")
-	flag.BoolVar(&UseWayland, "use-wayland", os.Getenv("USE_WAYLAND") == "true", "Run in Wayland mode")
+	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of Wayland session")
 	flag.StringVar(&Wallpaper, "wallpaper", defaultWallpaper, "Path to wallpaper image")
 	flag.StringVar(&WebRTCPublicIP, "webrtc-public-ip", defaultWebRTCPublicIP, "Public IP for WebRTC")
 	flag.StringVar(&WebRTCInterfaces, "webrtc-interfaces", defaultWebRTCInterfaces, "Comma-separated allowed network interfaces for WebRTC")
 	flag.StringVar(&WebRTCExcludeInterfaces, "webrtc-exclude-interfaces", defaultWebRTCExcludeInterfaces, "Comma-separated excluded network interfaces for WebRTC")
-	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
 	EnableAudio = true
 	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
 	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
-	flag.BoolVar(&EnableHybrid, "enable-hybrid", defaultEnableHybrid, "Enable RDP-style hybrid sharpness patches")
-	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Tile size for hybrid patches (64-1024)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
+	flag.IntVar(&SettleTime, "settle-time", defaultSettleTime, "Hybrid sharpness settle time (ms)")
+	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Hybrid sharpness tile size (px)")
+	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (damage tracking)")
 
 	flag.Parse()
-
-	Display = ":" + DisplayNum
 
 	if UseGPU {
 		log.Printf("Checking NVIDIA GPU capabilities...")
