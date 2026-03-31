@@ -57,6 +57,10 @@ To see verbose debug logs, you can use the following flags:
 - `--debug`: Enables both ffmpeg and input debug logging.
 - `--hdpi [percent]` or `-h [percent]`: Enables High DPI scaling for the XFCE desktop. If no percentage is provided, it defaults to `200` (2x scaling). Example: `--hdpi 150` for 1.5x scaling.
 - `--capture-mode compat|direct`: Selects the Wayland capture path. `direct` requires `--gpu` and only activates when direct-buffer probing succeeds.
+- `--webrtc-buffer [frames]`: Sets the WebRTC frame buffer limit (default: `30`).
+- `--activity-hz [hz]`: Sets the input activity heartbeat frequency (default: `30`).
+- `--activity-timeout [ms]`: Sets how long the heartbeat continues after last input (default: `1500`).
+- `--no-nvenc-latency`: Disables ultra-low-latency NVENC optimizations.
 
 ### Network and WebRTC Configuration
 
@@ -124,6 +128,10 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 - `--webrtc-public-ip`: Manually set the public IP for ICE candidates.
 - `--webrtc-interfaces`: Comma-separated allowlist of network interfaces.
 - `--webrtc-exclude-interfaces`: Comma-separated blocklist of network interfaces.
+- `--webrtc-buffer`: WebRTC frame channel size (default: `30`). Lower values reduce lag but may increase stutter.
+- `--activity-hz`: Input heartbeat frequency in Hz (default: `30`). Controls how often the server pings for damage during movement.
+- `--activity-timeout`: Inactivity timeout in ms before stopping the heartbeat (default: `1500`).
+- `--nvenc-latency`: Enable ultra-low latency NVENC optimizations (default: `true`).
 - `--enable-clipboard`: Enable clipboard synchronization (default: `true`).
 
 #### Testing Flags
@@ -148,6 +156,10 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
 | `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
 | `WEBRTC_PUBLIC_IP` | Public IP override | `--webrtc-public-ip` |
+| `WEBRTC_BUFFER_SIZE` | WebRTC frame channel size | `--webrtc-buffer` |
+| `ACTIVITY_PULSE_HZ` | Heartbeat frequency (Hz) | `--activity-hz` |
+| `ACTIVITY_TIMEOUT` | Inactivity timeout (ms) | `--activity-timeout` |
+| `NVENC_LATENCY_MODE` | Toggle NVENC ULL (Ultra Low Latency) | `--nvenc-latency` |
 | `TEST_PATTERN` | Use FFmpeg test pattern | `--test-pattern` |
 | `TEST_MINIMAL_X11` | Skip XFCE startup | `--test-minimal-x11` |
 | `WALLPAPER` | Custom wallpaper path | `--wallpaper` |

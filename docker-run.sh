@@ -28,10 +28,46 @@ SERVER_HDPI="${HDPI:-0}"
 HOST_RENDER_GID="${RENDER_GID:-}"
 HOST_VIDEO_GID="${VIDEO_GID:-}"
 
+WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}"
+ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}"
+ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}"
+NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -d|--detach)
       USE_DETACHED="true"
+      shift
+      ;;
+    --webrtc-buffer)
+      if [ -n "${2:-}" ]; then
+        WEBRTC_BUFFER_SIZE="$2"
+        shift 2
+      else
+        echo "Error: --webrtc-buffer requires an argument."
+        exit 1
+      fi
+      ;;
+    --activity-hz)
+      if [ -n "${2:-}" ]; then
+        ACTIVITY_PULSE_HZ="$2"
+        shift 2
+      else
+        echo "Error: --activity-hz requires an argument."
+        exit 1
+      fi
+      ;;
+    --activity-timeout)
+      if [ -n "${2:-}" ]; then
+        ACTIVITY_TIMEOUT="$2"
+        shift 2
+      else
+        echo "Error: --activity-timeout requires an argument."
+        exit 1
+      fi
+      ;;
+    --no-nvenc-latency)
+      NVENC_LATENCY_MODE="false"
       shift
       ;;
     --gpu)
@@ -226,6 +262,10 @@ docker run \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP:-}" \
   --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES_ENV}" \
   --env WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}" \
+  --env WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}" \
+  --env ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}" \
+  --env ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}" \
+  --env NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}" \
   --env HDPI="${SERVER_HDPI}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env USE_DEBUG_INPUT="${USE_DEBUG_INPUT}" \
