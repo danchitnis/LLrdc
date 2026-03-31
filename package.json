@@ -15,7 +15,12 @@
     "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080}/tcp -p ${PORT:-8080}:${PORT:-8080}/udp -e PORT=${PORT:-8080} -e TEST_PATTERN=${TEST_PATTERN} -e FPS=${FPS:-30} -e VIDEO_CODEC=${VIDEO_CODEC:-vp8} -e HOST_UID=$(id -u) -e HDPI=${HDPI:-0} -e WEBRTC_PUBLIC_IP=${WEBRTC_PUBLIC_IP:-127.0.0.1} danchitnis/llrdc ./llrdc --port ${PORT:-8080} --fps ${FPS:-30} --video-codec ${VIDEO_CODEC:-vp8} --webrtc-public-ip ${WEBRTC_PUBLIC_IP:-127.0.0.1}",
     "test": "./test.sh",
     "test:latency": "npx playwright test tests/wayland_latency_benchmark.spec.ts",
-    "test:direct-benchmark": "npx playwright test tests/wayland_direct_buffer_benchmark.spec.ts"
+    "test:latency-breakdown": "npx playwright test tests/wayland_latency_breakdown.spec.ts",
+    "test:direct-benchmark": "npx playwright test tests/wayland_direct_buffer_benchmark.spec.ts",
+    "test:latency:cpu-1080p30": "LLRDC_USE_GPU=false LLRDC_CAPTURE_MODES=compat LLRDC_TARGET_VIDEO_CODEC=vp8 LLRDC_TARGET_FPS=30 LLRDC_TARGET_MAX_RES=1080 LLRDC_TARGET_BANDWIDTH_MBPS=10 LLRDC_TARGET_VIEWPORT_WIDTH=1920 LLRDC_TARGET_VIEWPORT_HEIGHT=1180 npx playwright test tests/wayland_latency_breakdown.spec.ts",
+    "test:latency:cpu-1080p60": "LLRDC_USE_GPU=false LLRDC_CAPTURE_MODES=compat LLRDC_TARGET_VIDEO_CODEC=vp8 LLRDC_TARGET_FPS=60 LLRDC_TARGET_MAX_RES=1080 LLRDC_TARGET_BANDWIDTH_MBPS=10 LLRDC_TARGET_VIEWPORT_WIDTH=1920 LLRDC_TARGET_VIEWPORT_HEIGHT=1180 npx playwright test tests/wayland_latency_breakdown.spec.ts",
+    "test:latency:gpu-4k60": "LLRDC_USE_GPU=true LLRDC_CAPTURE_MODES=compat,direct LLRDC_TARGET_VIDEO_CODEC=av1_nvenc LLRDC_TARGET_FPS=60 LLRDC_TARGET_MAX_RES=2160 LLRDC_TARGET_BANDWIDTH_MBPS=10 LLRDC_TARGET_VIEWPORT_WIDTH=3840 LLRDC_TARGET_VIEWPORT_HEIGHT=2220 npx playwright test tests/wayland_latency_breakdown.spec.ts",
+    "test:latency:profiles": "./scripts/run-latency-profiles.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

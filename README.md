@@ -155,42 +155,66 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 
 ## Reproducible Benchmarks
 
-### Event-to-Photon Latency
+The repo now uses two canonical latency benchmark scenarios:
 
-The repo now includes a repeatable event-to-photon benchmark that compares `compat` vs `direct` on the same host and disables VBR before sampling.
+1. `low-end CPU`: `vp8`, `1080p`, `compat`, at `30 FPS` and `60 FPS`
+2. `high-end GPU`: `av1_nvenc`, `4K`, `compat` vs `direct`, at `60 FPS`
 
-It works by:
-- starting fresh `compat` and `direct` containers one after the other
-- launching a fullscreen black/white probe app inside the remote desktop
-- toggling the probe through the browser input path
-- measuring when the probe requested and drew the color change inside the container
-- detecting when the streamed frame reaches the browser canvas
+The benchmark harness is in [tests/wayland_latency_breakdown.spec.ts](/home/danial/code/LLrdc/tests/wayland_latency_breakdown.spec.ts), and the canonical results live in [latency-breakdown.md](/home/danial/code/LLrdc/latency-breakdown.md).
 
-Run it with:
+Build first:
 
 ```bash
 ./docker-build.sh
-npm run test:latency
 ```
 
-The benchmark prints a JSON summary with:
-- per-trial `inputToPhotonMs`
-- per-trial `drawToPhotonMs`
-- `avg`, `median`, and `p95` for both `compat` and `direct`
-- a `delta` section where negative numbers mean `direct` is faster
-
-Notes:
-- It requires a working local Docker + GPU setup because it launches real containers.
-- The test closes the config menu and disables VBR itself so idle bitrate suppression does not distort the measurement.
-- Playwright also stores the JSON result as a `latency-benchmark` test artifact.
-
-### CPU/FPS Benchmark
-
-For the existing CPU/FPS comparison benchmark, run:
+Run one profile:
 
 ```bash
+npm run test:latency:cpu-1080p30
+npm run test:latency:cpu-1080p60
+npm run test:latency:gpu-4k60
+```
+
+Run the full profile matrix:
+
+```bash
+npm run test:latency:profiles
+```
+
+The stage-breakdown benchmark combines:
+- remote app timestamps from the probe window
+- server-side `firstFrameBroadcastAtMs` from `/latencyz`
+- browser `requestVideoFrameCallback()` metadata for receive, decode, and presentation timing
+
+The JSON output includes:
+- `inputToRequest`
+- `requestToDraw`
+- `drawToFirstFrameBroadcast`
+- `firstFrameBroadcastToReceive`
+- `receiveToDecodeReady`
+- `decodeReadyToCompose`
+- `composeToExpectedDisplay`
+- `expectedDisplayToCallback`
+- `drawToCallback`
+- `inputToCallback`
+
+Notes:
+- `4K60` GPU runs require a working local Docker + NVIDIA setup.
+- The benchmark disables VBR for reproducibility.
+- The `4K60` AV1 profile has an occasional visual-probe flake; the test retries automatically.
+- The UI latency bar is not the source of truth for these measurements.
+
+### Legacy Benchmarks
+
+Older ad hoc latency and direct-buffer benchmark scripts are still present:
+
+```bash
+npm run test:latency
 npm run test:direct-benchmark
 ```
+
+Use the profile-based commands above for current baseline work.
 
 ## Chroma 4:4:4
 

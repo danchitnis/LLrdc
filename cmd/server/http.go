@@ -119,6 +119,18 @@ func startHTTPServer() {
 		_, _ = w.Write(payload)
 	})
 
+	http.HandleFunc("/latencyz", func(w http.ResponseWriter, r *http.Request) {
+		record, ok := snapshotLatencyTrace(r.URL.Query().Get("marker"))
+		if !ok {
+			http.Error(w, "latency trace not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(record); err != nil {
+			http.Error(w, "failed to encode latency trace", http.StatusInternalServerError)
+		}
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if websocket.IsWebSocketUpgrade(r) {
 			wsHandler(w, r)
@@ -171,6 +183,7 @@ func broadcastJSON(msg interface{}) {
 
 func broadcastVideoFrame(frame []byte, streamID uint32, codec string) {
 	captureTime := time.Now()
+	recordLatencyProbeFrame(captureTime)
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
 	webrtcCopy := make([]byte, len(frame))
 	copy(webrtcCopy, frame)
