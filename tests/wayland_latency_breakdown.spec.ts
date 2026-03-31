@@ -113,7 +113,8 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
     } catch (_error) {}
 
     const gpuArg = TARGET_USE_GPU ? '--gpu ' : '';
-    execSync(`./docker-run.sh ${gpuArg}--capture-mode ${mode} --detach --name ${containerName}`, {
+    const debugArg = process.env.USE_DEBUG_FFMPEG === 'true' ? '--debug-ffmpeg ' : '';
+    execSync(`./docker-run.sh ${gpuArg}${debugArg}--capture-mode ${mode} --detach --name ${containerName}`, {
         env: {
             ...process.env,
             PORT: port.toString(),

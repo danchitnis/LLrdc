@@ -81,7 +81,11 @@ func startHTTPServer() {
 				if err == nil {
 					valStr := strings.TrimSpace(string(out))
 					if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+						// Report raw percentage (100.0 = 1 core)
 						cpuUsage = val
+						if cpuUsage == 0 {
+							cpuUsage = 0.1
+						}
 					}
 				}
 			}

@@ -107,6 +107,10 @@ export class WebRTCManager {
             }
             stream.addTrack(e.track);
 
+            if ('playoutDelayHint' in e.receiver) {
+                (e.receiver as any).playoutDelayHint = 0;
+            }
+
             this.isWebRtcActive = true;
             videoEl.play().then(() => {
                 log('WebRTC Video/Audio playing');
@@ -154,11 +158,21 @@ export class WebRTCManager {
         });
     }
 
-    private startVideoCanvasLoop = (_now: DOMHighResTimeStamp, metadata?: VideoFrameCallbackMetadata) => {
+    private startVideoCanvasLoop = (now: DOMHighResTimeStamp, metadata?: VideoFrameCallbackMetadata) => {
         if (!this.isWebRtcActive) return;
         if (ctx && videoEl.videoWidth > 0) {
             if (metadata) {
                 this.frameCount++;
+                
+                // Expose high-precision latency metadata for benchmarks
+                (window as any).__llrdcLatestFrameMeta = {
+                    callbackAtMs: performance.timeOrigin + now,
+                    presentationAtMs: performance.timeOrigin + metadata.presentationTime,
+                    expectedDisplayAtMs: performance.timeOrigin + metadata.expectedDisplayTime,
+                    receiveAtMs: performance.timeOrigin + (metadata.receiveTime || metadata.presentationTime), // Fallback if receiveTime is missing
+                    processingDurationMs: (metadata.processingDuration || 0) * 1000,
+                    presentedFrames: metadata.presentedFrames
+                };
             } else {
                 if (videoEl.currentTime !== this.lastVideoFrameTime) {
                     this.lastVideoFrameTime = videoEl.currentTime;

@@ -395,14 +395,10 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				)
 
 				if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
-					// In direct mode, keep compositor frames in packed RGB and let NVENC convert
-					// them to 4:2:0 on-GPU. Forcing yuv420p here pushes the conversion into
-					// wf-recorder/FFmpeg's CPU path and defeats the point of direct mode.
-					if CaptureMode == CaptureModeDirect {
-						args = append(args, "-x", "bgr0")
-					} else {
-						args = append(args, "-x", "yuv420p")
-					}
+					// Always use packed RGB/BGR and let NVENC convert to YUV on-GPU.
+					// Forcing yuv420p here pushes the conversion into wf-recorder/FFmpeg's
+					// CPU path and is very expensive at 4K60.
+					args = append(args, "-x", "bgr0")
 
 					// NVENC hardware encoding
 					args = append(args,
