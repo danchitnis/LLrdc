@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	Port                    int
-	FPS                     int
-	VideoCodec              string
-	Chroma                  string
-	UseGPU                  bool
+	Port       int
+	FPS        int
+	VideoCodec string
+	Chroma     string
+	UseGPU     bool
 
 	AV1NVENCAvailable       bool
 	H264NVENC444Available   bool
@@ -70,7 +70,7 @@ func initConfig() {
 	defaultWebRTCPublicIP := os.Getenv("WEBRTC_PUBLIC_IP")
 	defaultWebRTCInterfaces := os.Getenv("WEBRTC_INTERFACES")
 	defaultWebRTCExcludeInterfaces := os.Getenv("WEBRTC_EXCLUDE_INTERFACES")
-	
+
 	defaultHDPI := 0
 	if hdpi, err := strconv.Atoi(os.Getenv("HDPI")); err == nil {
 		defaultHDPI = hdpi
@@ -117,7 +117,7 @@ func initConfig() {
 	if vbr, err := strconv.ParseBool(os.Getenv("VBR")); err == nil {
 		defaultVBR = vbr
 	}
-	
+
 	// Define flags
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
@@ -143,11 +143,11 @@ func initConfig() {
 
 	if UseGPU {
 		log.Printf("Checking NVIDIA GPU capabilities...")
-		
+
 		// Check basic AV1 support via encoders list
 		outAV1, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_nvenc && echo true || echo false").Output()
 		AV1NVENCAvailable = strings.TrimSpace(string(outAV1)) == "true"
-		
+
 		if AV1NVENCAvailable {
 			log.Printf("AV1 NVENC support detected")
 			// Note: AV1 NVENC does NOT support 4:4:4 chroma on any current NVIDIA GPU.

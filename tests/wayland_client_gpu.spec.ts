@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const PORT = 8123;
 const CONTAINER_NAME = `llrdc-wayland-gpu-test-${PORT}`;
@@ -18,8 +19,7 @@ test.describe('Wayland Client GPU Decoding', () => {
         env: { ...process.env, HOST_PORT: PORT.toString() }
     });
     
-    // Wait for server to be ready
-    await new Promise(r => setTimeout(r, 15000));
+    await waitForServerReady(`http://localhost:${PORT}`);
   });
 
   test.afterAll(async () => {

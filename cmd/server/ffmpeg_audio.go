@@ -43,7 +43,7 @@ func startAudioStreaming() {
 
 			// Wait for remote.monitor to be available
 			env := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run")
-			
+
 			log.Println("Starting ffmpeg audio capture from remote.monitor...")
 			cmd := exec.Command("ffmpeg",
 				"-f", "pulse",

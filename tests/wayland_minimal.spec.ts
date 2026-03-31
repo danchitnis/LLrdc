@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync, spawn } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-test';
 const PORT = '8081';
@@ -20,8 +21,7 @@ test.describe('Minimal Wayland E2E', () => {
     // Log container output
     spawn('docker', ['logs', '-f', CONTAINER_NAME], { stdio: 'inherit' });
     
-    // Give it a moment to boot
-    await new Promise(r => setTimeout(r, 20000));
+    await waitForServerReady(`http://localhost:${PORT}`);
   });
 
   test.afterAll(async () => {

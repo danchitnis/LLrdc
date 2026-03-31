@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-xfce-test';
 const PORT = '8083';
@@ -14,8 +15,7 @@ test.describe('Wayland XFCE Verification', () => {
     console.log('Starting container for XFCE verification...');
     execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
-    // Give it plenty of time to boot XFCE
-    await new Promise(r => setTimeout(r, 30000));
+    await waitForServerReady(`http://localhost:${PORT}`, 60000);
   });
 
   test.afterAll(async () => {

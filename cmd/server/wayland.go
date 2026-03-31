@@ -39,6 +39,7 @@ func startWayland() error {
 	if err := os.MkdirAll(runDir, 0700); err != nil {
 		return fmt.Errorf("failed to create runDir: %v", err)
 	}
+	_ = os.Remove(desktopReadyMarker)
 
 	// 0. Ensure a global DBus session exists for the server process
 	if err := startDBus(); err != nil {
@@ -121,7 +122,7 @@ ctl.!default {
 	if HDPI > 100 {
 		scale = float64(HDPI) / 100.0
 	}
-	
+
 	gdkScale := int(scale)
 	if gdkScale < 1 {
 		gdkScale = 1
@@ -129,8 +130,23 @@ ctl.!default {
 
 	// Native labwc autostart script - Reverted to EXACT stable content
 	autostart := fmt.Sprintf(`#!/bin/sh
-# Wait for the compositor to settle
-sleep 1
+set -eu
+
+READY_FILE="%s"
+rm -f "$READY_FILE"
+
+wait_for_cmd() {
+  attempts="$1"
+  shift
+  i=0
+  while ! "$@" >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ "$i" -ge "$attempts" ]; then
+      return 1
+    fi
+    sleep 0.2
+  done
+}
 
 # NOTE: randr and scaling are handled by Go server using native wlr-randr --scale
 
@@ -145,12 +161,13 @@ xfsettingsd &
 xfce4-panel &
 xfdesktop &
 
-# Apply Theme & Background Properties after components start
-(
-  sleep 5
+wait_for_cmd 100 pgrep -x xfsettingsd
+wait_for_cmd 100 pgrep -x xfce4-panel
+wait_for_cmd 100 pgrep -x xfdesktop
+wait_for_cmd 100 xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids
 
-  # Ensure the PulseAudio panel plugin exists in the default XFCE panel.
-  python3 - <<'PY' &
+# Ensure the PulseAudio panel plugin exists in the default XFCE panel.
+python3 - <<'PY'
 import re
 import subprocess
 
@@ -209,25 +226,26 @@ if plugin_id not in panel1_ids:
 
 run("xfce4-panel -r")
 PY
-  
-  xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
-  xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
-  xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create
-  
-  for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
-    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "%s" --create
-    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/image-style -n -t int -s 5 --create
-    xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/color-style -n -t int -s 0 --create
-  done
-  
-  xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
-  
-  xfdesktop --reload
-  
-  # swaybg is more reliable for Wayland backgrounds on labwc
-  swaybg -o HEADLESS-1 -i "%s" -m stretch &
-) &
-`, gdkScale, bgFile, bgFile)
+
+xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
+xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
+xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create
+
+for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "%s" --create
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/image-style -n -t int -s 5 --create
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/color-style -n -t int -s 0 --create
+done
+
+xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
+
+xfdesktop --reload
+
+# swaybg is more reliable for Wayland backgrounds on labwc
+swaybg -o HEADLESS-1 -i "%s" -m stretch &
+
+touch "$READY_FILE"
+`, desktopReadyMarker, gdkScale, bgFile, bgFile)
 	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
 
 	// Start labwc standalone (it will use the global DBUS session)
@@ -251,23 +269,20 @@ PY
 
 	// Wait for Wayland socket to appear
 	socketPath := filepath.Join(runDir, "wayland-0")
-	socketReady := false
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(socketPath); err == nil {
-			socketReady = true
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	if err := waitForFile(socketPath, 10*time.Second, 100*time.Millisecond); err != nil {
+		return fmt.Errorf("timeout waiting for Wayland socket at %s: %w", socketPath, err)
 	}
-
-	if !socketReady {
-		return fmt.Errorf("timeout waiting for Wayland socket at %s", socketPath)
-	}
+	readiness.Set(readinessWaylandSocket, true)
 
 	log.Println("Wayland socket is ready.")
 
 	// Start native wayland input helper
 	startWaylandInputHelper()
+	if err := waitForPredicate("Wayland input helper readiness", 10*time.Second, 100*time.Millisecond, func() (bool, error) {
+		return readiness.Snapshot()[readinessInputHelper], nil
+	}); err != nil {
+		return err
+	}
 
 	waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:0")
 
@@ -276,6 +291,9 @@ PY
 	log.Printf("Setting initial Wayland resolution to %dx%d", w, h)
 	_ = resizeDisplay(w, h)
 	applyHdpiSettings(waylandEnv)
+	if err := waitForDisplayState(w, h, 10*time.Second); err != nil {
+		return err
+	}
 
 	// Start PulseAudio
 	log.Println("Starting pulseaudio with null-sink for desktop audio capture...")
@@ -298,15 +316,21 @@ PY
 			// Prevent the sink from suspending to keep audio stream active
 			_ = runWithEnv("pactl", []string{"unload-module", "module-suspend-on-idle"}, waylandEnv)
 			log.Println("PulseAudio virtual sink 'remote' initialized.")
+			readiness.Set(readinessPulseAudio, true)
 		} else {
 			log.Printf("Warning: PulseAudio daemon started but pactl timed out.")
 		}
 	} else {
 		log.Printf("Warning: pulseaudio failed to start: %v", err)
 	}
+	if !EnableAudio {
+		readiness.Set(readinessPulseAudio, true)
+	}
 
-	// Wait a moment for UI components to stabilize
-	time.Sleep(5 * time.Second)
+	if err := waitForFile(desktopReadyMarker, 20*time.Second, 100*time.Millisecond); err != nil {
+		return fmt.Errorf("desktop session readiness failed: %w", err)
+	}
+	readiness.Set(readinessDesktopSession, true)
 	PrimeFrameGeneration(250*time.Millisecond, 10, 100*time.Millisecond)
 
 	return nil

@@ -112,6 +112,8 @@ int main(int argc, char *argv[]) {
 
 	client.pointer = zwlr_virtual_pointer_manager_v1_create_virtual_pointer(client.pointer_manager, NULL);
 	setup_keyboard(&client);
+	printf("READY\n");
+	fflush(stdout);
 
 	char line[256];
 	while (fgets(line, sizeof(line), stdin)) {

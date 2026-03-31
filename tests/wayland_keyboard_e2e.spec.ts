@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-keyboard-e2e-test';
 const PORT = '8090';
@@ -14,8 +15,7 @@ test.describe('Wayland Keyboard Fast Typing E2E', () => {
     console.log('Starting container for keyboard fast typing verification...');
     execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
-    // Give it time to boot
-    await new Promise(r => setTimeout(r, 20000));
+    await waitForServerReady(`http://localhost:${PORT}`, 60000);
 
     // Install xclip
     execSync(`docker exec -u root ${CONTAINER_NAME} apt-get update`);

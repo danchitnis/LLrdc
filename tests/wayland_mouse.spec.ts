@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-mouse-test';
 const PORT = '8082';
@@ -15,7 +16,7 @@ test.describe('Wayland Mouse E2E', () => {
     // No longer need --device /dev/uinput or SYS_ADMIN as we use Wayland protocols.
     execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:latest`);
     
-    await new Promise(r => setTimeout(r, 30000));
+    await waitForServerReady(`http://localhost:${PORT}`);
   });
 
   test.afterAll(async () => {

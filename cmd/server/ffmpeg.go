@@ -436,6 +436,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 			currentStreamID := ffmpegStreamID
 			ffmpegCmd = cmd
 			ffmpegMutex.Unlock()
+			noteStreamStarted(currentStreamID)
 
 			if err := cmd.Start(); err != nil {
 				log.Fatalf("Failed to start wf-recorder: %v", err)
@@ -444,13 +445,19 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 			// Prime the compositor so VBR sessions emit an initial frame without waiting for user input.
 			PrimeFrameGeneration(200*time.Millisecond, 6, 150*time.Millisecond)
 
-			doneCh := make(chan struct{})
+			doneCh := make(chan bool, 1)
 			go func() {
+				streamProducedFrame := false
 				onFrameWithCheck := func(frame []byte, sid uint32) {
 					if sid != lastStreamID {
 						log.Printf("Stream ID change detected: %d -> %d. Triggering config reset.", lastStreamID, sid)
+						noteStreamFrame(sid)
+						streamProducedFrame = true
 						broadcastConfig(true)
 						lastStreamID = sid
+					} else if !streamProducedFrame {
+						noteStreamFrame(sid)
+						streamProducedFrame = true
 					}
 					onFrame(frame, sid, codecName)
 				}
@@ -473,10 +480,10 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 						onFrameWithCheck(frame, currentStreamID)
 					})
 				}
-				close(doneCh)
+				doneCh <- streamProducedFrame
 			}()
 
-			<-doneCh
+			streamProducedFrame := <-doneCh
 			_ = cmd.Wait()
 
 			ffmpegMutex.Lock()
@@ -486,7 +493,9 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 			if !shouldRun {
 				break
 			}
-			time.Sleep(1 * time.Second)
+			if !streamProducedFrame {
+				time.Sleep(500 * time.Millisecond)
+			}
 		}
 	}()
 }

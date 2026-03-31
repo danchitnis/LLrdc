@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { waitForServerReady } from './helpers';
 
 const PORT = 8000 + Math.floor(Math.random() * 1000);
 
@@ -65,8 +66,7 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
                 }
             });
         });
-
-        await new Promise(r => setTimeout(r, 5000));
+        await waitForServerReady(SERVER_URL);
     });
 
     test.afterAll(async () => {
@@ -124,8 +124,9 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
                 vbr.click();
             }
         });
-        
-        await page.waitForTimeout(5000); // Give VBR toggle plenty of time
+        await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+            timeout: 20000
+        }).toContain('Received VBR config: false');
 
         await page.evaluate(() => {
             const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
@@ -134,8 +135,6 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
                 sel.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
-        
-        await page.waitForTimeout(5000); // Give codec change plenty of time
 
         // 1. Initial State: H.264 @ 30 FPS
         await expect(status).toContainText(/h264_nvenc|h264/i, { timeout: 45000 });
@@ -150,8 +149,6 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
                 sel.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
-        
-        await page.waitForTimeout(5000); // Give FPS change time to propagate
 
         // Wait for actual framerate update in UI
         await page.waitForFunction(() => {
@@ -162,8 +159,6 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
             const currentFps = parseInt(match[1], 10);
             return currentFps >= 58 && currentFps <= 62;
         }, { timeout: 45000 });
-
-        await page.waitForTimeout(2000);
         await verifyStreaming(page, 'H.264 @ 60 FPS');
 
         // 3. Change Codec: H.264 -> AV1
@@ -179,7 +174,6 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
         await av1LogPromise;
 
         await expect(status).toContainText(/av1_nvenc|av1/i, { timeout: 45000 });
-        await page.waitForTimeout(5000);
         await verifyStreaming(page, 'AV1 NVENC after transition');
 
         console.log('All reconfiguration scenarios verified!');

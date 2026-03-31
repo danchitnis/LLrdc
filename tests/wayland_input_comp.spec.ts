@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-input-comp-test';
 const PORT = '8084';
@@ -15,7 +16,7 @@ test.describe('Wayland Comprehensive Input Verification', () => {
     execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:latest`);
     
     // Give it time to boot
-    await new Promise(r => setTimeout(r, 20000));
+    await waitForServerReady(`http://localhost:${PORT}`);
   });
 
   test.afterAll(async () => {

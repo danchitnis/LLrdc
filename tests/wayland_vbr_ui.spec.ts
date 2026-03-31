@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-vbr-ui-test';
 const PORT = '8086';
@@ -15,7 +16,7 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
         // VBR is enabled by default in the new implementation
         execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
         
-        await new Promise(r => setTimeout(r, 15000));
+        await waitForServerReady(`http://localhost:${PORT}`);
     });
 
     test.afterAll(async () => {

@@ -87,16 +87,19 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			"sdp":  (*pc).LocalDescription(),
 		})
 
-		go func() {
-			time.Sleep(200 * time.Millisecond)
+		go func(previousStreamID uint32) {
 			ffmpegMutex.Lock()
 			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 				log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
 				_ = ffmpegCmd.Process.Kill()
 			}
 			ffmpegMutex.Unlock()
-			PrimeFrameGeneration(250*time.Millisecond, 10, 100*time.Millisecond)
-		}()
+
+			if err := waitForStreamReadyAfter(previousStreamID, 5*time.Second); err != nil {
+				log.Printf("Stream did not become ready after WebRTC reconnect: %v", err)
+				PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+			}
+		}(getCurrentFFmpegStreamID())
 	} else {
 		log.Println("webrtc_offer missing 'sdp' map")
 	}

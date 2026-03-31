@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-hdpi-test';
 const PORT = '8092';
@@ -16,8 +17,7 @@ test.describe('Wayland HDPI Scaling', () => {
     console.log('Starting container with HDPI=200...');
     execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080/tcp -p ${PORT}:8080/udp -e PORT=8080 -e WEBRTC_PUBLIC_IP=127.0.0.1 -e HDPI=200 danchitnis/llrdc:latest`);
     
-    // Give it a moment to boot
-    await new Promise(r => setTimeout(r, 20000));
+    await waitForServerReady(`http://localhost:${PORT}`, 60000);
   });
 
   test.afterEach(async ({}, testInfo) => {

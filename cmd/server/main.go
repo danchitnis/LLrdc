@@ -16,6 +16,7 @@ func main() {
 	// Initialize config
 	initConfig()
 	initScreenSize(3840, 2160)
+	initReadiness()
 
 	// Setup signal handling
 	sigs := make(chan os.Signal, 1)

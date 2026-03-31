@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { spawn, execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 // Use a local tag for testing
 const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';
@@ -22,8 +23,7 @@ test.describe('Wayland Audio E2E', () => {
         throw new Error(`Failed to start container. Make sure you have built the image with: docker build -t ${CONTAINER_IMAGE} .`);
     }
     
-    // Wait for the server and components (XFCE, PulseAudio) to start
-    await new Promise(r => setTimeout(r, 20000));
+    await waitForServerReady(`http://localhost:${PORT}`, 60000);
   });
 
   test.afterAll(async ({ }, testInfo) => {
@@ -53,9 +53,6 @@ test.describe('Wayland Audio E2E', () => {
     const status = await page.locator('#status').textContent();
     expect(status).toContain('WebRTC');
 
-    // Give it a moment to settle any initial resizes
-    await page.waitForTimeout(5000);
-
     // Interact to unmute and ensure audio context starts
     await page.click('body');
     await page.waitForTimeout(1000);
@@ -72,9 +69,6 @@ test.describe('Wayland Audio E2E', () => {
     ]);
 
     aplayProc.stderr.on('data', (d) => console.log('speaker-test stderr:', d.toString()));
-
-    // Wait for resizing/stabilization to finish before checking stats
-    await page.waitForTimeout(10000);
 
     // Check the WebRTC stats for the audio track with polling directly
     let audioStats = { hasAudioTrack: false, bytesReceived: 0 };
@@ -135,9 +129,6 @@ test.describe('Wayland Audio E2E', () => {
     console.log('Disabling audio...');
     await page.uncheck('#enable-audio-checkbox');
     
-    // Wait for server to stop audio stream
-    await page.waitForTimeout(4000);
-    
     const getStatsBytes = async () => {
         return await page.evaluate(async () => {
             const rtcPeer = (window as any).rtcPeer as RTCPeerConnection;
@@ -163,22 +154,23 @@ test.describe('Wayland Audio E2E', () => {
             return ab;
         });
     };
-    
-    const statsAfterDisable1 = await getStatsBytes();
 
-    await page.waitForTimeout(2000);
+    await expect.poll(async () => {
+        const statsAfterDisable1 = await getStatsBytes();
+        await page.waitForTimeout(1000);
+        const statsAfterDisable2 = await getStatsBytes();
+        console.log(`Bytes after disable check 1: ${statsAfterDisable1}, 2: ${statsAfterDisable2}`);
+        return statsAfterDisable2 - statsAfterDisable1;
+    }, { timeout: 15000 }).toBeLessThan(1000);
 
     const statsAfterDisable2 = await getStatsBytes();
-    
-    console.log(`Bytes after disable check 1: ${statsAfterDisable1}, 2: ${statsAfterDisable2}`);
-    // Bytes should stop increasing
-    expect(statsAfterDisable2 - statsAfterDisable1).toBeLessThan(1000);
 
     // Test enabling audio again
     console.log('Re-enabling audio...');
     await page.check('#enable-audio-checkbox');
-    await page.waitForTimeout(5000);
-
+    await expect.poll(async () => {
+        return await getStatsBytes();
+    }, { timeout: 20000 }).toBeGreaterThan(statsAfterDisable2);
     const statsAfterEnable = await getStatsBytes();
 
     console.log(`Bytes after re-enable: ${statsAfterEnable}`);

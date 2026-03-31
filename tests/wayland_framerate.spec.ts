@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-framerate-test';
 const PORT = '8084';
@@ -14,7 +15,7 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     console.log('Starting container for Wayland framerate test...');
     execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
-    await new Promise(r => setTimeout(r, 30000));
+    await waitForServerReady(`http://localhost:${PORT}`);
   });
 
   test.afterAll(async () => {
@@ -46,21 +47,17 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     console.log('Selecting 60 FPS...');
     await page.selectOption('#framerate-select', '60');
 
-    // Wait for propagation and ffmpeg restart
-    await page.waitForTimeout(5000);
-
-    let logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-    expect(logs).toContain('Received framerate config: 60 fps');
-    expect(logs).toContain('Config updated, sending Kill() to restart stream...');
+    await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+      timeout: 20000,
+    }).toContain('Received framerate config: 60 fps');
 
     // Select 15 FPS
     console.log('Selecting 15 FPS...');
     await page.selectOption('#framerate-select', '15');
 
-    await page.waitForTimeout(5000);
-
-    logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-    expect(logs).toContain('Received framerate config: 15 fps');
+    await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+      timeout: 20000,
+    }).toContain('Received framerate config: 15 fps');
 
     // Verify it still says WebRTC and decoding continues
     await expect(statusEl).toHaveText(/WebRTC/i);

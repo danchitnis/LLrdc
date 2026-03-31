@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-vbr-test';
 const PORT = '8095';
@@ -14,7 +15,7 @@ test.describe('Wayland VBR E2E', () => {
     console.log('Starting container for Wayland VBR test...');
     execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
     
-    await new Promise(r => setTimeout(r, 30000));
+    await waitForServerReady(`http://localhost:${PORT}`);
   });
 
   test.afterAll(async () => {
@@ -51,11 +52,10 @@ test.describe('Wayland VBR E2E', () => {
     const vbrCheckbox = page.locator('#vbr-checkbox');
     await vbrCheckbox.uncheck();
 
-    // Wait for propagation and ffmpeg restart
-    await page.waitForTimeout(5000);
-
+    await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+      timeout: 20000,
+    }).toContain('Received VBR config: false');
     logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-    expect(logs).toContain('Received VBR config: false');
 
     wfRecorderLogs = logs.split('\n').filter(line => line.includes('Starting wf-recorder capture:'));
     latestWfRecorderLog = wfRecorderLogs[wfRecorderLogs.length - 1];
@@ -65,10 +65,10 @@ test.describe('Wayland VBR E2E', () => {
     console.log('Enabling VBR...');
     await vbrCheckbox.check();
 
-    await page.waitForTimeout(5000);
-
+    await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+      timeout: 20000,
+    }).toContain('Received VBR config: true');
     logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-    expect(logs).toContain('Received VBR config: true');
 
     wfRecorderLogs = logs.split('\n').filter(line => line.includes('Starting wf-recorder capture:'));
     latestWfRecorderLog = wfRecorderLogs[wfRecorderLogs.length - 1];

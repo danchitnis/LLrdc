@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"math"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,27 +27,34 @@ var inputStdin io.WriteCloser
 
 var (
 	// lastInputTime tracks the last time any user interaction was received.
-	lastInputTime      time.Time
+	lastInputTime time.Time
 	// inputActivityMutex protects access to lastInputTime and pulseStarted.
 	inputActivityMutex sync.Mutex
 	// pulseStarted indicates if the background activity pulse goroutine is running.
-	pulseStarted      bool
+	pulseStarted bool
 )
 
 func startWaylandInputHelper() {
 	go func() {
 		for {
+			readiness.Set(readinessInputHelper, false)
 			cmd := exec.Command("./wayland_input_client")
 			cmd.Env = os.Environ()
 			cmd.Stderr = os.Stderr
-			
+
 			stdin, err := cmd.StdinPipe()
 			if err != nil {
 				log.Printf("Failed to create stdin for input helper: %v", err)
 				time.Sleep(2 * time.Second)
 				continue
 			}
-			inputStdin = stdin
+
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				log.Printf("Failed to create stdout for input helper: %v", err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
 
 			if err := cmd.Start(); err != nil {
 				log.Printf("Failed to start input helper: %v", err)
@@ -53,6 +62,39 @@ func startWaylandInputHelper() {
 				continue
 			}
 
+			readyCh := make(chan error, 1)
+			go func() {
+				line, err := bufio.NewReader(stdout).ReadString('\n')
+				if err != nil {
+					readyCh <- err
+					return
+				}
+				if strings.TrimSpace(line) != "READY" {
+					readyCh <- fmt.Errorf("unexpected input helper handshake: %q", strings.TrimSpace(line))
+					return
+				}
+				readyCh <- nil
+			}()
+
+			select {
+			case err := <-readyCh:
+				if err != nil {
+					log.Printf("Input helper failed readiness handshake: %v", err)
+					_ = cmd.Process.Kill()
+					_ = cmd.Wait()
+					time.Sleep(1 * time.Second)
+					continue
+				}
+			case <-time.After(5 * time.Second):
+				log.Printf("Input helper readiness handshake timed out")
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			inputStdin = stdin
+			readiness.Set(readinessInputHelper, true)
 			log.Println("Wayland persistent input helper started.")
 
 			for task := range inputChan {
@@ -61,7 +103,9 @@ func startWaylandInputHelper() {
 					break
 				}
 			}
-			
+
+			readiness.Set(readinessInputHelper, false)
+			inputStdin = nil
 			_ = cmd.Wait()
 			log.Println("Wayland input helper exited, restarting...")
 			time.Sleep(1 * time.Second)
@@ -182,7 +226,7 @@ func execTask(task inputTask) error {
 			_, _ = fmt.Fprintf(inputStdin, "axis 1 %f\n", task.DX)
 		}
 		return nil
-		
+
 	case "ping":
 		TriggerPing()
 		return nil

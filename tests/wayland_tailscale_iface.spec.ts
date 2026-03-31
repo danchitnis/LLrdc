@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
+import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-tailscale-test';
 const PORT = '8083';
@@ -24,7 +25,7 @@ test.describe('Wayland WebRTC with Tailscale Interface Selection', () => {
       { stdio: 'inherit' }
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 20000));
+    await waitForServerReady(`http://localhost:${PORT}`);
   });
 
   test.afterAll(async () => {

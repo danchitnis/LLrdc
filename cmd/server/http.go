@@ -69,6 +69,24 @@ func startHTTPServer() {
 		}
 	}()
 
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+
+	http.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		payload, err := marshalReadinessStatus()
+		if err != nil {
+			http.Error(w, "failed to marshal readiness state", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if !readiness.IsReady() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		_, _ = w.Write(payload)
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if websocket.IsWebSocketUpgrade(r) {
 			wsHandler(w, r)
@@ -300,73 +318,126 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 			handleInputMessage(msg)
 		case "config":
-			// Allow multiple rapid WebSocket messages to settle
-			time.Sleep(100 * time.Millisecond)
+			go func(configMsg map[string]interface{}) {
+				restartRequested := false
+				displayChanged := false
+				previousStreamID := getCurrentFFmpegStreamID()
 
-			go func() {
-				if hdpiFloat, ok := msg["hdpi"].(float64); ok {
+				if hdpiFloat, ok := configMsg["hdpi"].(float64); ok {
 					hdpi := int(hdpiFloat)
 					log.Printf("Received HDPI config: %d%%", hdpi)
 					if HDPI != hdpi {
 						HDPI = hdpi
 						applyHdpiSettings(os.Environ())
-						injectMouseMove(0.5, 0.5)
-						injectMouseMove(0.501, 0.501)
+						displayChanged = true
 					}
 				}
-				if vCodec, ok := msg["videoCodec"].(string); ok {
+				if vCodec, ok := configMsg["videoCodec"].(string); ok {
+					if VideoCodec != vCodec {
+						restartRequested = true
+					}
 					SetVideoCodec(vCodec)
 				}
-				if chromaStr, ok := msg["chroma"].(string); ok {
+				if chromaStr, ok := configMsg["chroma"].(string); ok {
+					if Chroma != chromaStr {
+						restartRequested = true
+					}
 					SetChroma(chromaStr)
 				}
-				if vbrBool, ok := msg["vbr"].(bool); ok {
+				if vbrBool, ok := configMsg["vbr"].(bool); ok {
+					if targetVBR != vbrBool {
+						restartRequested = true
+					}
 					SetVBR(vbrBool)
 				}
-				if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
+				if mpdecimateBool, ok := configMsg["mpdecimate"].(bool); ok {
+					if targetMpdecimate != mpdecimateBool {
+						restartRequested = true
+					}
 					SetMpdecimate(mpdecimateBool)
 				}
-				if keyframeFloat, ok := msg["keyframe_interval"].(float64); ok {
-					SetKeyframeInterval(int(keyframeFloat))
+				if keyframeFloat, ok := configMsg["keyframe_interval"].(float64); ok {
+					keyframe := int(keyframeFloat)
+					if targetKeyframeInterval != keyframe {
+						restartRequested = true
+					}
+					SetKeyframeInterval(keyframe)
 				}
-				if effortFloat, ok := msg["cpu_effort"].(float64); ok {
-					SetCpuEffort(int(effortFloat))
+				if effortFloat, ok := configMsg["cpu_effort"].(float64); ok {
+					effort := int(effortFloat)
+					if targetCpuEffort != effort {
+						restartRequested = true
+					}
+					SetCpuEffort(effort)
 				}
-				if threadsFloat, ok := msg["cpu_threads"].(float64); ok {
-					SetCpuThreads(int(threadsFloat))
+				if threadsFloat, ok := configMsg["cpu_threads"].(float64); ok {
+					threads := int(threadsFloat)
+					if targetCpuThreads != threads {
+						restartRequested = true
+					}
+					SetCpuThreads(threads)
 				}
-				if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
+				if mouseBool, ok := configMsg["enable_desktop_mouse"].(bool); ok {
+					if targetDrawMouse != mouseBool {
+						restartRequested = true
+					}
 					SetDrawMouse(mouseBool)
 				}
-				if settleTime, ok := msg["settle_time"].(float64); ok {
+				if settleTime, ok := configMsg["settle_time"].(float64); ok {
 					log.Printf("Received Settle Time config: %vms", settleTime)
 					SettleTime = int(settleTime)
 				}
-				if tileSize, ok := msg["tile_size"].(float64); ok {
+				if tileSize, ok := configMsg["tile_size"].(float64); ok {
 					log.Printf("Received Tile Size config: %vpx", tileSize)
 					TileSize = int(tileSize)
 				}
-				if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
+				if enableAudioBool, ok := configMsg["enable_audio"].(bool); ok {
 					SetEnableAudio(enableAudioBool)
 				}
-				if audioBitrateStr, ok := msg["audio_bitrate"].(string); ok {
+				if audioBitrateStr, ok := configMsg["audio_bitrate"].(string); ok {
 					SetAudioBitrate(audioBitrateStr)
 				}
 
-				if bwFloat, ok := msg["bandwidth"].(float64); ok {
-					SetBandwidth(int(bwFloat))
-				} else if qFloat, ok := msg["quality"].(float64); ok {
-					SetQuality(int(qFloat))
+				if bwFloat, ok := configMsg["bandwidth"].(float64); ok {
+					bandwidth := int(bwFloat)
+					if targetMode != "bandwidth" || targetBandwidthMbps != bandwidth {
+						restartRequested = true
+					}
+					SetBandwidth(bandwidth)
+				} else if qFloat, ok := configMsg["quality"].(float64); ok {
+					quality := int(qFloat)
+					if targetMode != "quality" || targetQuality != quality {
+						restartRequested = true
+					}
+					SetQuality(quality)
 				}
 
-				if fpsFloat, ok := msg["framerate"].(float64); ok {
-					SetFramerate(int(fpsFloat))
+				if fpsFloat, ok := configMsg["framerate"].(float64); ok {
+					fps := int(fpsFloat)
+					if FPS != fps {
+						restartRequested = true
+					}
+					SetFramerate(fps)
 				}
 
-					log.Println("Config updated, sending Kill() to restart stream...")
-					PrimeFrameGeneration(1250*time.Millisecond, 10, 100*time.Millisecond)
-					broadcastConfig(true)
-				}()
+				if displayChanged {
+					width, height := GetScreenSize()
+					if err := waitForDisplayState(width, height, 5*time.Second); err != nil {
+						log.Printf("Timed out waiting for HDPI display update: %v", err)
+					}
+					TriggerPing()
+				}
+
+				if restartRequested {
+					log.Println("Config updated, waiting for restarted stream to become ready...")
+					if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
+						log.Printf("Restarted stream did not become ready in time: %v", err)
+						PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+					}
+				}
+
+				broadcastConfig(true)
+			}(msg)
 		case "resize":
 			widthFloat, wOk := msg["width"].(float64)
 			heightFloat, hOk := msg["height"].(float64)
@@ -378,19 +449,23 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					clampedW, clampedH := GetScreenSize()
 					log.Printf("Received resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
 					if !TestPattern {
+						previousStreamID := getCurrentFFmpegStreamID()
 						go func() {
 							PauseStreaming()
 							if err := resizeDisplay(clampedW, clampedH); err != nil {
 								log.Printf("Resize failed: %v", err)
 							}
 
-							// Force Wayland compositor damage to allocate the new sized buffer
-							injectMouseMove(0.5, 0.5)
-							injectMouseMove(0.501, 0.501)
+							if err := waitForDisplayState(clampedW, clampedH, 5*time.Second); err != nil {
+								log.Printf("Resize did not reach requested display state: %v", err)
+							}
 
-							time.Sleep(1000 * time.Millisecond)
 							ResumeStreaming()
-							PrimeFrameGeneration(250*time.Millisecond, 10, 100*time.Millisecond)
+							TriggerPing()
+							if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
+								log.Printf("Resized stream did not become ready in time: %v", err)
+								PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+							}
 							broadcastConfig(true)
 						}()
 					} else {

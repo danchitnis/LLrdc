@@ -265,7 +265,7 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 						}
 					}
 				}
-				// If we found at least one of the requested interfaces in the container, 
+				// If we found at least one of the requested interfaces in the container,
 				// then we restrict to those. Otherwise, we allow all to prevent total lockout.
 				return !foundAny
 			}

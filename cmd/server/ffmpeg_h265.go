@@ -11,16 +11,16 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 	var outputArgs []string
 
 	if VideoCodec == "h265_nvenc" {
-	        outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-tune", "ll", "-aud", "1")
-			if Chroma == "444" {
-				outputArgs = append(outputArgs, "-profile:v", "rext")
-			}
+		outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-tune", "ll", "-aud", "1")
+		if Chroma == "444" {
+			outputArgs = append(outputArgs, "-profile:v", "rext")
+		}
 	} else {
-			x265Params := fmt.Sprintf("aud=1:fps=%d", fps)
-	        outputArgs = append(outputArgs, "-c:v", "libx265", "-preset", "ultrafast", "-tune", "zerolatency", "-x265-params", x265Params)
-			if Chroma == "444" {
-				outputArgs = append(outputArgs, "-profile:v", "main444-8")
-			}
+		x265Params := fmt.Sprintf("aud=1:fps=%d", fps)
+		outputArgs = append(outputArgs, "-c:v", "libx265", "-preset", "ultrafast", "-tune", "zerolatency", "-x265-params", x265Params)
+		if Chroma == "444" {
+			outputArgs = append(outputArgs, "-profile:v", "main444-8")
+		}
 	}
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
@@ -72,7 +72,7 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 	outputArgs = append(outputArgs,
 		"-max_muxing_queue_size", "1024",
 		"-g", fmt.Sprintf("%d", fps*keyframeInterval),
-		"-f", "hevc",		"pipe:1",
+		"-f", "hevc", "pipe:1",
 	)
 
 	return outputArgs
