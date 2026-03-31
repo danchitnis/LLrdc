@@ -22,7 +22,7 @@ var (
 	videoTrack      *webrtc.TrackLocalStaticSample
 	audioTrack      *webrtc.TrackLocalStaticSample
 	videoTrackMutex sync.RWMutex
-	webrtcFrameChan = make(chan WebRTCFrame, 300)
+	webrtcFrameChan = make(chan WebRTCFrame, 30)
 	lastSampleTime  time.Time
 	currentStreamID uint32
 )
@@ -82,7 +82,6 @@ func initWebRTC() {
 	initWebRTCTrack()
 
 	go func() {
-		var bufferedFrame *WebRTCFrame
 		var lastTrack *webrtc.TrackLocalStaticSample
 
 		framesWritten := 0
@@ -97,9 +96,8 @@ func initWebRTC() {
 				continue
 			}
 
-			// If track changed, flush/discard old buffer and reset
+			// If track changed, reset state
 			if vt != lastTrack {
-				bufferedFrame = nil
 				lastTrack = vt
 			}
 
@@ -108,37 +106,20 @@ func initWebRTC() {
 				continue
 			}
 
-			if bufferedFrame == nil {
-				// First frame for this track
-				f := frame // Copy
-				bufferedFrame = &f
-				currentStreamID = frame.StreamID
-				continue
-			}
-
-			// If stream ID changed (e.g. FFmpeg restart), flush old buffer
+			// If stream ID changed (e.g. FFmpeg restart), treat as new stream
 			if frame.StreamID != currentStreamID {
-				_ = vt.WriteSample(media.Sample{
-					Data:     bufferedFrame.Data,
-					Duration: time.Second / time.Duration(FPS),
-				})
-				framesWritten++
-
-				f := frame
-				bufferedFrame = &f
 				currentStreamID = frame.StreamID
-				continue
 			}
 
-			// Calculate exact duration between the buffered frame and the new frame
-			duration := frame.CaptureTime.Sub(bufferedFrame.CaptureTime)
-			if duration <= 0 {
-				duration = 1 * time.Microsecond
+			// If we have a backlog of frames, tell the receiver to play them very fast (1ms pacing) to catch up.
+			duration := time.Second / time.Duration(FPS)
+			if len(webrtcFrameChan) > 0 {
+				duration = 1 * time.Millisecond
 			}
 
-			// Send the buffered frame with the exact time elapsed until the next frame
+			// Send the current frame immediately
 			err := vt.WriteSample(media.Sample{
-				Data:     bufferedFrame.Data,
+				Data:     frame.Data,
 				Duration: duration,
 			})
 			if err == nil {
@@ -152,10 +133,6 @@ func initWebRTC() {
 				framesWritten = 0
 				lastLogTime = time.Now()
 			}
-
-			// Buffer the new frame
-			f := frame
-			bufferedFrame = &f
 		}
 	}()
 }
@@ -164,7 +141,22 @@ func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, code
 	select {
 	case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}:
 	default:
-		log.Println("WARNING: webrtcFrameChan is full, dropping frame!")
+		// Channel full. Flush the entire backlog to ensure the next frame is live.
+		// This prevents "easing" catch-up and permanent lag.
+		for {
+			select {
+			case <-webrtcFrameChan:
+				continue
+			default:
+			}
+			break
+		}
+		// Try to put the latest frame in.
+		select {
+		case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}:
+		default:
+			// If still full, just drop.
+		}
 	}
 }
 

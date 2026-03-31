@@ -8,7 +8,7 @@ func buildAV1Args(mode string, bw int, quality int, fps int, vbr bool, keyframeI
 	var outputArgs []string
 
 	if VideoCodec == "av1_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "av1_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0")
+		outputArgs = append(outputArgs, "-c:v", "av1_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0", "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0")
 		// Note: AV1 NVENC does NOT support 4:4:4 chroma (NVENC SDK limitation).
 		// Unlike H.264 NVENC (high444p profile), there is no 444 profile for AV1 NVENC.
 		// The server probe in config.go correctly detects this and disables the option.

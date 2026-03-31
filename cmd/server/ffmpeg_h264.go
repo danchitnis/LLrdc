@@ -11,7 +11,7 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 	var outputArgs []string
 
 	if VideoCodec == "h264_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull", "-aud", "1", "-level", "6.0")
+		outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0", "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0", "-aud", "1", "-level", "6.0")
 		if Chroma == "444" {
 			outputArgs = append(outputArgs, "-profile:v", "high444p")
 		}

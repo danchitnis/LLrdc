@@ -115,13 +115,18 @@ func startWaylandInputHelper() {
 
 func updateActivity() {
 	inputActivityMutex.Lock()
+	isFirst := !pulseStarted
 	lastInputTime = time.Now()
-	// If the pulse goroutine isn't running, start it now.
 	if !pulseStarted {
 		pulseStarted = true
 		go runActivityPulse()
 	}
 	inputActivityMutex.Unlock()
+
+	if isFirst {
+		// Immediate ping on first input to wake up the encoder.
+		TriggerPing()
+	}
 }
 
 // runActivityPulse pings the compositor periodically for a short time after input.
@@ -133,8 +138,8 @@ func runActivityPulse() {
 	for {
 		inputActivityMutex.Lock()
 		elapsed := time.Since(lastInputTime)
-		// Pulse for 1 second after the last input event.
-		if elapsed > 1000*time.Millisecond {
+		// Pulse for 1.5 seconds after the last input event.
+		if elapsed > 1500*time.Millisecond {
 			pulseStarted = false
 			inputActivityMutex.Unlock()
 			return
@@ -143,8 +148,8 @@ func runActivityPulse() {
 
 		// Trigger a tiny, invisible damage event in the compositor.
 		TriggerPing()
-		// 10Hz heartbeat is sufficient to capture smooth-looking animations and push frames.
-		time.Sleep(100 * time.Millisecond)
+		// 30Hz heartbeat is snappier for capturing animations and pushing frames.
+		time.Sleep(33 * time.Millisecond)
 	}
 }
 
