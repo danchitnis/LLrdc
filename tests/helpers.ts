@@ -18,3 +18,24 @@ export async function waitForServerReady(baseUrl: string, timeoutMs = 45000): Pr
 
     throw new Error(`Timed out waiting for ${baseUrl}/readyz. Last status: ${lastStatus}`);
 }
+
+export interface ReadyzPayload {
+    ready?: boolean;
+    conditions?: Record<string, boolean>;
+    directBuffer?: {
+        requested?: boolean;
+        supported?: boolean;
+        active?: boolean;
+        reason?: string;
+        captureMode?: string;
+        renderNode?: string;
+        renderer?: string;
+        screencopyAvailable?: boolean;
+        linuxDmabufAvailable?: boolean;
+    };
+}
+
+export async function fetchReadyz(baseUrl: string): Promise<ReadyzPayload> {
+    const response = await fetch(`${baseUrl}/readyz`);
+    return await response.json() as ReadyzPayload;
+}

@@ -9,6 +9,7 @@ CONTAINER_NAME="${CONTAINER_NAME:-llrdc}"
 SERVER_PORT="${PORT:-8080}"
 SERVER_FPS="${FPS:-30}"
 SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
+SERVER_CAPTURE_MODE="${CAPTURE_MODE:-compat}"
 
 # Port mappings (override via env vars)
 HOST_PORT="${HOST_PORT:-8080}"
@@ -22,6 +23,8 @@ WEBRTC_INTERFACES_ENV=""
 WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
 WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
 SERVER_HDPI="${HDPI:-0}"
+HOST_RENDER_GID="${RENDER_GID:-}"
+HOST_VIDEO_GID="${VIDEO_GID:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +34,19 @@ while [[ $# -gt 0 ]]; do
       ;;
     --gpu)
       USE_GPU="true"
+      shift
+      ;;
+    --capture-mode)
+      if [ -n "${2:-}" ]; then
+        SERVER_CAPTURE_MODE="$2"
+        shift 2
+      else
+        echo "Error: --capture-mode requires an argument."
+        exit 1
+      fi
+      ;;
+    --direct-buffer)
+      SERVER_CAPTURE_MODE="direct"
       shift
       ;;
     --debug-ffmpeg)
@@ -96,6 +112,11 @@ else
   echo "  Mode  : Wayland (GPU)"
 fi
 
+if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ "$USE_GPU" != "true" ]; then
+  echo "❌ ERROR: --capture-mode direct requires --gpu."
+  exit 1
+fi
+
 GPU_ARGS=""
 if [ "$USE_GPU" = "true" ]; then
   # Verify if Docker has NVIDIA runtime/toolkit support
@@ -121,6 +142,15 @@ if [ "$USE_GPU" = "true" ]; then
     echo "Warning: nvcc not found, but GPU was requested."
     GPU_ARGS="--gpus all -e NVIDIA_DRIVER_CAPABILITIES=all"
   fi
+  if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ -d /dev/dri ]; then
+    GPU_ARGS="$GPU_ARGS --device /dev/dri:/dev/dri"
+    if [ -z "$HOST_RENDER_GID" ] && [ -e /dev/dri/renderD128 ]; then
+      HOST_RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
+    fi
+    if [ -z "$HOST_VIDEO_GID" ] && [ -e /dev/dri/card0 ]; then
+      HOST_VIDEO_GID=$(stat -c '%g' /dev/dri/card0)
+    fi
+  fi
 fi
 
 # Detect number of CPUs for maximum throughput
@@ -138,6 +168,7 @@ fi
 if [ "$USE_GPU" = "true" ]; then
   echo "  GPU   : Enabled (Codec: ${SERVER_VIDEO_CODEC})"
 fi
+echo "  Capture Mode : ${SERVER_CAPTURE_MODE}"
 
 INTERACTIVE_ARGS=""
 if [ -t 0 ] && [ "$USE_DETACHED" = "false" ]; then
@@ -186,6 +217,7 @@ docker run \
   --env FPS="${SERVER_FPS}" \
   --env VIDEO_CODEC="${SERVER_VIDEO_CODEC}" \
   --env USE_GPU="${USE_GPU}" \
+  --env CAPTURE_MODE="${SERVER_CAPTURE_MODE}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP:-}" \
   --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES_ENV}" \
@@ -193,5 +225,7 @@ docker run \
   --env HDPI="${SERVER_HDPI}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env USE_DEBUG_INPUT="${USE_DEBUG_INPUT}" \
+  --env RENDER_GID="${HOST_RENDER_GID}" \
+  --env VIDEO_GID="${HOST_VIDEO_GID}" \
   --env HOST_UID=$(id -u) \
   "${IMAGE_NAME}:${IMAGE_TAG}"

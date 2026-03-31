@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	Port       int
-	FPS        int
-	VideoCodec string
-	Chroma     string
-	UseGPU     bool
+	Port        int
+	FPS         int
+	VideoCodec  string
+	Chroma      string
+	UseGPU      bool
+	CaptureMode string
 
 	AV1NVENCAvailable       bool
 	H264NVENC444Available   bool
@@ -57,6 +58,10 @@ func initConfig() {
 	}
 
 	defaultUseGPU := os.Getenv("USE_GPU") == "true"
+	defaultCaptureMode := os.Getenv("CAPTURE_MODE")
+	if defaultCaptureMode == "" {
+		defaultCaptureMode = CaptureModeCompat
+	}
 	defaultUseDebugFFmpeg := os.Getenv("USE_DEBUG_FFMPEG") == "true"
 	defaultUseDebugInput := os.Getenv("USE_DEBUG_INPUT") == "true"
 	defaultTestPattern := os.Getenv("TEST_PATTERN") != ""
@@ -98,6 +103,7 @@ func initConfig() {
 		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-gpu", "Enable GPU acceleration if available", UseGPU)
+		printFlag(os.Stderr, "capture-mode", "Capture mode (compat or direct)", CaptureMode)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
 		printFlag(os.Stderr, "wallpaper", "Path to wallpaper image", Wallpaper)
 		printFlag(os.Stderr, "webrtc-public-ip", "Public IP for WebRTC", WebRTCPublicIP)
@@ -124,6 +130,7 @@ func initConfig() {
 	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseGPU, "use-gpu", defaultUseGPU, "Enable GPU acceleration if available")
+	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat or direct)")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")
 	flag.BoolVar(&UseDebugInput, "use-debug-input", defaultUseDebugInput, "Enable Input debugging")
 	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of Wayland session")
@@ -140,6 +147,10 @@ func initConfig() {
 	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (damage tracking)")
 
 	flag.Parse()
+	initDirectBufferState()
+	if err := validateCaptureModeConfig(); err != nil {
+		log.Fatalf("Invalid direct-buffer configuration: %v", err)
+	}
 
 	if UseGPU {
 		log.Printf("Checking NVIDIA GPU capabilities...")

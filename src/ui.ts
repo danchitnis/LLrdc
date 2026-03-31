@@ -31,6 +31,7 @@ export const cpuThreadsSelect = document.getElementById('cpu-threads-select') as
 export const desktopMouseCheckbox = document.getElementById('desktop-mouse-checkbox') as HTMLInputElement;
 export const videoCodecSelect = document.getElementById('video-codec-select') as HTMLSelectElement;
 export const codecGpuOpts = document.querySelectorAll('.codec-opt-gpu') as NodeListOf<HTMLOptionElement>;
+export const directBufferStatusEl = document.getElementById('direct-buffer-status') as HTMLDivElement;
 export const clientGpuCheckbox = document.getElementById('client-gpu-checkbox') as HTMLInputElement;
 export const chromaCheckbox = document.getElementById('chroma-checkbox') as HTMLInputElement;
 export const clipboardCheckbox = document.getElementById('clipboard-checkbox') as HTMLInputElement;

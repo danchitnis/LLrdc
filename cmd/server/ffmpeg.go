@@ -52,6 +52,10 @@ func SetChroma(chroma string) {
 		log.Printf("Invalid chroma setting: %s", chroma)
 		return
 	}
+	if CaptureMode == CaptureModeDirect && chroma != "420" {
+		log.Printf("Ignoring chroma change to %s: direct capture mode currently requires 420", chroma)
+		return
+	}
 
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
@@ -71,6 +75,10 @@ func SetChroma(chroma string) {
 func SetVideoCodec(codec string) {
 	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h265" && codec != "h265_nvenc" && codec != "av1" && codec != "av1_nvenc" {
 		log.Printf("Invalid video codec: %s", codec)
+		return
+	}
+	if CaptureMode == CaptureModeDirect && !isNVENCCodec(codec) {
+		log.Printf("Ignoring codec change to %s: direct capture mode requires NVENC", codec)
 		return
 	}
 
@@ -316,6 +324,11 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				continue
 			}
 
+			if err := validateRuntimeDirectMode(VideoCodec, Chroma); err != nil {
+				setDirectBufferActive(false, err.Error())
+				log.Fatalf("Invalid direct-buffer runtime configuration: %v", err)
+			}
+
 			codec := "libvpx"
 			codecName := "vp8"
 			format := "ivf"
@@ -347,6 +360,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 
 			var cmd *exec.Cmd
 			if TestPattern {
+				setDirectBufferActive(false, "Direct buffer is unavailable in test-pattern mode")
 				log.Printf("TEST_PATTERN mode: starting ffmpeg with testsrc")
 				w, h := GetScreenSize()
 				var ffmpegArgs []string
@@ -381,12 +395,21 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				)
 
 				if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
-					// NVENC direct buffer hardware encoding
-					// We OMIT -x nv12 to allow NVENC to handle the BGR0->YUV conversion on the GPU.
+					// In direct mode, keep compositor frames in packed RGB and let NVENC convert
+					// them to 4:2:0 on-GPU. Forcing yuv420p here pushes the conversion into
+					// wf-recorder/FFmpeg's CPU path and defeats the point of direct mode.
+					if CaptureMode == CaptureModeDirect {
+						args = append(args, "-x", "bgr0")
+					} else {
+						args = append(args, "-x", "yuv420p")
+					}
+
+					// NVENC hardware encoding
 					args = append(args,
 						"-p", "preset=p1",
 						"-p", "tune=ull",
 						"-p", "delay=0",
+						"-p", "rgb_mode=yuv420",
 						"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
 						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
 						"-p", "g=60",
@@ -439,7 +462,13 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 			noteStreamStarted(currentStreamID)
 
 			if err := cmd.Start(); err != nil {
+				if CaptureMode == CaptureModeDirect {
+					setDirectBufferActive(false, fmt.Sprintf("Direct-buffer capture failed to start: %v", err))
+				}
 				log.Fatalf("Failed to start wf-recorder: %v", err)
+			}
+			if CaptureMode == CaptureModeDirect {
+				setDirectBufferActive(true, "Direct-buffer probe passed and NVENC capture is active")
 			}
 
 			// Prime the compositor so VBR sessions emit an initial frame without waiting for user input.

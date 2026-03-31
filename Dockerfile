@@ -32,11 +32,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   xfce4-pulseaudio-plugin \
   pavucontrol \
   python3 \
+  python3-tk \
   adwaita-icon-theme-full \
   elementary-xfce-icon-theme \
   gnome-themes-extra \
   hicolor-icon-theme \
   libpulse0 \
+  libegl1 \
+  libgbm1 \
+  libdrm2 \
   pulseaudio \
   pulseaudio-utils \
   alsa-utils \
@@ -77,6 +81,8 @@ WORKDIR /app
 COPY --from=node-builder /app/public/ ./public/
 COPY --from=builder /app/llrdc /app/llrdc
 COPY cmd/server/wayland_input_client.c ./
+COPY tools/direct_buffer_probe.c ./
+COPY tools/latency_probe_app.py ./tools/
 COPY cmd/server/wlr-virtual-pointer-unstable-v1.xml ./
 COPY cmd/server/virtual-keyboard-unstable-v1.xml ./
 
@@ -85,7 +91,8 @@ RUN wayland-scanner client-header wlr-virtual-pointer-unstable-v1.xml wlr-virtua
     && wayland-scanner private-code wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-client-protocol.c \
     && wayland-scanner client-header virtual-keyboard-unstable-v1.xml virtual-keyboard-unstable-v1-client-protocol.h \
     && wayland-scanner private-code virtual-keyboard-unstable-v1.xml virtual-keyboard-unstable-v1-client-protocol.c \
-    && gcc -o wayland_input_client wayland_input_client.c wlr-virtual-pointer-unstable-v1-client-protocol.c virtual-keyboard-unstable-v1-client-protocol.c $(pkg-config --cflags --libs wayland-client xkbcommon)
+    && gcc -o wayland_input_client wayland_input_client.c wlr-virtual-pointer-unstable-v1-client-protocol.c virtual-keyboard-unstable-v1-client-protocol.c $(pkg-config --cflags --libs wayland-client xkbcommon) \
+    && gcc -O2 -o /usr/local/bin/direct_buffer_probe direct_buffer_probe.c $(pkg-config --cflags --libs wayland-client)
 
 RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/

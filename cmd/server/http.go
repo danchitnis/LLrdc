@@ -32,6 +32,38 @@ type Client struct {
 var clientsMutex sync.Mutex
 var clients = make(map[*websocket.Conn]*Client)
 
+func configPayload(restarted bool) map[string]interface{} {
+	directState := snapshotDirectBufferState()
+	return map[string]interface{}{
+		"type":                   "config",
+		"videoCodec":             VideoCodec,
+		"chroma":                 Chroma,
+		"gpuAvailable":           UseGPU,
+		"captureMode":            CaptureMode,
+		"directBufferRequested":  directState.Requested,
+		"directBufferSupported":  directState.Supported,
+		"directBufferActive":     directState.Active,
+		"directBufferReason":     directState.Reason,
+		"directBufferRenderNode": directState.RenderNode,
+		"directBufferRenderer":   directState.Renderer,
+		"av1NvencAvailable":      AV1NVENCAvailable,
+		"h264Nvenc444Available":  H264NVENC444Available,
+		"h265Nvenc444Available":  H265NVENC444Available,
+		"framerate":              FPS,
+		"bandwidth":              targetBandwidthMbps,
+		"quality":                targetQuality,
+		"vbr":                    targetVBR,
+		"mpdecimate":             targetMpdecimate,
+		"keyframe_interval":      targetKeyframeInterval,
+		"settle_time":            SettleTime,
+		"tile_size":              TileSize,
+		"enable_audio":           EnableAudio,
+		"audio_bitrate":          AudioBitrate,
+		"hdpi":                   HDPI,
+		"restarted":              restarted,
+	}
+}
+
 func startHTTPServer() {
 	go func() {
 		for {
@@ -166,28 +198,7 @@ func broadcastVideoFrame(frame []byte, streamID uint32, codec string) {
 }
 
 func broadcastConfig(restarted bool) {
-	configMsg := map[string]interface{}{
-		"type":                  "config",
-		"videoCodec":            VideoCodec,
-		"chroma":                Chroma,
-		"gpuAvailable":          UseGPU,
-		"av1NvencAvailable":     AV1NVENCAvailable,
-		"h264Nvenc444Available": H264NVENC444Available,
-		"h265Nvenc444Available": H265NVENC444Available,
-		"framerate":             FPS,
-		"bandwidth":             targetBandwidthMbps,
-		"quality":               targetQuality,
-		"vbr":                   targetVBR,
-		"mpdecimate":            targetMpdecimate,
-		"keyframe_interval":     targetKeyframeInterval,
-		"settle_time":           SettleTime,
-		"tile_size":             TileSize,
-		"enable_audio":          EnableAudio,
-		"audio_bitrate":         AudioBitrate,
-		"hdpi":                  HDPI,
-		"restarted":             restarted,
-	}
-	broadcastJSON(configMsg)
+	broadcastJSON(configPayload(restarted))
 }
 
 func handleInputMessage(msg map[string]interface{}) {
@@ -271,26 +282,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send initial codec and config to client
-	initialConfig := map[string]interface{}{
-		"type":                  "config",
-		"videoCodec":            VideoCodec,
-		"chroma":                Chroma,
-		"gpuAvailable":          UseGPU,
-		"av1NvencAvailable":     AV1NVENCAvailable,
-		"h264Nvenc444Available": H264NVENC444Available,
-		"h265Nvenc444Available": H265NVENC444Available,
-		"framerate":             FPS,
-		"bandwidth":             targetBandwidthMbps,
-		"quality":               targetQuality,
-		"vbr":                   targetVBR,
-		"mpdecimate":            targetMpdecimate,
-		"keyframe_interval":     targetKeyframeInterval,
-		"settle_time":           SettleTime,
-		"tile_size":             TileSize,
-		"enable_audio":          EnableAudio,
-		"audio_bitrate":         AudioBitrate,
-		"hdpi":                  HDPI,
-	}
+	initialConfig := configPayload(false)
 	_ = writeJSON(initialConfig)
 
 	var pc *webrtc.PeerConnection

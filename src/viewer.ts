@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -12,6 +12,7 @@ declare global {
         hasReceivedKeyFrame: boolean;
         rtcPeer: RTCPeerConnection | null;
         gpuAvailable: boolean;
+        serverFfmpegFps?: number;
         webrtcManager: WebRTCManager;
         webcodecsManager: WebCodecsManager;
         networkManager: NetworkManager;
@@ -76,10 +77,60 @@ interface ConfigMessage {
     enable_audio?: boolean;
     audio_bitrate?: string;
     restarted?: boolean;
+    captureMode?: string;
+    directBufferRequested?: boolean;
+    directBufferSupported?: boolean;
+    directBufferActive?: boolean;
+    directBufferReason?: string;
 }
 
 let configDebounceTimer: number | null = null;
 let currentHdpi = 100;
+
+function updateDirectBufferUi(msg: Record<string, unknown>) {
+    const captureMode = typeof msg.captureMode === 'string' ? msg.captureMode : 'compat';
+    const directRequested = msg.directBufferRequested === true;
+    const directSupported = msg.directBufferSupported === true;
+    const directActive = msg.directBufferActive === true;
+    const directReason = typeof msg.directBufferReason === 'string' ? msg.directBufferReason : '';
+
+    if (directBufferStatusEl) {
+        if (!directRequested || captureMode !== 'direct') {
+            directBufferStatusEl.textContent = 'Compat mode';
+        } else if (directActive) {
+            directBufferStatusEl.textContent = 'Active';
+        } else if (directSupported) {
+            directBufferStatusEl.textContent = 'Supported, waiting for NVENC capture';
+        } else {
+            directBufferStatusEl.textContent = 'Unavailable';
+        }
+        directBufferStatusEl.title = directReason || 'Read-only startup status for DMA-BUF direct capture';
+    }
+
+    if (videoCodecSelect) {
+        Array.from(videoCodecSelect.options).forEach(option => {
+            if (captureMode === 'direct') {
+                option.disabled = !option.value.endsWith('_nvenc');
+            } else {
+                option.disabled = false;
+            }
+        });
+    }
+
+    if (chromaCheckbox) {
+        if (captureMode === 'direct') {
+            chromaCheckbox.checked = false;
+            chromaCheckbox.disabled = true;
+            if (chromaCheckbox.parentElement) {
+                chromaCheckbox.parentElement.style.opacity = '0.5';
+                chromaCheckbox.parentElement.title = 'Direct capture mode currently requires YUV 4:2:0';
+            }
+        } else if (chromaCheckbox.parentElement) {
+            chromaCheckbox.parentElement.style.opacity = '1';
+            chromaCheckbox.parentElement.title = 'Improve text clarity by avoiding chroma subsampling (H.264/H.265/AV1 only)';
+        }
+    }
+}
 
 function sendConfig() {
     if (configDebounceTimer) {
@@ -460,6 +511,7 @@ export function clearLosslessCanvas(x?: number, y?: number, w?: number, h?: numb
 function handleJsonMessage(msg: Record<string, unknown>) {
     if (msg.type === 'config') {
         let codecChanged = false;
+        updateDirectBufferUi(msg);
 
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {
             log(`Server codec: ${msg.videoCodec}`);
@@ -473,7 +525,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.framerate !== undefined && typeof msg.framerate === 'number') {
             log(`Server framerate: ${msg.framerate} FPS`);
-            (window as any).serverFfmpegFps = msg.framerate;
+            window.serverFfmpegFps = msg.framerate;
             if (framerateSelect) {
                 framerateSelect.value = msg.framerate.toString();
             }
@@ -523,12 +575,13 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
             if (msg.h264Nvenc444Available !== undefined && chromaCheckbox && videoCodecSelect) {
                 const updateChromaState = () => {
+                    const isDirectMode = msg.captureMode === 'direct';
                     const isAV1Nvenc = videoCodecSelect.value === 'av1_nvenc';
                     const isH264Nvenc = videoCodecSelect.value === 'h264_nvenc';
                     const isH265Nvenc = videoCodecSelect.value === 'h265_nvenc';
                     
                     // AV1 NVENC never supports 444 (NVENC SDK limitation)
-                    const codec_444_Missing = isAV1Nvenc || (isH264Nvenc && !msg.h264Nvenc444Available) || (isH265Nvenc && !msg.h265Nvenc444Available);
+                    const codec_444_Missing = isDirectMode || isAV1Nvenc || (isH264Nvenc && !msg.h264Nvenc444Available) || (isH265Nvenc && !msg.h265Nvenc444Available);
                     
                     if (codec_444_Missing) {
                         if (chromaCheckbox.checked) {
@@ -537,7 +590,9 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                         }
                         chromaCheckbox.disabled = true;
                         chromaCheckbox.parentElement!.style.opacity = '0.5';
-                        chromaCheckbox.parentElement!.title = isAV1Nvenc
+                        chromaCheckbox.parentElement!.title = isDirectMode
+                            ? 'Direct capture mode currently requires YUV 4:2:0'
+                            : isAV1Nvenc
                             ? 'AV1 NVENC does not support 4:4:4 (NVENC SDK limitation)'
                             : '4:4:4 is not supported by your GPU hardware for this codec';
                     } else {
@@ -604,7 +659,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         }
     } else if (msg.type === 'clipboard_get') {
         if (typeof msg.text === 'string') {
-
+            log('Clipboard sync response received.');
         }
     } else if (msg.type === 'webrtc_answer') {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);
@@ -631,7 +686,6 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             clearLosslessCanvas(msg.x as number | undefined, msg.y as number | undefined, msg.w as number | undefined, msg.h as number | undefined);
         }
     } else if (msg.type === 'cursor_shape') {
-        const shape = msg.shape as string;
         if (overlayEl && typeof msg.dataURL === 'string' && typeof msg.xhot === 'number' && typeof msg.yhot === 'number') {
             const dataURL = msg.dataURL;
             const xhot = msg.xhot;

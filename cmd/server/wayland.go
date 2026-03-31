@@ -10,6 +10,50 @@ import (
 	"time"
 )
 
+func configureWaylandRuntime(runDir string) (string, error) {
+	os.Setenv("XDG_RUNTIME_DIR", runDir)
+	os.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	os.Setenv("DISPLAY", ":0")
+	os.Setenv("WLR_NO_HARDWARE_CURSORS", "1")
+	os.Setenv("WLR_BACKENDS", "headless")
+
+	renderNode := ""
+	if CaptureMode == CaptureModeDirect {
+		var err error
+		renderNode, err = detectRenderNode()
+		if err != nil {
+			markDirectBufferProbeResult("", false, err.Error(), directBufferProbeResult{})
+			return "", err
+		}
+		os.Unsetenv("WLR_RENDERER")
+		os.Setenv("WLR_RENDER_DRM_DEVICE", renderNode)
+		log.Printf("Direct capture mode requested; using render node %s", renderNode)
+	} else {
+		os.Setenv("WLR_RENDERER", "pixman")
+		os.Unsetenv("WLR_RENDER_DRM_DEVICE")
+		markDirectBufferProbeResult("", false, "Direct buffer disabled in compat mode", directBufferProbeResult{})
+	}
+
+	// Force Native Wayland for GDK/GTK applications (XFCE 4.20)
+	os.Setenv("GDK_BACKEND", "wayland")
+	os.Setenv("QT_QPA_PLATFORM", "wayland")
+
+	// Reduce warnings and improve theming
+	os.Setenv("NO_AT_BRIDGE", "1")
+	os.Setenv("XDG_MENU_PREFIX", "xfce-")
+	os.Setenv("XDG_CURRENT_DESKTOP", "XFCE")
+
+	// Ensure data dirs are set for icons/themes
+	if os.Getenv("XDG_DATA_DIRS") == "" {
+		os.Setenv("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
+	}
+	if os.Getenv("XDG_CONFIG_DIRS") == "" {
+		os.Setenv("XDG_CONFIG_DIRS", "/etc/xdg")
+	}
+
+	return renderNode, nil
+}
+
 func startDBus() error {
 	// If already set, don't restart
 	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "" {
@@ -46,29 +90,9 @@ func startWayland() error {
 		log.Printf("Warning: failed to start global DBus: %v", err)
 	}
 
-	// Set Environment for Wayland and Native GDK
-	os.Setenv("XDG_RUNTIME_DIR", runDir)
-	os.Setenv("WAYLAND_DISPLAY", "wayland-0")
-	os.Setenv("DISPLAY", ":0")
-	os.Setenv("WLR_NO_HARDWARE_CURSORS", "1")
-	os.Setenv("WLR_RENDERER", "pixman")
-	os.Setenv("WLR_BACKENDS", "headless")
-
-	// Force Native Wayland for GDK/GTK applications (XFCE 4.20)
-	os.Setenv("GDK_BACKEND", "wayland")
-	os.Setenv("QT_QPA_PLATFORM", "wayland")
-
-	// Reduce warnings and improve theming
-	os.Setenv("NO_AT_BRIDGE", "1")
-	os.Setenv("XDG_MENU_PREFIX", "xfce-")
-	os.Setenv("XDG_CURRENT_DESKTOP", "XFCE")
-
-	// Ensure data dirs are set for icons/themes
-	if os.Getenv("XDG_DATA_DIRS") == "" {
-		os.Setenv("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
-	}
-	if os.Getenv("XDG_CONFIG_DIRS") == "" {
-		os.Setenv("XDG_CONFIG_DIRS", "/etc/xdg")
+	renderNode, err := configureWaylandRuntime(runDir)
+	if err != nil {
+		return fmt.Errorf("failed to configure Wayland runtime: %w", err)
 	}
 
 	w, h := GetScreenSize()
@@ -275,6 +299,22 @@ touch "$READY_FILE"
 	readiness.Set(readinessWaylandSocket, true)
 
 	log.Println("Wayland socket is ready.")
+
+	if CaptureMode == CaptureModeDirect {
+		waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0")
+		probeResult, probeErr := runDirectBufferProbe(waylandEnv)
+		if probeErr != nil {
+			markDirectBufferProbeResult(renderNode, false, fmt.Sprintf("direct-buffer probe failed: %v", probeErr), directBufferProbeResult{})
+			return fmt.Errorf("direct-buffer probe failed: %w", probeErr)
+		}
+		if !probeResult.ScreencopyAvailable || !probeResult.LinuxDMABUFAvailable {
+			reason := "Wayland compositor does not advertise both screencopy and linux-dmabuf"
+			markDirectBufferProbeResult(renderNode, false, reason, probeResult)
+			return fmt.Errorf(reason)
+		}
+		markDirectBufferProbeResult(renderNode, true, "Direct-buffer probe passed; waiting for NVENC capture", probeResult)
+		log.Printf("Direct-buffer probe passed (render node: %s, renderer: %s)", renderNode, compatibleRendererName())
+	}
 
 	// Start native wayland input helper
 	startWaylandInputHelper()

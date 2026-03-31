@@ -44,10 +44,19 @@ To enable GPU acceleration (NVENC) on NVIDIA systems, add the `--gpu` flag:
 
 The script will automatically detect and map CUDA/NVCC paths and switch to `h264_nvenc` encoding for high-performance streaming.
 
+To request the new GPU direct-buffer path, use `--capture-mode direct` together with `--gpu`:
+
+```bash
+./docker-run.sh --gpu --capture-mode direct
+```
+
+This mode is fail-closed: startup aborts unless the compositor exposes the required Wayland screencopy and linux-dmabuf capabilities.
+
 To see verbose debug logs, you can use the following flags:
 - `--debug-ffmpeg`: Shows real-time ffmpeg frame rate and encoder reports.
 - `--debug`: Enables both ffmpeg and input debug logging.
 - `--hdpi [percent]` or `-h [percent]`: Enables High DPI scaling for the XFCE desktop. If no percentage is provided, it defaults to `200` (2x scaling). Example: `--hdpi 150` for 1.5x scaling.
+- `--capture-mode compat|direct`: Selects the Wayland capture path. `direct` requires `--gpu` and only activates when direct-buffer probing succeeds.
 
 ### Network and WebRTC Configuration
 
@@ -107,6 +116,7 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 - `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h265`, `h265_nvenc`, `av1`, or `av1_nvenc`.
 - `--chroma`: Chroma subsampling format, `420` (default) or `444`. See [Chroma 4:4:4](#chroma-444) below.
 - `--use-gpu`: Enable GPU acceleration for NVENC codecs.
+- `--capture-mode`: Capture mode, `compat` (default) or `direct`.
 - `--use-debug-ffmpeg`: Enable verbose FFmpeg logging.
 - `--use-debug-x11`: Enable verbose X11/XFCE session logging.
 - `--display-num`: X11 display number inside the container (default: `99`).
@@ -134,6 +144,7 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `VIDEO_CODEC` | Encoder selection | `--video-codec` |
 | `CHROMA` | Chroma subsampling (`420` or `444`) | `--chroma` |
 | `USE_GPU` | Enable GPU acceleration | `--use-gpu` |
+| `CAPTURE_MODE` | Capture mode (`compat` or `direct`) | `--capture-mode` |
 | `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
 | `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
 | `WEBRTC_PUBLIC_IP` | Public IP override | `--webrtc-public-ip` |
@@ -141,6 +152,45 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `TEST_MINIMAL_X11` | Skip XFCE startup | `--test-minimal-x11` |
 | `WALLPAPER` | Custom wallpaper path | `--wallpaper` |
 | `ENABLE_CLIPBOARD` | Enable clipboard sync | `--enable-clipboard` |
+
+## Reproducible Benchmarks
+
+### Event-to-Photon Latency
+
+The repo now includes a repeatable event-to-photon benchmark that compares `compat` vs `direct` on the same host and disables VBR before sampling.
+
+It works by:
+- starting fresh `compat` and `direct` containers one after the other
+- launching a fullscreen black/white probe app inside the remote desktop
+- toggling the probe through the browser input path
+- measuring when the probe requested and drew the color change inside the container
+- detecting when the streamed frame reaches the browser canvas
+
+Run it with:
+
+```bash
+./docker-build.sh
+npm run test:latency
+```
+
+The benchmark prints a JSON summary with:
+- per-trial `inputToPhotonMs`
+- per-trial `drawToPhotonMs`
+- `avg`, `median`, and `p95` for both `compat` and `direct`
+- a `delta` section where negative numbers mean `direct` is faster
+
+Notes:
+- It requires a working local Docker + GPU setup because it launches real containers.
+- The test closes the config menu and disables VBR itself so idle bitrate suppression does not distort the measurement.
+- Playwright also stores the JSON result as a `latency-benchmark` test artifact.
+
+### CPU/FPS Benchmark
+
+For the existing CPU/FPS comparison benchmark, run:
+
+```bash
+npm run test:direct-benchmark
+```
 
 ## Chroma 4:4:4
 

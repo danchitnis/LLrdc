@@ -13,7 +13,9 @@
     "build": "tsc && vite build",
     "lint": "eslint src/",
     "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080}/tcp -p ${PORT:-8080}:${PORT:-8080}/udp -e PORT=${PORT:-8080} -e TEST_PATTERN=${TEST_PATTERN} -e FPS=${FPS:-30} -e VIDEO_CODEC=${VIDEO_CODEC:-vp8} -e HOST_UID=$(id -u) -e HDPI=${HDPI:-0} -e WEBRTC_PUBLIC_IP=${WEBRTC_PUBLIC_IP:-127.0.0.1} danchitnis/llrdc ./llrdc --port ${PORT:-8080} --fps ${FPS:-30} --video-codec ${VIDEO_CODEC:-vp8} --webrtc-public-ip ${WEBRTC_PUBLIC_IP:-127.0.0.1}",
-    "test": "./test.sh"
+    "test": "./test.sh",
+    "test:latency": "npx playwright test tests/wayland_latency_benchmark.spec.ts",
+    "test:direct-benchmark": "npx playwright test tests/wayland_direct_buffer_benchmark.spec.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
