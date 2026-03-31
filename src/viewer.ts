@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, desktopMouseCheckbox, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -76,6 +76,10 @@ interface ConfigMessage {
     tile_size?: number;
     enable_audio?: boolean;
     audio_bitrate?: string;
+    webrtc_buffer?: number;
+    nvenc_latency?: boolean;
+    activity_hz?: number;
+    activity_timeout?: number;
     restarted?: boolean;
     captureMode?: string;
     directBufferRequested?: boolean;
@@ -203,6 +207,22 @@ function sendConfig() {
             config.audio_bitrate = audioBitrateSelect.value;
         }
 
+        if (webrtcBufferSlider) {
+            config.webrtc_buffer = parseInt(webrtcBufferSlider.value, 10);
+        }
+
+        if (nvencLatencyCheckbox) {
+            config.nvenc_latency = nvencLatencyCheckbox.checked;
+        }
+
+        if (activityHzSlider) {
+            config.activity_hz = parseInt(activityHzSlider.value, 10);
+        }
+
+        if (activityTimeoutSlider) {
+            config.activity_timeout = parseInt(activityTimeoutSlider.value, 10);
+        }
+
         network.sendMsg(JSON.stringify(config));
         configDebounceTimer = null;
     }, 100);
@@ -327,8 +347,33 @@ if (cpuThreadsSelect) {
     cpuThreadsSelect.addEventListener('change', sendConfig);
 }
 
+if (webrtcBufferSlider && webrtcBufferValue) {
+    webrtcBufferSlider.addEventListener('input', (e) => {
+        webrtcBufferValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    webrtcBufferSlider.addEventListener('change', sendConfig);
+}
+
+if (nvencLatencyCheckbox) {
+    nvencLatencyCheckbox.addEventListener('change', sendConfig);
+}
+
 if (desktopMouseCheckbox) {
     desktopMouseCheckbox.addEventListener('change', sendConfig);
+}
+
+if (activityHzSlider && activityHzValue) {
+    activityHzSlider.addEventListener('input', (e) => {
+        activityHzValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    activityHzSlider.addEventListener('change', sendConfig);
+}
+
+if (activityTimeoutSlider && activityTimeoutValue) {
+    activityTimeoutSlider.addEventListener('input', (e) => {
+        activityTimeoutValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    activityTimeoutSlider.addEventListener('change', sendConfig);
 }
 
 if (clipboardCheckbox) {
@@ -656,6 +701,25 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.audio_bitrate && typeof msg.audio_bitrate === 'string' && audioBitrateSelect) {
             audioBitrateSelect.value = msg.audio_bitrate;
+        }
+
+        if (msg.webrtc_buffer !== undefined && msg.webrtc_buffer !== null && webrtcBufferSlider && webrtcBufferValue) {
+            webrtcBufferSlider.value = (msg.webrtc_buffer as number).toString();
+            webrtcBufferValue.textContent = msg.webrtc_buffer.toString();
+        }
+
+        if (msg.nvenc_latency !== undefined && msg.nvenc_latency !== null && nvencLatencyCheckbox) {
+            nvencLatencyCheckbox.checked = msg.nvenc_latency as boolean;
+        }
+
+        if (msg.activity_hz !== undefined && msg.activity_hz !== null && activityHzSlider && activityHzValue) {
+            activityHzSlider.value = (msg.activity_hz as number).toString();
+            activityHzValue.textContent = msg.activity_hz.toString();
+        }
+
+        if (msg.activity_timeout !== undefined && msg.activity_timeout !== null && activityTimeoutSlider && activityTimeoutValue) {
+            activityTimeoutSlider.value = (msg.activity_timeout as number).toString();
+            activityTimeoutValue.textContent = msg.activity_timeout.toString();
         }
     } else if (msg.type === 'clipboard_get') {
         if (typeof msg.text === 'string') {

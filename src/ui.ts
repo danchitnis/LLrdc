@@ -28,7 +28,15 @@ export const maxResSelect = document.getElementById('max-res-select') as HTMLSel
 export const cpuEffortSlider = document.getElementById('cpu-effort-slider') as HTMLInputElement;
 export const cpuEffortValue = document.getElementById('cpu-effort-value') as HTMLSpanElement;
 export const cpuThreadsSelect = document.getElementById('cpu-threads-select') as HTMLSelectElement;
+export const webrtcBufferSlider = document.getElementById('webrtc-buffer-slider') as HTMLInputElement;
+export const webrtcBufferValue = document.getElementById('webrtc-buffer-value') as HTMLSpanElement;
+export const nvencLatencyCheckbox = document.getElementById('nvenc-latency-checkbox') as HTMLInputElement;
+
 export const desktopMouseCheckbox = document.getElementById('desktop-mouse-checkbox') as HTMLInputElement;
+export const activityHzSlider = document.getElementById('activity-hz-slider') as HTMLInputElement;
+export const activityHzValue = document.getElementById('activity-hz-value') as HTMLSpanElement;
+export const activityTimeoutSlider = document.getElementById('activity-timeout-slider') as HTMLInputElement;
+export const activityTimeoutValue = document.getElementById('activity-timeout-value') as HTMLSpanElement;
 export const videoCodecSelect = document.getElementById('video-codec-select') as HTMLSelectElement;
 export const codecGpuOpts = document.querySelectorAll('.codec-opt-gpu') as NodeListOf<HTMLOptionElement>;
 export const directBufferStatusEl = document.getElementById('direct-buffer-status') as HTMLDivElement;

@@ -22,7 +22,8 @@ var (
 	videoTrack      *webrtc.TrackLocalStaticSample
 	audioTrack      *webrtc.TrackLocalStaticSample
 	videoTrackMutex sync.RWMutex
-	webrtcFrameChan = make(chan WebRTCFrame, 30)
+	// static buffer size is large, but we limit it dynamically in WriteWebRTCFrame
+	webrtcFrameChan = make(chan WebRTCFrame, 1000)
 	lastSampleTime  time.Time
 	currentStreamID uint32
 )
@@ -138,25 +139,25 @@ func initWebRTC() {
 }
 
 func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string) {
+	// If the channel is already fuller than our configured limit, flush it.
+	limit := WebRTCBufferSize
+	if limit < 1 {
+		limit = 1
+	}
+
+	for len(webrtcFrameChan) >= limit {
+		select {
+		case <-webrtcFrameChan:
+			continue
+		default:
+		}
+		break
+	}
+
 	select {
 	case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}:
 	default:
-		// Channel full. Flush the entire backlog to ensure the next frame is live.
-		// This prevents "easing" catch-up and permanent lag.
-		for {
-			select {
-			case <-webrtcFrameChan:
-				continue
-			default:
-			}
-			break
-		}
-		// Try to put the latest frame in.
-		select {
-		case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}:
-		default:
-			// If still full, just drop.
-		}
+		// If still full (unlikely), just drop.
 	}
 }
 

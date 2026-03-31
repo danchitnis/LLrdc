@@ -30,6 +30,10 @@ var (
 	WebRTCPublicIP          string
 	WebRTCInterfaces        string
 	WebRTCExcludeInterfaces string
+	WebRTCBufferSize        int
+	ActivityPulseHz         int
+	ActivityTimeout         int
+	NVENCLatencyMode        bool
 	HDPI                    int
 	SettleTime              int
 	TileSize                int
@@ -81,6 +85,23 @@ func initConfig() {
 	defaultWebRTCInterfaces := os.Getenv("WEBRTC_INTERFACES")
 	defaultWebRTCExcludeInterfaces := os.Getenv("WEBRTC_EXCLUDE_INTERFACES")
 
+	defaultWebRTCBufferSize := 30
+	if bs, err := strconv.Atoi(os.Getenv("WEBRTC_BUFFER_SIZE")); err == nil {
+		defaultWebRTCBufferSize = bs
+	}
+
+	defaultActivityPulseHz := 30
+	if ap, err := strconv.Atoi(os.Getenv("ACTIVITY_PULSE_HZ")); err == nil {
+		defaultActivityPulseHz = ap
+	}
+
+	defaultActivityTimeout := 1500
+	if at, err := strconv.Atoi(os.Getenv("ACTIVITY_TIMEOUT")); err == nil {
+		defaultActivityTimeout = at
+	}
+
+	defaultNVENCLatencyMode := os.Getenv("NVENC_LATENCY_MODE") != "false"
+
 	defaultHDPI := 0
 	if hdpi, err := strconv.Atoi(os.Getenv("HDPI")); err == nil {
 		defaultHDPI = hdpi
@@ -119,6 +140,12 @@ func initConfig() {
 		printFlag(os.Stderr, "audio-bitrate", "Audio bitrate (e.g. 64k, 128k)", AudioBitrate)
 		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
 
+		fmt.Fprintf(os.Stderr, "\nLatency & Smoothness Flags:\n")
+		printFlag(os.Stderr, "webrtc-buffer", "WebRTC frame channel size (default 30)", WebRTCBufferSize)
+		printFlag(os.Stderr, "activity-hz", "Input heartbeat frequency in Hz (default 30)", ActivityPulseHz)
+		printFlag(os.Stderr, "activity-timeout", "Inactivity timeout in ms before stopping heartbeat (default 1500)", ActivityTimeout)
+		printFlag(os.Stderr, "nvenc-latency", "Enable ultra-low latency NVENC optimizations (default true)", NVENCLatencyMode)
+
 		fmt.Fprintf(os.Stderr, "\nTesting Flags:\n")
 		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of Wayland session", TestPattern)
 		printFlag(os.Stderr, "settle-time", "Hybrid sharpness settle time (ms)", SettleTime)
@@ -149,6 +176,10 @@ func initConfig() {
 	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
 	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
+	flag.IntVar(&WebRTCBufferSize, "webrtc-buffer", defaultWebRTCBufferSize, "WebRTC frame channel size (default 30)")
+	flag.IntVar(&ActivityPulseHz, "activity-hz", defaultActivityPulseHz, "Input heartbeat frequency in Hz (default 30)")
+	flag.IntVar(&ActivityTimeout, "activity-timeout", defaultActivityTimeout, "Inactivity timeout in ms before stopping heartbeat (default 1500)")
+	flag.BoolVar(&NVENCLatencyMode, "nvenc-latency", defaultNVENCLatencyMode, "Enable ultra-low latency NVENC optimizations (default true)")
 	flag.IntVar(&SettleTime, "settle-time", defaultSettleTime, "Hybrid sharpness settle time (ms)")
 	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Hybrid sharpness tile size (px)")
 	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (damage tracking)")

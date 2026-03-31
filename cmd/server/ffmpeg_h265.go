@@ -11,7 +11,10 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 	var outputArgs []string
 
 	if VideoCodec == "h265_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0", "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0", "-aud", "1")
+		outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0", "-aud", "1")
+		if NVENCLatencyMode {
+			outputArgs = append(outputArgs, "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0")
+		}
 		if Chroma == "444" {
 			outputArgs = append(outputArgs, "-profile:v", "rext")
 		}

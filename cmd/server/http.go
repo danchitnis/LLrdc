@@ -60,6 +60,10 @@ func configPayload(restarted bool) map[string]interface{} {
 		"enable_audio":           EnableAudio,
 		"audio_bitrate":          AudioBitrate,
 		"hdpi":                   HDPI,
+		"webrtc_buffer":          WebRTCBufferSize,
+		"activity_hz":            ActivityPulseHz,
+		"activity_timeout":       ActivityTimeout,
+		"nvenc_latency":          NVENCLatencyMode,
 		"restarted":              restarted,
 	}
 }
@@ -405,6 +409,35 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				if audioBitrateStr, ok := configMsg["audio_bitrate"].(string); ok {
 					SetAudioBitrate(audioBitrateStr)
+				}
+				if webrtcBufferFloat, ok := configMsg["webrtc_buffer"].(float64); ok {
+					webrtcBuffer := int(webrtcBufferFloat)
+					if WebRTCBufferSize != webrtcBuffer {
+						log.Printf("WebRTC buffer changed to %d", webrtcBuffer)
+						WebRTCBufferSize = webrtcBuffer
+						// This takes effect on the next WriteWebRTCFrame
+					}
+				}
+				if activityHzFloat, ok := configMsg["activity_hz"].(float64); ok {
+					activityHz := int(activityHzFloat)
+					if ActivityPulseHz != activityHz {
+						log.Printf("Activity heartbeat frequency changed to %d Hz", activityHz)
+						ActivityPulseHz = activityHz
+					}
+				}
+				if activityTimeoutFloat, ok := configMsg["activity_timeout"].(float64); ok {
+					activityTimeout := int(activityTimeoutFloat)
+					if ActivityTimeout != activityTimeout {
+						log.Printf("Activity heartbeat timeout changed to %d ms", activityTimeout)
+						ActivityTimeout = activityTimeout
+					}
+				}
+				if nvencLatencyBool, ok := configMsg["nvenc_latency"].(bool); ok {
+					if NVENCLatencyMode != nvencLatencyBool {
+						log.Printf("NVENC latency mode changed to %v", nvencLatencyBool)
+						NVENCLatencyMode = nvencLatencyBool
+						restartRequested = true
+					}
 				}
 
 				if bwFloat, ok := configMsg["bandwidth"].(float64); ok {

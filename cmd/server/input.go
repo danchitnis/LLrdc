@@ -138,8 +138,11 @@ func runActivityPulse() {
 	for {
 		inputActivityMutex.Lock()
 		elapsed := time.Since(lastInputTime)
-		// Pulse for 1.5 seconds after the last input event.
-		if elapsed > 1500*time.Millisecond {
+		timeoutMs := ActivityTimeout
+		if timeoutMs < 100 {
+			timeoutMs = 100
+		}
+		if elapsed > time.Duration(timeoutMs)*time.Millisecond {
 			pulseStarted = false
 			inputActivityMutex.Unlock()
 			return
@@ -148,8 +151,16 @@ func runActivityPulse() {
 
 		// Trigger a tiny, invisible damage event in the compositor.
 		TriggerPing()
-		// 30Hz heartbeat is snappier for capturing animations and pushing frames.
-		time.Sleep(33 * time.Millisecond)
+
+		hz := ActivityPulseHz
+		if hz < 1 {
+			hz = 1
+		} else if hz > 120 {
+			hz = 120
+		}
+		// 1000ms / Hz = sleep time
+		sleepMs := 1000 / hz
+		time.Sleep(time.Duration(sleepMs) * time.Millisecond)
 	}
 }
 
