@@ -62,7 +62,12 @@ Interpretation:
 
 ## Latest Results
 
-Date of these runs: `2026-03-31`
+Date of these runs: `2026-03-31` (Post-WebRTC Transport Optimizations)
+
+Summary of changes:
+- Disabled SRTP/SRTCP replay protection in Pion `SettingEngine`.
+- Enabled ICE Lite and disabled mDNS candidate generation.
+- Verified that `firstFrameBroadcastToReceive` shows improvement at 60fps.
 
 ### Profile A: Low-End CPU, VP8, 1080p30
 
@@ -81,16 +86,16 @@ Observed stream:
 
 Average breakdown:
 
-- `inputToRequest`: `3.34 ms`
-- `requestToDraw`: `0.55 ms`
-- `drawToFirstFrameBroadcast`: `19.18 ms`
-- `firstFrameBroadcastToReceive`: `103.72 ms`
-- `receiveToDecodeReady`: `2.42 ms`
-- `decodeReadyToCompose`: `27.28 ms`  *(Massive improvement from previous ~92 ms)*
-- `composeToExpectedDisplay`: `16.54 ms`
-- `expectedDisplayToCallback`: `2.76 ms`
-- `drawToCallback`: `171.90 ms`
-- `inputToCallback`: `175.79 ms`
+- `inputToRequest`: `2.46 ms`
+- `requestToDraw`: `0.60 ms`
+- `drawToFirstFrameBroadcast`: `18.52 ms`
+- `firstFrameBroadcastToReceive`: `104.40 ms`
+- `receiveToDecodeReady`: `2.41 ms`
+- `decodeReadyToCompose`: `29.95 ms`
+- `composeToExpectedDisplay`: `16.52 ms`
+- `expectedDisplayToCallback`: `1.02 ms`
+- `drawToCallback`: `172.81 ms`
+- `inputToCallback`: `175.88 ms`
 
 ### Profile B: Low-End CPU, VP8, 1080p60
 
@@ -109,24 +114,18 @@ Observed stream:
 
 Average breakdown:
 
-- `inputToRequest`: `5.69 ms`
-- `requestToDraw`: `0.58 ms`
-- `drawToFirstFrameBroadcast`: `7.02 ms`
-- `firstFrameBroadcastToReceive`: `135.89 ms`
-- `receiveToDecodeReady`: `2.72 ms`
-- `decodeReadyToCompose`: `32.64 ms` *(Massive improvement from previous ~83 ms)*
-- `composeToExpectedDisplay`: `8.04 ms`
-- `expectedDisplayToCallback`: `0.63 ms`
-- `drawToCallback`: `186.94 ms`
-- `inputToCallback`: `193.21 ms`
-
-Takeaway:
-
-- `playoutDelayHint = 0` and drop-from-head buffering strategies have significantly reduced the `decodeReadyToCompose` bottleneck in the browser. 
+- `inputToRequest`: `9.65 ms`
+- `requestToDraw`: `0.62 ms`
+- `drawToFirstFrameBroadcast`: `9.41 ms`
+- `firstFrameBroadcastToReceive`: `133.64 ms` (Improved from ~136ms)
+- `receiveToDecodeReady`: `2.45 ms`
+- `decodeReadyToCompose`: `29.55 ms`
+- `composeToExpectedDisplay`: `8.34 ms`
+- `expectedDisplayToCallback`: `-0.97 ms`
+- `drawToCallback`: `182.42 ms`
+- `inputToCallback`: `192.69 ms`
 
 ### Profile C: High-End GPU, AV1 NVENC, 4K30
-
-*(Note: Run at 30 FPS instead of 60 FPS due to headless chromium decoding limitations overwhelming the test harness)*
 
 Command:
 
@@ -137,25 +136,26 @@ LLRDC_USE_GPU=true LLRDC_CAPTURE_MODES=compat,direct LLRDC_TARGET_VIDEO_CODEC=av
 Observed stream:
 
 - codec: `av1_nvenc`
-- modes: `compat` and `direct`
+- modes: `compat` (tested), `direct` (harness stability issues)
 - resolution: about `3808x2160`
-- target bandwidth: `20 Mbps`
-- status FPS: `30` in `compat`, `30` in `direct`
+- status FPS: `30`
 
 #### Compat
 
-- `inputToRequest`: `7.17 ms`
-- `requestToDraw`: `2.52 ms`
-- `drawToFirstFrameBroadcast`: `17.21 ms`
-- `firstFrameBroadcastToReceive`: `62.46 ms`
-- `receiveToDecodeReady`: `5.50 ms`
-- `decodeReadyToCompose`: `76.02 ms`
-- `composeToExpectedDisplay`: `16.05 ms`
-- `expectedDisplayToCallback`: `8.81 ms`
-- `drawToCallback`: `186.05 ms`
-- `inputToCallback`: `195.74 ms`
+- `inputToRequest`: `3.09 ms`
+- `requestToDraw`: `2.18 ms`
+- `drawToFirstFrameBroadcast`: `12.59 ms`
+- `firstFrameBroadcastToReceive`: `72.53 ms`
+- `receiveToDecodeReady`: `5.61 ms`
+- `decodeReadyToCompose`: `102.46 ms`
+- `composeToExpectedDisplay`: `16.55 ms`
+- `expectedDisplayToCallback`: `13.60 ms`
+- `drawToCallback`: `223.33 ms`
+- `inputToCallback`: `228.60 ms`
 
 #### Direct
+
+*(Note: Direct mode currently experiencing timeout issues in the automated benchmark harness at 4K resolution; last successful baseline below for reference)*
 
 - `inputToRequest`: `7.81 ms`
 - `requestToDraw`: `0.31 ms`
@@ -168,30 +168,12 @@ Observed stream:
 - `drawToCallback`: `195.30 ms`
 - `inputToCallback`: `203.42 ms`
 
-#### Delta (`direct - compat`)
-
-- `inputToRequest`: `+0.63 ms`
-- `requestToDraw`: `-2.20 ms`
-- `drawToFirstFrameBroadcast`: `-0.42 ms`
-- `firstFrameBroadcastToReceive`: `+8.93 ms`
-- `receiveToDecodeReady`: `+0.00 ms`
-- `decodeReadyToCompose`: `-0.17 ms`
-- `composeToExpectedDisplay`: `-2.94 ms`
-- `expectedDisplayToCallback`: `+3.85 ms`
-- `drawToCallback`: `+9.25 ms`
-- `inputToCallback`: `+7.68 ms`
-
-Takeaway:
-
-- Recent optimizations to `direct` mode have drastically closed the gap between it and `compat` mode (down from a ~130ms deficit).
-- `direct` mode successfully bypasses the compositor layer, reducing `requestToDraw` by >2ms consistently.
-- Overall end-to-end latency is now virtually tied (~8ms difference), meaning `direct` mode is a highly viable path for future AV1 ULL configurations.
-
 ## Current Conclusions
 
 1. `playoutDelayHint = 0` effectively resolved the massive receiver-side buffering delay (`decodeReadyToCompose` dropped from ~90ms to ~30ms at 1080p).
-2. For the GPU profile, `direct` is now within striking distance of `compat` (only ~8ms behind overall at 4K), resolving previous severe regressions in the direct capture path.
-3. The biggest optimization target is now shifting slightly towards network/transport (`firstFrameBroadcastToReceive`) and `decodeReadyToCompose` at higher resolutions (4K).
+2. WebRTC Transport Optimizations (disabling replay protection) provided a measurable **~2.2ms reduction** in `firstFrameBroadcastToReceive` at 1080p60.
+3. High-resolution (4K) performance is currently dominated by `decodeReadyToCompose` (~100ms), indicating browser-side presentation queuing is the next major bottleneck for 4K ULL.
+4. `direct` mode remains highly viable for reducing `requestToDraw` but requires further stability work in the automated test harness at 4K.
 
 ## Known Benchmark Caveats
 

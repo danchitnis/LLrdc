@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -78,6 +78,7 @@ interface ConfigMessage {
     audio_bitrate?: string;
     webrtc_buffer?: number;
     nvenc_latency?: boolean;
+    webrtc_low_latency?: boolean;
     activity_hz?: number;
     activity_timeout?: number;
     restarted?: boolean;
@@ -213,6 +214,10 @@ function sendConfig() {
 
         if (nvencLatencyCheckbox) {
             config.nvenc_latency = nvencLatencyCheckbox.checked;
+        }
+
+        if (webrtcLowLatencyCheckbox) {
+            config.webrtc_low_latency = webrtcLowLatencyCheckbox.checked;
         }
 
         if (activityHzSlider) {
@@ -356,6 +361,10 @@ if (webrtcBufferSlider && webrtcBufferValue) {
 
 if (nvencLatencyCheckbox) {
     nvencLatencyCheckbox.addEventListener('change', sendConfig);
+}
+
+if (webrtcLowLatencyCheckbox) {
+    webrtcLowLatencyCheckbox.addEventListener('change', sendConfig);
 }
 
 if (desktopMouseCheckbox) {
@@ -710,6 +719,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.nvenc_latency !== undefined && msg.nvenc_latency !== null && nvencLatencyCheckbox) {
             nvencLatencyCheckbox.checked = msg.nvenc_latency as boolean;
+        }
+
+        if (msg.webrtc_low_latency !== undefined && msg.webrtc_low_latency !== null && webrtcLowLatencyCheckbox) {
+            webrtcLowLatencyCheckbox.checked = msg.webrtc_low_latency as boolean;
         }
 
         if (msg.activity_hz !== undefined && msg.activity_hz !== null && activityHzSlider && activityHzValue) {

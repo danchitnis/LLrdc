@@ -64,6 +64,7 @@ func configPayload(restarted bool) map[string]interface{} {
 		"activity_hz":            ActivityPulseHz,
 		"activity_timeout":       ActivityTimeout,
 		"nvenc_latency":          NVENCLatencyMode,
+		"webrtc_low_latency":     WebRTCLowLatency,
 		"restarted":              restarted,
 	}
 }
@@ -436,6 +437,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					if NVENCLatencyMode != nvencLatencyBool {
 						log.Printf("NVENC latency mode changed to %v", nvencLatencyBool)
 						NVENCLatencyMode = nvencLatencyBool
+						restartRequested = true
+					}
+				}
+				if webrtcLowLatencyBool, ok := configMsg["webrtc_low_latency"].(bool); ok {
+					if WebRTCLowLatency != webrtcLowLatencyBool {
+						SetWebRTCLowLatency(webrtcLowLatencyBool)
 						restartRequested = true
 					}
 				}

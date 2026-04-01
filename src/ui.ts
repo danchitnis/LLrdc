@@ -31,6 +31,7 @@ export const cpuThreadsSelect = document.getElementById('cpu-threads-select') as
 export const webrtcBufferSlider = document.getElementById('webrtc-buffer-slider') as HTMLInputElement;
 export const webrtcBufferValue = document.getElementById('webrtc-buffer-value') as HTMLSpanElement;
 export const nvencLatencyCheckbox = document.getElementById('nvenc-latency-checkbox') as HTMLInputElement;
+export const webrtcLowLatencyCheckbox = document.getElementById('webrtc-low-latency-checkbox') as HTMLInputElement;
 
 export const desktopMouseCheckbox = document.getElementById('desktop-mouse-checkbox') as HTMLInputElement;
 export const activityHzSlider = document.getElementById('activity-hz-slider') as HTMLInputElement;

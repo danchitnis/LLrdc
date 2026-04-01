@@ -218,6 +218,12 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
 	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
 
+	if WebRTCLowLatency {
+		s.DisableSRTPReplayProtection(true)
+		s.DisableSRTCPReplayProtection(true)
+		s.SetLite(true)
+	}
+
 	// Prefer an explicit WEBRTC_PUBLIC_IP; otherwise derive from the browser request host.
 	publicIP := resolveAdvertisedIP(requestHost)
 	if publicIP != "" {

@@ -37,6 +37,7 @@ var (
 	HDPI                    int
 	SettleTime              int
 	TileSize                int
+	WebRTCLowLatency        bool
 )
 
 func initConfig() {
@@ -117,6 +118,8 @@ func initConfig() {
 		defaultTileSize = ts
 	}
 
+	defaultWebRTCLowLatency := os.Getenv("WEBRTC_LOW_LATENCY") == "true"
+
 	// Custom Usage format
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of llrdc:\n")
@@ -145,6 +148,7 @@ func initConfig() {
 		printFlag(os.Stderr, "activity-hz", "Input heartbeat frequency in Hz (default 30)", ActivityPulseHz)
 		printFlag(os.Stderr, "activity-timeout", "Inactivity timeout in ms before stopping heartbeat (default 1500)", ActivityTimeout)
 		printFlag(os.Stderr, "nvenc-latency", "Enable ultra-low latency NVENC optimizations (default true)", NVENCLatencyMode)
+		printFlag(os.Stderr, "webrtc-low-latency", "Enable ultra-low latency WebRTC transport optimizations (ICE Lite, disabled replay protection) (default false)", WebRTCLowLatency)
 
 		fmt.Fprintf(os.Stderr, "\nTesting Flags:\n")
 		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of Wayland session", TestPattern)
@@ -180,6 +184,7 @@ func initConfig() {
 	flag.IntVar(&ActivityPulseHz, "activity-hz", defaultActivityPulseHz, "Input heartbeat frequency in Hz (default 30)")
 	flag.IntVar(&ActivityTimeout, "activity-timeout", defaultActivityTimeout, "Inactivity timeout in ms before stopping heartbeat (default 1500)")
 	flag.BoolVar(&NVENCLatencyMode, "nvenc-latency", defaultNVENCLatencyMode, "Enable ultra-low latency NVENC optimizations (default true)")
+	flag.BoolVar(&WebRTCLowLatency, "webrtc-low-latency", defaultWebRTCLowLatency, "Enable ultra-low latency WebRTC transport optimizations (default false)")
 	flag.IntVar(&SettleTime, "settle-time", defaultSettleTime, "Hybrid sharpness settle time (ms)")
 	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Hybrid sharpness tile size (px)")
 	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (damage tracking)")
@@ -224,4 +229,12 @@ func initConfig() {
 
 func printFlag(w *os.File, name, usage string, def any) {
 	fmt.Fprintf(w, "  -%s\n    \t%s (default %v)\n", name, usage, def)
+}
+
+func SetWebRTCLowLatency(lowLatency bool) {
+	if WebRTCLowLatency == lowLatency {
+		return
+	}
+	log.Printf("WebRTC low-latency mode changed to %v", lowLatency)
+	WebRTCLowLatency = lowLatency
 }
