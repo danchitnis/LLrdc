@@ -13,7 +13,7 @@ import (
 func configureWaylandRuntime(runDir string) (string, error) {
 	os.Setenv("XDG_RUNTIME_DIR", runDir)
 	os.Setenv("WAYLAND_DISPLAY", "wayland-0")
-	os.Setenv("DISPLAY", ":0")
+	os.Setenv("DISPLAY", ":99")
 	os.Setenv("WLR_NO_HARDWARE_CURSORS", "1")
 	os.Setenv("WLR_BACKENDS", "headless")
 
@@ -278,6 +278,7 @@ touch "$READY_FILE"
 		"XDG_RUNTIME_DIR="+runDir,
 		"WLR_BACKENDS=headless",
 		"WLR_HEADLESS_OUTPUTS=1",
+		"DISPLAY=:99",
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -324,7 +325,7 @@ touch "$READY_FILE"
 		return err
 	}
 
-	waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:0")
+	waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:99")
 
 	// Set initial resolution and apply HDPI
 	w, h = GetScreenSize()
@@ -367,11 +368,15 @@ touch "$READY_FILE"
 		readiness.Set(readinessPulseAudio, true)
 	}
 
-	if err := waitForFile(desktopReadyMarker, 20*time.Second, 100*time.Millisecond); err != nil {
-		return fmt.Errorf("desktop session readiness failed: %w", err)
-	}
-	readiness.Set(readinessDesktopSession, true)
-	PrimeFrameGeneration(250*time.Millisecond, 10, 100*time.Millisecond)
+	go func() {
+		if err := waitForFile(desktopReadyMarker, 30*time.Second, 100*time.Millisecond); err != nil {
+			log.Printf("Warning: desktop session readiness marker not found: %v", err)
+		}
+		readiness.Set(readinessDesktopSession, true)
+		log.Println("Desktop session is fully ready.")
+		PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+	}()
 
+	// We consider it "ready enough" to start streaming once the socket is there and input is ready
 	return nil
 }

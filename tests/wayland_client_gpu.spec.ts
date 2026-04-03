@@ -15,9 +15,7 @@ test.describe('Wayland Client GPU Decoding', () => {
     // Using docker-run.sh to ensure local changes are used if it builds/runs correctly
     // or just direct docker run if we assume the image is ready.
     // Given the context, ./docker-run.sh --wayland is preferred.
-    execSync(`./docker-run.sh --wayland --detach --name ${CONTAINER_NAME} --hdpi 100`, {
-        env: { ...process.env, HOST_PORT: PORT.toString() }
-    });
+    execSync(`PORT=${PORT} ./docker-run.sh --wayland --detach --name ${CONTAINER_NAME} --hdpi 100 --host-net`);
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });

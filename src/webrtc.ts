@@ -15,11 +15,13 @@ export class WebRTCManager {
     public lastBytesReceived = 0;
     private lastStatsTime = 0;
     private lastFPSUpdate = Date.now();
+    private lastCanvasFrameTime = 0;
     private getLatencyMonitor: () => number;
     private bandwidthMbps = 0;
     private webrtcLatency = 0;
     private hasSentWebrtcReady = false;
     private statsInterval: ReturnType<typeof setInterval> | null = null;
+    private iceCandidatesBuffer: RTCIceCandidateInit[] = [];
 
     constructor(sendWs: (data: string) => void, getNetworkLatencyVal: () => number, getLatencyMonitor: () => number) {
         console.log('[WebRTCManager] Constructor called');
@@ -58,10 +60,14 @@ export class WebRTCManager {
         this.bandwidthMbps = 0;
         this.frameCount = 0;
         this.lastVideoFrameTime = 0;
+        this.lastCanvasFrameTime = 0;
         this.hasSentWebrtcReady = false;
         
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const iceServersConfig = isLocalhost ? [] : [{ urls: 'stun:stun.l.google.com:19302' }];
+
         this.rtcPeer = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+            iceServers: iceServersConfig,
             bundlePolicy: 'max-bundle'
         });
         window.rtcPeer = this.rtcPeer;
@@ -161,6 +167,7 @@ export class WebRTCManager {
     private startVideoCanvasLoop = (now: DOMHighResTimeStamp, metadata?: VideoFrameCallbackMetadata) => {
         if (!this.isWebRtcActive) return;
         if (ctx && videoEl.videoWidth > 0) {
+            this.lastCanvasFrameTime = Date.now();
             if (metadata) {
                 this.frameCount++;
                 
@@ -248,9 +255,7 @@ export class WebRTCManager {
             if (bytesReceived === 0) {
                 stats.forEach(report => {
                     if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number' && report.bytesReceived > 0) {
-                        if (report.framesDecoded !== undefined) {
-                            bytesReceived += report.bytesReceived;
-                        }
+                        bytesReceived += report.bytesReceived;
                     }
                 });
             }
@@ -266,6 +271,8 @@ export class WebRTCManager {
             }
             this.lastBytesReceived = bytesReceived;
 
+            const isCanvasActive = (Date.now() - this.lastCanvasFrameTime) < 2000;
+
             if (framesDecoded !== -1) {
                 if (this.lastTotalDecoded !== -1) {
                     const decodedDelta = framesDecoded - this.lastTotalDecoded;
@@ -274,9 +281,11 @@ export class WebRTCManager {
                 this.lastTotalDecoded = framesDecoded;
             }
 
-            // Also update UI here so it changes from Negotiating -> Connected immediately
-            const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
-            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
+            // Only update UI from pollStats if the canvas loop is NOT active (e.g. background tab)
+            if (!isCanvasActive) {
+                const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
+                updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
+            }
         }).catch(() => { });
     }
 
@@ -284,9 +293,7 @@ export class WebRTCManager {
         const now = Date.now();
         const deltaMs = now - this.lastFPSUpdate;
         if (deltaMs >= 1000) {
-            if (this.lastTotalDecoded === -1) {
-                this.fps = Math.round((this.frameCount * 1000) / deltaMs);
-            }
+            // We now rely on pollStats to calculate WebRTC FPS based on framesDecoded
 
             if (this.fps > 0 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
                 this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
@@ -304,7 +311,15 @@ export class WebRTCManager {
     public handleAnswer(sdp: RTCSessionDescriptionInit) {
         if (this.rtcPeer) {
             console.log('[WebRTCManager] Received WebRTC answer, setting remote description');
-            this.rtcPeer.setRemoteDescription(new RTCSessionDescription(sdp)).catch(err => {
+            this.rtcPeer.setRemoteDescription(new RTCSessionDescription(sdp)).then(() => {
+                console.log('[WebRTCManager] Remote description set, processing buffered ICE candidates:', this.iceCandidatesBuffer.length);
+                this.iceCandidatesBuffer.forEach(candidate => {
+                    this.rtcPeer?.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
+                        console.error('[WebRTCManager] Error adding buffered ICE candidate:', err);
+                    });
+                });
+                this.iceCandidatesBuffer = [];
+            }).catch(err => {
                 console.error('[WebRTCManager] Error setting remote description:', err);
                 log('WebRTC remote description error: ' + err.message);
             });
@@ -313,9 +328,13 @@ export class WebRTCManager {
 
     public handleIce(candidate: RTCIceCandidateInit) {
         if (this.rtcPeer) {
-            this.rtcPeer.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
-                console.error('[WebRTCManager] Error adding remote ICE candidate:', err);
-            });
+            if (this.rtcPeer.remoteDescription) {
+                this.rtcPeer.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
+                    console.error('[WebRTCManager] Error adding remote ICE candidate:', err);
+                });
+            } else {
+                this.iceCandidatesBuffer.push(candidate);
+            }
         }
     }
 }

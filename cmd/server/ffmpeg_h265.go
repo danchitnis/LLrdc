@@ -68,9 +68,7 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 		outputArgs = append(outputArgs, "-maxrate", maxrateStr, "-bufsize", bufsizeStr)
 	}
 
-	if !vbr {
-		outputArgs = append(outputArgs, "-r", fmt.Sprintf("%d", fps))
-	}
+	outputArgs = append(outputArgs, "-r", fmt.Sprintf("%d", fps))
 
 	outputArgs = append(outputArgs,
 		"-max_muxing_queue_size", "1024",

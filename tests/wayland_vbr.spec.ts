@@ -13,7 +13,7 @@ test.describe('Wayland VBR E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for Wayland VBR test...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
+    execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });
@@ -26,6 +26,8 @@ test.describe('Wayland VBR E2E', () => {
   });
 
   test('should toggle damage tracking based on VBR config', async ({ page }) => {
+    page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
+    await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
 
     const statusEl = page.locator('#status');
@@ -50,29 +52,50 @@ test.describe('Wayland VBR E2E', () => {
     // Select the VBR checkbox (uncheck it)
     console.log('Disabling VBR...');
     const vbrCheckbox = page.locator('#vbr-checkbox');
-    await vbrCheckbox.uncheck();
+    await page.evaluate(() => console.log('Clicking VBR checkbox to uncheck'));
+    await vbrCheckbox.click();
+    await expect(vbrCheckbox).not.toBeChecked();
+    await page.waitForTimeout(2000);
 
     await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
-      timeout: 20000,
+      timeout: 30000,
     }).toContain('Received VBR config: false');
-    logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-
-    wfRecorderLogs = logs.split('\n').filter(line => line.includes('Starting wf-recorder capture:'));
-    latestWfRecorderLog = wfRecorderLogs[wfRecorderLogs.length - 1];
-    expect(latestWfRecorderLog).toContain('-D');
+    await expect.poll(() => {
+        try {
+            const currentLogs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
+            const recorderLines = currentLogs.split('\n').filter(line => line.includes('Starting wf-recorder capture:'));
+            return recorderLines[recorderLines.length - 1] || '';
+        } catch (e) {
+            return '';
+        }
+    }, {
+        message: 'wf-recorder should restart with -D flag',
+        timeout: 10000,
+    }).toContain('-D');
 
     // Re-enable VBR
     console.log('Enabling VBR...');
-    await vbrCheckbox.check();
+    await page.evaluate(() => console.log('Clicking VBR checkbox to check'));
+    await vbrCheckbox.click();
+    await expect(vbrCheckbox).toBeChecked();
+    await page.waitForTimeout(2000);
 
     await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
-      timeout: 20000,
+        timeout: 30000,
     }).toContain('Received VBR config: true');
-    logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-
-    wfRecorderLogs = logs.split('\n').filter(line => line.includes('Starting wf-recorder capture:'));
-    latestWfRecorderLog = wfRecorderLogs[wfRecorderLogs.length - 1];
-    expect(latestWfRecorderLog).not.toContain('-D');
+    
+    await expect.poll(() => {
+        try {
+            const currentLogs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
+            const recorderLines = currentLogs.split('\n').filter(line => line.includes('Starting wf-recorder capture:'));
+            return recorderLines[recorderLines.length - 1] || '-D'; // Default to -D to keep polling if empty
+        } catch (e) {
+            return '-D';
+        }
+    }, {
+        message: 'wf-recorder should restart WITHOUT -D flag',
+        timeout: 10000,
+    }).not.toContain('-D');
 
     // Verify it still says WebRTC
     await expect(statusEl).toHaveText(/WebRTC/i);

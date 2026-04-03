@@ -55,9 +55,7 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 
 	cpuUsedStr := fmt.Sprintf("%d", cpuEffort)
 
-	if !vbr {
-		outputArgs = append(outputArgs, "-r", fmt.Sprintf("%d", fps))
-	}
+	outputArgs = append(outputArgs, "-r", fmt.Sprintf("%d", fps))
 
 	outputArgs = append(outputArgs,
 		"-lag-in-frames", "0",

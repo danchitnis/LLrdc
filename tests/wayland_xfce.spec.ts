@@ -13,7 +13,7 @@ test.describe('Wayland XFCE Verification', () => {
     } catch (e) {}
 
     console.log('Starting container for XFCE verification...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
+    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
     
     await waitForServerReady(`http://localhost:${PORT}`, 60000);
   });
@@ -52,6 +52,7 @@ test.describe('Wayland XFCE Verification', () => {
   });
 
   test('should verify WebRTC connection is stable', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
     const statusEl = page.locator('#status');
     await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 30000 });

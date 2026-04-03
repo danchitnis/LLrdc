@@ -88,7 +88,7 @@ const TARGET_FPS = Number.parseInt(process.env.LLRDC_TARGET_FPS ?? '30', 10);
 const TARGET_MAX_RES = Number.parseInt(process.env.LLRDC_TARGET_MAX_RES ?? '0', 10);
 const TARGET_BANDWIDTH_MBPS = Number.parseInt(process.env.LLRDC_TARGET_BANDWIDTH_MBPS ?? '5', 10);
 const TARGET_VIEWPORT_WIDTH = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_WIDTH ?? '1280', 10);
-const TARGET_VIEWPORT_HEIGHT = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_HEIGHT ?? '720', 10);
+const TARGET_VIEWPORT_HEIGHT = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_HEIGHT ?? '819', 10);
 const TARGET_VIDEO_CODEC = process.env.LLRDC_TARGET_VIDEO_CODEC ?? 'av1_nvenc';
 const TARGET_USE_GPU = (process.env.LLRDC_USE_GPU ?? 'true') === 'true';
 const TARGET_CAPTURE_MODES = (process.env.LLRDC_CAPTURE_MODES ?? 'compat,direct')
@@ -114,7 +114,7 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
 
     const gpuArg = TARGET_USE_GPU ? '--gpu ' : '';
     const debugArg = process.env.USE_DEBUG_FFMPEG === 'true' ? '--debug-ffmpeg ' : '';
-    execSync(`./docker-run.sh ${gpuArg}${debugArg}--capture-mode ${mode} --detach --name ${containerName}`, {
+    execSync(`./docker-run.sh ${gpuArg}${debugArg}--capture-mode ${mode} --detach --name ${containerName} --host-net`, {
         env: {
             ...process.env,
             PORT: port.toString(),

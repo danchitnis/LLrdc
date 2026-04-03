@@ -14,7 +14,7 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
 
         console.log('Starting container for Wayland VBR UI test...');
         // VBR is enabled by default in the new implementation
-        execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
+        execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
         
         await waitForServerReady(`http://localhost:${PORT}`);
     });
@@ -27,6 +27,7 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
     });
 
     test('should show 0 FPS and low BW when screen is static with VBR', async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 819 });
         await page.goto(`http://localhost:${PORT}`);
 
         const statusEl = page.locator('#status');
@@ -135,6 +136,7 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
                 DisabledRTCPeerConnection as unknown as typeof RTCPeerConnection;
         });
 
+        await page.setViewportSize({ width: 1280, height: 819 });
         await page.goto(`http://localhost:${PORT}`);
 
         const statusEl = page.locator('#status');

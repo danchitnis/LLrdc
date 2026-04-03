@@ -13,13 +13,9 @@ test.describe('Wayland Keyboard Fast Typing E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for keyboard fast typing verification...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
+    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
     
     await waitForServerReady(`http://localhost:${PORT}`, 60000);
-
-    // Install xclip
-    execSync(`docker exec -u root ${CONTAINER_NAME} apt-get update`);
-    execSync(`docker exec -u root ${CONTAINER_NAME} apt-get install -y xclip`);
   });
 
   test.afterAll(async () => {
@@ -30,6 +26,7 @@ test.describe('Wayland Keyboard Fast Typing E2E', () => {
   });
 
   test('should not drop characters during fast typing of complex strings', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
@@ -37,9 +34,9 @@ test.describe('Wayland Keyboard Fast Typing E2E', () => {
 
     const displayContainer = page.locator('#display-container');
 
-    // Launch mousepad forced into Xwayland
-    console.log('Spawning mousepad in Xwayland mode...');
-    execSync(`docker exec -u remote -d -e GDK_BACKEND=x11 -e WAYLAND_DISPLAY=wayland-0 -e XDG_RUNTIME_DIR=/tmp/llrdc-run -e DISPLAY=:0 ${CONTAINER_NAME} mousepad`);
+    // Launch mousepad (Wayland native)
+    console.log('Spawning mousepad...');
+    execSync(`docker exec -u remote -d -e WAYLAND_DISPLAY=wayland-0 -e XDG_RUNTIME_DIR=/tmp/llrdc-run ${CONTAINER_NAME} mousepad`);
     
     console.log('Waiting for mousepad to open...');
     await page.waitForTimeout(5000);
@@ -79,18 +76,18 @@ test.describe('Wayland Keyboard Fast Typing E2E', () => {
     await page.keyboard.up('Control');
     await page.waitForTimeout(1000);
 
-    // Read the clipboard from inside the container via xclip
+    // Read the clipboard from inside the container via wl-paste (Wayland native)
     console.log('Reading clipboard from container...');
     let clipboardContent = '';
     try {
-      clipboardContent = execSync(`docker exec -u remote -e DISPLAY=:0 ${CONTAINER_NAME} xclip -o -selection clipboard`).toString();
+      clipboardContent = execSync(`docker exec -u remote -e WAYLAND_DISPLAY=wayland-0 -e XDG_RUNTIME_DIR=/tmp/llrdc-run ${CONTAINER_NAME} wl-paste`).toString();
     } catch (e) {
-      throw new Error('Failed to retrieve clipboard content from container (xclip failed)');
+      throw new Error('Failed to retrieve clipboard content from container (wl-paste failed)');
     }
 
     console.log(`Expected : "${complexString}"`);
     console.log(`Actual   : "${clipboardContent}"`);
     
-    expect(clipboardContent).toBe(complexString);
+    expect(clipboardContent.trim()).toBe(complexString);
   });
 });

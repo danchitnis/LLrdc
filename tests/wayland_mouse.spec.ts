@@ -14,7 +14,7 @@ test.describe('Wayland Mouse E2E', () => {
 
     console.log('Starting container for mouse test...');
     // No longer need --device /dev/uinput or SYS_ADMIN as we use Wayland protocols.
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:latest`);
+    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --debug-input`);
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });
@@ -27,6 +27,7 @@ test.describe('Wayland Mouse E2E', () => {
   });
 
   test('should verify mouse movement via container logs', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
@@ -62,6 +63,7 @@ test.describe('Wayland Mouse E2E', () => {
 
   test('should handle rapid mouse movements without stalling', async ({ page }) => {
     test.setTimeout(60000);
+    await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');

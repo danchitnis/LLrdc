@@ -276,12 +276,13 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
 
+	var iceServers []webrtc.ICEServer
+	if !strings.HasPrefix(publicIP, "127.") && publicIP != "::1" && publicIP != "" {
+		iceServers = []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}}
+	}
+
 	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
-			},
-		},
+		ICEServers: iceServers,
 	}
 
 	pc, err := api.NewPeerConnection(config)

@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   xwayland \
   wlr-randr \
   wlrctl \
+  wl-clipboard \
   x11-utils \
   dbus-x11 \
   wf-recorder \

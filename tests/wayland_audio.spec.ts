@@ -16,7 +16,7 @@ test.describe('Wayland Audio E2E', () => {
 
     console.log(`Starting container ${CONTAINER_NAME} using image ${CONTAINER_IMAGE}...`);
     try {
-        execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e ENABLE_AUDIO=true ${CONTAINER_IMAGE}`);
+        execSync(`PORT=${PORT} ENABLE_AUDIO=true VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
         // Log container output in background
         spawn('docker', ['logs', '-f', CONTAINER_NAME], { stdio: 'inherit' });
     } catch (e) {
@@ -41,6 +41,7 @@ test.describe('Wayland Audio E2E', () => {
     test.setTimeout(90000);
 
     page.on('console', msg => console.log('BROWSER:', msg.text()));
+    await page.setViewportSize({ width: 1280, height: 819 });
 
     await page.goto(`http://localhost:${PORT}`);
 

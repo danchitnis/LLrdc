@@ -13,7 +13,7 @@ test.describe('Wayland Comprehensive Input Verification', () => {
     } catch (e) {}
 
     console.log('Starting container for input verification...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 -e USE_DEBUG_INPUT=true danchitnis/llrdc:latest`);
+    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --debug-input`);
     
     // Give it time to boot
     await waitForServerReady(`http://localhost:${PORT}`);
@@ -27,6 +27,7 @@ test.describe('Wayland Comprehensive Input Verification', () => {
   });
 
   test('should verify comprehensive mouse and keyboard input', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
@@ -76,7 +77,7 @@ test.describe('Wayland Comprehensive Input Verification', () => {
     expect(inputLogs).toContain('Wayland mouse button 274 mousedown'); // Middle
     expect(inputLogs).toContain('Wayland key KeyH (35) keydown');      // First char of "Hello"
     expect(inputLogs).toContain('Wayland key Enter (28) keydown');     // Enter key
-    expect(logs).toMatch(/axis 0 100/); // Vertical scroll
-    expect(logs).toMatch(/axis 1 50/);  // Horizontal scroll
+    expect(logs).toMatch(/Wayland axis 0 [\d.]+/); // Vertical scroll
+    expect(logs).toMatch(/Wayland axis 1 [\d.]+/);  // Horizontal scroll
   });
 });

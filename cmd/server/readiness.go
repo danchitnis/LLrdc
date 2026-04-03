@@ -62,15 +62,10 @@ func (r *readinessTracker) IsReady() bool {
 }
 
 func requiredReadinessFlags() []string {
-	flags := []string{
+	return []string{
 		readinessWaylandSocket,
 		readinessInputHelper,
-		readinessDesktopSession,
 	}
-	if EnableAudio {
-		flags = append(flags, readinessPulseAudio)
-	}
-	return flags
 }
 
 func initReadiness() {

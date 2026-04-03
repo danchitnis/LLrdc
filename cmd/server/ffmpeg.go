@@ -425,6 +425,11 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 						)
 					} else if codec == "libx264" || codec == "libx265" {
 						args = append(args, "-p", "tune=zerolatency")
+						if codec == "libx264" {
+							args = append(args, "-p", fmt.Sprintf("x264-params=aud=1:fps=%d", FPS))
+						} else {
+							args = append(args, "-p", fmt.Sprintf("x265-params=aud=1:fps=%d", FPS))
+						}
 					} else if codec == "libaom-av1" {
 						args = append(args, "-p", "usage=realtime")
 					}
@@ -434,6 +439,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 						"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
 						"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
 						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
+						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
 				}
 
@@ -468,7 +474,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 			}
 
 			// Prime the compositor so VBR sessions emit an initial frame without waiting for user input.
-			PrimeFrameGeneration(200*time.Millisecond, 6, 150*time.Millisecond)
+			PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
 			doneCh := make(chan bool, 1)
 			go func() {

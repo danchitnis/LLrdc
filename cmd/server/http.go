@@ -333,6 +333,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			handleInputMessage(msg)
 		case "config":
 			go func(configMsg map[string]interface{}) {
+				log.Printf("Received config message: %v", configMsg)
 				restartRequested := false
 				displayChanged := false
 				previousStreamID := getCurrentFFmpegStreamID()
@@ -479,6 +480,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 				if restartRequested {
 					log.Println("Config updated, waiting for restarted stream to become ready...")
+					PrimeFrameGeneration(0, 5, 100*time.Millisecond)
 					if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
 						log.Printf("Restarted stream did not become ready in time: %v", err)
 						PrimeFrameGeneration(0, 10, 100*time.Millisecond)
@@ -510,7 +512,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 							}
 
 							ResumeStreaming()
-							TriggerPing()
+							PrimeFrameGeneration(0, 5, 100*time.Millisecond)
 							if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
 								log.Printf("Resized stream did not become ready in time: %v", err)
 								PrimeFrameGeneration(0, 10, 100*time.Millisecond)

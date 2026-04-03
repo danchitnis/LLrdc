@@ -15,7 +15,7 @@ test.describe('Wayland HDPI Scaling', () => {
     }
 
     console.log('Starting container with HDPI=200...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080/tcp -p ${PORT}:8080/udp -e PORT=8080 -e WEBRTC_PUBLIC_IP=127.0.0.1 -e HDPI=200 danchitnis/llrdc:latest`);
+    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --hdpi 200`);
     
     await waitForServerReady(`http://localhost:${PORT}`, 60000);
   });
@@ -39,13 +39,18 @@ test.describe('Wayland HDPI Scaling', () => {
 
   test('should verify initial HDPI and change it dynamically', async ({ page }) => {
     page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
+    await page.setViewportSize({ width: 1280, height: 819 });
     
     // 1. Load the page
     await page.goto(`http://localhost:${PORT}`);
     
     // 2. Wait for WebRTC connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebRTC/i, { timeout: 30000 });
+    await expect(statusEl).toHaveText(/\[WebRTC/i, { timeout: 60000 });
+
+    // Generate some activity to ensure the decoder receives frames
+    await page.mouse.move(100, 100);
+    await page.mouse.move(200, 200);
 
     // 3. Verify the video stream is actually playing and receiving frames
     await expect.poll(async () => {

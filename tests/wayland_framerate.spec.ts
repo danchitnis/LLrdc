@@ -13,7 +13,7 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for Wayland framerate test...');
-    execSync(`docker run -d --name ${CONTAINER_NAME} -p ${PORT}:8080 -e PORT=8080 danchitnis/llrdc:latest`);
+    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });
@@ -25,7 +25,8 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     } catch (e) {}
   });
 
-  test('should change framerate dynamically', async ({ page }) => {
+  test('should toggle framerate and verify it', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
 
     const statusEl = page.locator('#status');
@@ -58,6 +59,13 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
       timeout: 20000,
     }).toContain('Received framerate config: 15 fps');
+
+    // Verify UI shows lower FPS
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        const match = text.match(/FPS: (\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+    }, { timeout: 15000 }).toBeLessThan(25);
 
     // Verify it still says WebRTC and decoding continues
     await expect(statusEl).toHaveText(/WebRTC/i);

@@ -19,6 +19,7 @@ CONTAINER_PORT="${CONTAINER_PORT:-$SERVER_PORT}"
 
 USE_GPU="false"
 USE_DETACHED="false"
+USE_HOST_NET="false"
 USE_DEBUG_FFMPEG="false"
 USE_DEBUG_INPUT="false"
 WEBRTC_INTERFACES_ENV=""
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -d|--detach)
       USE_DETACHED="true"
+      shift
+      ;;
+    --host-net)
+      USE_HOST_NET="true"
       shift
       ;;
     --webrtc-buffer)
@@ -198,7 +203,16 @@ CPU_LIST="0-$((NUM_CPUS - 1))"
 
 echo "▶ Starting container: ${CONTAINER_NAME}"
 echo "  Image : ${IMAGE_NAME}:${IMAGE_TAG}"
-echo "  Port  : ${HOST_PORT} → ${CONTAINER_PORT}"
+
+NETWORK_ARGS=""
+if [ "$USE_HOST_NET" = "true" ]; then
+  NETWORK_ARGS="--network host"
+  echo "  Net   : Host (--network host)"
+else
+  NETWORK_ARGS="--publish ${HOST_PORT}:${CONTAINER_PORT}/tcp --publish ${HOST_PORT}:${CONTAINER_PORT}/udp"
+  echo "  Port  : ${HOST_PORT} → ${CONTAINER_PORT} (TCP/UDP)"
+fi
+
 echo "  CPUs  : ${NUM_CPUS} (cores ${CPU_LIST})"
 if [ "${USE_DEBUG:-false}" = "true" ]; then
   echo "  FPS   : ${SERVER_FPS}"
@@ -240,12 +254,11 @@ fi
 docker run \
   $GPU_ARGS \
   $DETACHED_ARGS \
+  $NETWORK_ARGS \
   $UINPUT_ARGS \
   --rm \
   $INTERACTIVE_ARGS \
   --name "${CONTAINER_NAME}" \
-  --publish "${HOST_PORT}:${CONTAINER_PORT}/tcp" \
-  --publish "${HOST_PORT}:${CONTAINER_PORT}/udp" \
   --shm-size 256m \
   --cpuset-cpus "${CPU_LIST}" \
   --ulimit rtprio=99 \
@@ -266,6 +279,8 @@ docker run \
   --env ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}" \
   --env ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}" \
   --env NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}" \
+  --env ENABLE_AUDIO="${ENABLE_AUDIO:-true}" \
+  --env AUDIO_BITRATE="${AUDIO_BITRATE:-128k}" \
   --env HDPI="${SERVER_HDPI}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env USE_DEBUG_INPUT="${USE_DEBUG_INPUT}" \

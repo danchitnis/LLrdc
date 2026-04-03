@@ -11,8 +11,13 @@ export default defineConfig({
   // Use a CLI reporter so the test run exits cleanly (no HTML report server).
   reporter: 'line',
   use: {
+    headless: false,
+    viewport: { width: 1280, height: 720 },
     launchOptions: {
-      args: ['--autoplay-policy=no-user-gesture-required']
+      args: [
+        '--autoplay-policy=no-user-gesture-required',
+        '--window-size=1280,850'
+      ]
     },
     trace: 'on-first-retry',
     video: 'on',

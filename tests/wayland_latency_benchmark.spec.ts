@@ -53,7 +53,7 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
         execSync(`docker rm -f ${containerName}`, { stdio: 'ignore' });
     } catch (e) {}
 
-    execSync(`./docker-run.sh --gpu --capture-mode ${mode} --detach --name ${containerName}`, {
+    execSync(`./docker-run.sh --gpu --capture-mode ${mode} --detach --name ${containerName} --host-net`, {
         env: {
             ...process.env,
             PORT: port.toString(),
