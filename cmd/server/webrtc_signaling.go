@@ -88,16 +88,26 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 		})
 
 		go func(previousStreamID uint32) {
+			restarted := false
 			ffmpegMutex.Lock()
 			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-				log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
-				_ = ffmpegCmd.Process.Kill()
+				// Avoid redundant restarts if a codec change was already in progress.
+				sinceLastRestart := time.Since(getLastFFmpegRestartTime())
+				if sinceLastRestart > 15*time.Second {
+					log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
+					killFFmpegWithTimestamp()
+					restarted = true
+				} else {
+					log.Printf("New WebRTC peer connected, but skipping restart as it was recently restarted (%.2fs ago) for a codec switch.", sinceLastRestart.Seconds())
+				}
 			}
 			ffmpegMutex.Unlock()
 
-			if err := waitForStreamReadyAfter(previousStreamID, 5*time.Second); err != nil {
-				log.Printf("Stream did not become ready after WebRTC reconnect: %v", err)
-				PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+			if restarted {
+				if err := waitForStreamReadyAfter(previousStreamID, 5*time.Second); err != nil {
+					log.Printf("Stream did not become ready after WebRTC reconnect: %v", err)
+					PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+				}
 			}
 		}(getCurrentFFmpegStreamID())
 	} else {

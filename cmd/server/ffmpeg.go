@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,17 +25,32 @@ var (
 	ffmpegMutex            sync.Mutex
 	ffmpegShouldRun        = true
 	ffmpegStreamID         uint32
+	lastFFmpegRestartTime  atomic.Pointer[time.Time]
 	isResizing             = false
 )
+
+func getLastFFmpegRestartTime() time.Time {
+	t := lastFFmpegRestartTime.Load()
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
+}
+
+func killFFmpegWithTimestamp() {
+	now := time.Now()
+	lastFFmpegRestartTime.Store(&now)
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		_ = ffmpegCmd.Process.Kill()
+	}
+}
 
 func PauseStreaming() {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
 	isResizing = true
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Println("Pausing wf-recorder for resize...")
-		ffmpegCmd.Process.Kill()
-	}
+	log.Println("Pausing wf-recorder for resize...")
+	killFFmpegWithTimestamp()
 	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
 		log.Println("Pausing audio ffmpeg for resize...")
 		ffmpegAudioCmd.Process.Kill()
@@ -67,9 +83,7 @@ func SetChroma(chroma string) {
 	Chroma = chroma
 	log.Printf("Received chroma config: %s", chroma)
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		ffmpegCmd.Process.Kill()
-	}
+	killFFmpegWithTimestamp()
 }
 
 func SetVideoCodec(codec string) {
@@ -94,9 +108,7 @@ func SetVideoCodec(codec string) {
 
 	initWebRTCTrack() // Re-create track
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		ffmpegCmd.Process.Kill()
-	}
+	killFFmpegWithTimestamp()
 }
 
 func SetKeyframeInterval(interval int) {
@@ -114,10 +126,8 @@ func SetKeyframeInterval(interval int) {
 
 	targetKeyframeInterval = interval
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received keyframe interval config: %d", interval)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received keyframe interval config: %d", interval)
+	killFFmpegWithTimestamp()
 }
 
 func SetMpdecimate(mpdecimate bool) {
@@ -130,10 +140,8 @@ func SetMpdecimate(mpdecimate bool) {
 
 	targetMpdecimate = mpdecimate
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received mpdecimate config: %v", mpdecimate)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received mpdecimate config: %v", mpdecimate)
+	killFFmpegWithTimestamp()
 }
 
 func SetCpuEffort(effort int) {
@@ -146,10 +154,8 @@ func SetCpuEffort(effort int) {
 
 	targetCpuEffort = effort
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received CPU effort config: %d", effort)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received CPU effort config: %d", effort)
+	killFFmpegWithTimestamp()
 }
 
 func SetCpuThreads(threads int) {
@@ -162,10 +168,8 @@ func SetCpuThreads(threads int) {
 
 	targetCpuThreads = threads
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received CPU threads config: %d", threads)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received CPU threads config: %d", threads)
+	killFFmpegWithTimestamp()
 }
 
 func SetDrawMouse(draw bool) {
@@ -178,10 +182,8 @@ func SetDrawMouse(draw bool) {
 
 	targetDrawMouse = draw
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received Enable Desktop Mouse config: %v", draw)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received Enable Desktop Mouse config: %v", draw)
+	killFFmpegWithTimestamp()
 }
 
 func SetVBR(vbr bool) {
@@ -194,10 +196,8 @@ func SetVBR(vbr bool) {
 
 	targetVBR = vbr
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received VBR config: %v", vbr)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received VBR config: %v", vbr)
+	killFFmpegWithTimestamp()
 }
 
 func SetBandwidth(bwMbps int) {
@@ -211,10 +211,8 @@ func SetBandwidth(bwMbps int) {
 	targetMode = "bandwidth"
 	targetBandwidthMbps = bwMbps
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received bandwidth config: %d Mbps", bwMbps)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received bandwidth config: %d Mbps", bwMbps)
+	killFFmpegWithTimestamp()
 }
 
 func SetQuality(quality int) {
@@ -228,10 +226,8 @@ func SetQuality(quality int) {
 	targetMode = "quality"
 	targetQuality = quality
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received quality config: %d", quality)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received quality config: %d", quality)
+	killFFmpegWithTimestamp()
 }
 
 func SetFramerate(fps int) {
@@ -244,20 +240,16 @@ func SetFramerate(fps int) {
 
 	FPS = fps
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Received framerate config: %d fps", fps)
-		ffmpegCmd.Process.Kill()
-	}
+	log.Printf("Received framerate config: %d fps", fps)
+	killFFmpegWithTimestamp()
 }
 
 func RestartForResize() {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
 
-	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Println("Screen size changed, restarting ffmpeg...")
-		ffmpegCmd.Process.Kill()
-	}
+	log.Println("Screen size changed, restarting ffmpeg...")
+	killFFmpegWithTimestamp()
 
 	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
 		log.Println("Screen size changed, restarting audio ffmpeg...")
@@ -304,10 +296,8 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 		ffmpegMutex.Lock()
 		defer ffmpegMutex.Unlock()
 		ffmpegShouldRun = false
-		if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-			log.Println("Killing wf-recorder (cleanup)...")
-			ffmpegCmd.Process.Kill()
-		}
+		log.Println("Killing wf-recorder (cleanup)...")
+		killFFmpegWithTimestamp()
 	})
 	go func() {
 		for {

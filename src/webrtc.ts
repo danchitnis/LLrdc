@@ -46,14 +46,20 @@ export class WebRTCManager {
         console.log('[WebRTCManager] initWebRTC called');
         if (this.statsInterval) clearInterval(this.statsInterval);
 
+        const isReinit = !!this.rtcPeer;
         if (this.rtcPeer) {
             console.log('[WebRTCManager] Closing existing PeerConnection');
             this.rtcPeer.close();
         }
-        if (videoEl) {
+        if (videoEl && !isReinit) {
             videoEl.srcObject = null;
         }
-        this.isWebRtcActive = false;
+        
+        // Don't set isWebRtcActive = false if we are just re-initializing (codec switch)
+        // This prevents the WebSocket binary stream (WebCodecs) from taking over for a few seconds.
+        if (!isReinit) {
+            this.isWebRtcActive = false;
+        }
         this.lastTotalDecoded = -1;
         this.lastStatsTime = 0;
         this.lastBytesReceived = 0;

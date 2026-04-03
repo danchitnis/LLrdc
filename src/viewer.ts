@@ -572,7 +572,11 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             if (webcodecs.videoCodec !== msg.videoCodec || webrtc.videoCodec !== msg.videoCodec) {
                 webcodecs.videoCodec = msg.videoCodec;
                 webrtc.videoCodec = msg.videoCodec;
-                webcodecs.initDecoder();
+                
+                // Only re-init WebCodecs decoder if we are actually using it
+                if (!webrtc.isWebRtcActive) {
+                    webcodecs.initDecoder();
+                }
                 codecChanged = true;
             }
         }

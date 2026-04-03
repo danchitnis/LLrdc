@@ -125,6 +125,11 @@ func initWebRTC() {
 			})
 			if err == nil {
 				framesWritten++
+			} else {
+				errMsg := err.Error()
+				if errMsg != "io: read/write on closed pipe" && errMsg != "Track not bound" {
+					log.Printf("WebRTC WriteSample error: %v", err)
+				}
 			}
 
 			if time.Since(lastLogTime) >= time.Second {
