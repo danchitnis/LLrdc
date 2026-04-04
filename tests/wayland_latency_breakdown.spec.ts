@@ -266,7 +266,7 @@ async function initPresentedFrameTracker(page: Page) {
 }
 
 async function launchProbe(containerName: string) {
-    run(`docker exec -u remote -d ${containerName} bash -lc 'export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/llrdc-run; python3 /app/tools/latency_probe_app.py >/tmp/latency-probe.log 2>&1'`);
+    run(`docker exec -u remote -d ${containerName} bash -lc "export XDG_RUNTIME_DIR=/tmp/llrdc-run WAYLAND_DISPLAY=wayland-0; latency_probe >/tmp/latency-probe.log 2>&1"`);
     await waitForProbeState(containerName);
 }
 

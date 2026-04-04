@@ -65,7 +65,6 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 		"-deadline", "realtime",
 		"-cpu-used", cpuUsedStr,
 		"-threads", fmt.Sprintf("%d", cpuThreads),
-		"-speed", "8",
 		"-flush_packets", "1",
 		"-f", "ivf",
 		"pipe:1",

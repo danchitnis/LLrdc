@@ -122,6 +122,9 @@ export class WebRTCManager {
             if ('playoutDelayHint' in e.receiver) {
                 (e.receiver as any).playoutDelayHint = 0;
             }
+            if ('jitterBufferTarget' in e.receiver) {
+                (e.receiver as any).jitterBufferTarget = 0;
+            }
 
             this.isWebRtcActive = true;
             videoEl.play().then(() => {
