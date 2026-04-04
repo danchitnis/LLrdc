@@ -12,6 +12,7 @@ SERVER_BANDWIDTH="${BANDWIDTH:-5}"
 SERVER_VBR="${VBR:-true}"
 SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
 SERVER_CAPTURE_MODE="${CAPTURE_MODE:-compat}"
+SERVER_RESOLUTION="${RESOLUTION:-0}"
 
 # Port mappings (override via env vars)
 HOST_PORT="${HOST_PORT:-8080}"
@@ -140,6 +141,15 @@ while [[ $# -gt 0 ]]; do
       else
         SERVER_HDPI="200"
         shift
+      fi
+      ;;
+    --res)
+      if [ -n "${2:-}" ]; then
+        SERVER_RESOLUTION="$2"
+        shift 2
+      else
+        echo "Error: --res requires an argument (e.g. 720p, 1080p)."
+        exit 1
       fi
       ;;
     *)
@@ -282,6 +292,7 @@ docker run \
   --env ENABLE_AUDIO="${ENABLE_AUDIO:-true}" \
   --env AUDIO_BITRATE="${AUDIO_BITRATE:-128k}" \
   --env HDPI="${SERVER_HDPI}" \
+  --env RESOLUTION="${SERVER_RESOLUTION}" \
   --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
   --env USE_DEBUG_INPUT="${USE_DEBUG_INPUT}" \
   --env RENDER_GID="${HOST_RENDER_GID}" \

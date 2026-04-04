@@ -60,6 +60,7 @@ func configPayload(restarted bool) map[string]interface{} {
 		"enable_audio":           EnableAudio,
 		"audio_bitrate":          AudioBitrate,
 		"hdpi":                   HDPI,
+		"max_res":                InitialRes,
 		"webrtc_buffer":          WebRTCBufferSize,
 		"activity_hz":            ActivityPulseHz,
 		"activity_timeout":       ActivityTimeout,

@@ -114,7 +114,8 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
 
     const gpuArg = TARGET_USE_GPU ? '--gpu ' : '';
     const debugArg = process.env.USE_DEBUG_FFMPEG === 'true' ? '--debug-ffmpeg ' : '';
-    execSync(`./docker-run.sh ${gpuArg}${debugArg}--capture-mode ${mode} --detach --name ${containerName} --host-net`, {
+    const resArg = TARGET_MAX_RES > 0 ? `--res ${TARGET_MAX_RES}p ` : '';
+    execSync(`./docker-run.sh ${gpuArg}${debugArg}${resArg}--capture-mode ${mode} --detach --name ${containerName} --host-net`, {
         env: {
             ...process.env,
             PORT: port.toString(),

@@ -8,26 +8,34 @@ export function setupInput(sendMsg: (data: string) => void) {
     overlayEl.addEventListener('mouseleave', () => { pointerOverCanvas = false; });
 
     const getNormalizedPos = (e: MouseEvent): { x: number, y: number } | null => {
-        const rect = overlayEl.getBoundingClientRect();
+        if (!displayEl) return null;
+        const rect = displayEl.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return null;
 
-        let videoW = videoEl?.videoWidth || displayEl?.width || 1920;
-        let videoH = videoEl?.videoHeight || displayEl?.height || 1080;
-
-        const containerRatio = rect.width / rect.height;
+        // Current internal video resolution (e.g. 1920x1080)
+        const videoW = displayEl.width;
+        const videoH = displayEl.height;
         const videoRatio = videoW / videoH;
-        
-        let drawW = rect.width;
-        let drawH = rect.height;
+
+        // The element dimensions (e.g. 1280x768 container)
+        const containerW = rect.width;
+        const containerH = rect.height;
+        const containerRatio = containerW / containerH;
+
+        let drawW = containerW;
+        let drawH = containerH;
         let drawX = 0;
         let drawY = 0;
 
+        // Browser's "object-fit: contain" logic:
         if (containerRatio > videoRatio) {
-            drawW = rect.height * videoRatio;
-            drawX = (rect.width - drawW) / 2;
+            // Pillarboxed (bars on left/right)
+            drawW = containerH * videoRatio;
+            drawX = (containerW - drawW) / 2;
         } else {
-            drawH = rect.width / videoRatio;
-            drawY = (rect.height - drawH) / 2;
+            // Letterboxed (bars on top/bottom)
+            drawH = containerW / videoRatio;
+            drawY = (containerH - drawH) / 2;
         }
 
         const mouseX = e.clientX - rect.left;

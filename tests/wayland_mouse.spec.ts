@@ -13,8 +13,9 @@ test.describe('Wayland Mouse E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for mouse test...');
-    // No longer need --device /dev/uinput or SYS_ADMIN as we use Wayland protocols.
-    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --debug-input`);
+    const containerImage = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';
+    const [imageName, imageTag] = containerImage.split(':');
+    execSync(`IMAGE_NAME=${imageName} IMAGE_TAG=${imageTag || 'latest'} PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --debug-input --res 1080p`, { stdio: 'inherit' });
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });
@@ -27,15 +28,26 @@ test.describe('Wayland Mouse E2E', () => {
   });
 
   test('should verify mouse movement via container logs', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 819 });
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 30000 });
+    await expect(statusEl).toHaveText(/\[WebRTC|\[WebCodecs/i, { timeout: 30000 });
 
-    const displayContainer = page.locator('#display-container');
-    
-    const box = await displayContainer.boundingBox();
+    // Wait for the remote stream to actually be 1920x1080 (forced by --res 1080p at startup).
+    await expect.poll(async () => {
+        return await page.evaluate(() => {
+            const canvas = document.getElementById('display') as HTMLCanvasElement;
+            return { width: canvas.width, height: canvas.height };
+        });
+    }, { timeout: 30000 }).toMatchObject({ width: 1920, height: 1080 });
+
+    const box = await page.evaluate(() => {
+        const el = document.getElementById('display-container');
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
     if (!box) throw new Error('Could not find display container bounding box');
 
     const targetX = box.x + 500;
@@ -44,33 +56,54 @@ test.describe('Wayland Mouse E2E', () => {
     console.log(`Moving mouse to element relative 500, 300 (Page: ${targetX}, ${targetY})...`);
     await page.mouse.move(targetX, targetY);
     await page.waitForTimeout(500);
-    await page.mouse.click(targetX, targetY);
+    await page.mouse.down();
+    await page.waitForTimeout(500);
+    await page.mouse.up();
+    await page.waitForTimeout(1000);
 
-    await page.waitForTimeout(2000);
+    // Verify logs with retries
+    let logs = '';
+    await expect.poll(async () => {
+        logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
+        return logs;
+    }, {
+        timeout: 10000,
+        intervals: [500, 1000, 2000],
+    }).toContain('Wayland mouse button 272 mouseup');
 
-    // Verify logs
-    const logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
     console.log('--- CONTAINER LOGS ---');
     console.log(logs);
     console.log('--- END LOGS ---');
     
-    // Check for "Wayland mouse move: 490, 300" (or close)
     expect(logs).toContain('Wayland mouse move:');
-    expect(logs).toContain('Wayland mouse button 272 mousedown');
+    // Also check that we received the mousedown message
+    expect(logs).toContain('"action":"mousedown"');
     
-    await expect(statusEl).toHaveText(/WebRTC/i);
+    await expect(statusEl).toHaveText(/\[WebRTC|\[WebCodecs/i);
   });
 
   test('should handle rapid mouse movements without stalling', async ({ page }) => {
     test.setTimeout(60000);
-    await page.setViewportSize({ width: 1280, height: 819 });
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 30000 });
+    await expect(statusEl).toHaveText(/\[WebRTC|\[WebCodecs/i, { timeout: 30000 });
 
-    const displayContainer = page.locator('#display-container');
-    const box = await displayContainer.boundingBox();
+    // Wait for the remote stream to actually be 1920x1080 (forced by --res 1080p at startup).
+    await expect.poll(async () => {
+        return await page.evaluate(() => {
+            const canvas = document.getElementById('display') as HTMLCanvasElement;
+            return { width: canvas.width, height: canvas.height };
+        });
+    }, { timeout: 30000 }).toMatchObject({ width: 1920, height: 1080 });
+
+    const box = await page.evaluate(() => {
+        const el = document.getElementById('display-container');
+        if (!el) return null;
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
     if (!box) throw new Error('Could not find display container bounding box');
 
     console.log('Dispatching 1000 rapid mousemove events...');

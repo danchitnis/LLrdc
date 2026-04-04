@@ -38,6 +38,7 @@ var (
 	SettleTime              int
 	TileSize                int
 	WebRTCLowLatency        bool
+	InitialRes              int
 )
 
 func initConfig() {
@@ -120,6 +121,18 @@ func initConfig() {
 
 	defaultWebRTCLowLatency := os.Getenv("WEBRTC_LOW_LATENCY") == "true"
 
+	resStr := strings.ToLower(os.Getenv("RESOLUTION"))
+	defaultInitialRes := 0
+	if strings.Contains(resStr, "720") {
+		defaultInitialRes = 720
+	} else if strings.Contains(resStr, "1080") {
+		defaultInitialRes = 1080
+	} else if strings.Contains(resStr, "1440") || strings.Contains(resStr, "2k") {
+		defaultInitialRes = 1440
+	} else if strings.Contains(resStr, "2160") || strings.Contains(resStr, "4k") {
+		defaultInitialRes = 2160
+	}
+
 	// Custom Usage format
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of llrdc:\n")
@@ -142,6 +155,7 @@ func initConfig() {
 		printFlag(os.Stderr, "enable-audio", "Enable audio streaming", EnableAudio)
 		printFlag(os.Stderr, "audio-bitrate", "Audio bitrate (e.g. 64k, 128k)", AudioBitrate)
 		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
+		printFlag(os.Stderr, "res", "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.", InitialRes)
 
 		fmt.Fprintf(os.Stderr, "\nLatency & Smoothness Flags:\n")
 		printFlag(os.Stderr, "webrtc-buffer", "WebRTC frame channel size (default 30)", WebRTCBufferSize)
@@ -180,6 +194,7 @@ func initConfig() {
 	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
 	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
+	flag.IntVar(&InitialRes, "res", defaultInitialRes, "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.")
 	flag.IntVar(&WebRTCBufferSize, "webrtc-buffer", defaultWebRTCBufferSize, "WebRTC frame channel size (default 30)")
 	flag.IntVar(&ActivityPulseHz, "activity-hz", defaultActivityPulseHz, "Input heartbeat frequency in Hz (default 30)")
 	flag.IntVar(&ActivityTimeout, "activity-timeout", defaultActivityTimeout, "Inactivity timeout in ms before stopping heartbeat (default 1500)")

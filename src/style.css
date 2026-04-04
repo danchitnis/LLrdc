@@ -1,196 +1,117 @@
+* {
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+html, body {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  background-color: #000 !important;
+  color: #eee !important;
+  font-family: sans-serif !important;
+}
+
 body {
-  font-family: sans-serif;
-  display: flex;
-  flex-direction: column;
-  background-color: #222;
-  color: #eee;
-  margin: 0;
-  padding: 0;
-  height: 100vh;
-  overflow: hidden;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 #top-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: space-between;
-  align-items: center;
-  background-color: #111;
-  padding: 10px 20px;
-  border-bottom: 1px solid #333;
+  display: flex !important;
+  flex: 0 0 48px !important; /* Exact fixed height */
+  width: 100% !important;
+  background-color: #111 !important;
+  border-bottom: 1px solid #333 !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 15px !important;
+  z-index: 100 !important;
+  overflow: visible !important; /* Allow dropdown to show */
 }
 
 #top-bar-left {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-#brand {
-  font-size: 1.2em;
-  font-weight: bold;
-}
-
-#config-container {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-#config-btn {
-  background-color: #333;
-  color: #eee;
-  border: 1px solid #555;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-#config-btn:hover {
-  background-color: #444;
-}
-
-#config-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 10px;
-  background-color: #222;
-  border: 1px solid #444;
-  border-radius: 6px;
-  padding: 15px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  min-width: 250px;
-}
-
-#config-dropdown.hidden {
-  display: none;
-}
-
-.config-group {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.config-group label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.9em;
-  cursor: pointer;
-}
-
-.config-group input[type="range"] {
-  flex: 1;
-}
-
-#bandwidth-select {
-  background-color: #333;
-  color: #eee;
-  border: 1px solid #555;
-  padding: 4px 8px;
-  border-radius: 4px;
-}
-
-#quality-value {
-  min-width: 25px;
-  text-align: right;
-  font-family: monospace;
+  display: flex !important;
+  align-items: center !important;
+  gap: 20px !important;
 }
 
 #status {
-  color: #aaa;
-  font-family: monospace;
+  font-family: monospace !important;
+  font-size: 0.8em !important;
+  color: #aaa !important;
+  flex: 1 !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  padding-left: 20px !important;
 }
 
 #display-container {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: #000;
-  position: relative;
-  /* Ensure the container itself doesn't have padding that affects alignment */
-  padding: 0;
-  margin: 0;
-  overflow: hidden;
+  display: flex !important;
+  flex: 1 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: #000 !important;
+  overflow: hidden !important;
+  position: relative !important;
 }
 
 #display, #sharpness-layer, #webrtc-video {
-  display: block;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-drag: none;
-  /* Critical: ensure both use the same rendering intent */
-  image-rendering: pixelated; 
-  image-rendering: crisp-edges;
-  image-rendering: -webkit-optimize-contrast;
+  display: block !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  pointer-events: none !important;
+  image-rendering: -webkit-optimize-contrast !important;
+  image-rendering: crisp-edges !important;
 }
 
-#display {
-  z-index: 1;
-}
-
-#sharpness-layer {
-  z-index: 2;
-  background-color: transparent;
-}
-#webrtc-video {
-  z-index: 0;
-  opacity: 0.001;
-  pointer-events: none;
-}
+#display { z-index: 1 !important; }
+#sharpness-layer { z-index: 2 !important; background-color: transparent !important; }
+#webrtc-video { z-index: 0 !important; opacity: 0.001 !important; }
 
 #input-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10;
-  cursor: crosshair;
-  background-color: transparent;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 10 !important;
+  cursor: crosshair !important;
 }
 
-.config-tabs {
-  display: flex;
-  gap: 10px;
-  border-bottom: 1px solid #444;
-  padding-bottom: 10px;
-  margin-bottom: 10px;
+#config-container { position: relative !important; }
+#config-btn {
+  background-color: #333 !important;
+  color: #eee !important;
+  border: 1px solid #555 !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
 }
-
-.config-tab-btn {
-  background: none;
-  border: none;
-  color: #888;
-  cursor: pointer;
-  padding: 5px 10px;
-  font-size: 1em;
+#config-dropdown {
+  position: absolute !important;
+  top: 100% !important;
+  left: 0 !important;
+  margin-top: 5px !important;
+  background-color: #222 !important;
+  border: 1px solid #444 !important;
+  border-radius: 6px !important;
+  padding: 15px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6) !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  min-width: 300px !important;
 }
-
-.config-tab-btn.active {
-  color: #eee;
-  border-bottom: 2px solid #007bff;
-}
-
-.config-tab-content {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
+#config-dropdown.hidden { display: none !important; }
+.config-tab-btn { background: none !important; border: none !important; color: #888 !important; cursor: pointer !important; padding: 4px 8px !important; }
+.config-tab-btn.active { color: #eee !important; border-bottom: 2px solid #007bff !important; }
+.config-group { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 10px !important; }

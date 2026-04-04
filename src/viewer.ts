@@ -91,6 +91,7 @@ interface ConfigMessage {
 
 let configDebounceTimer: number | null = null;
 let currentHdpi = 100;
+let hasReceivedInitialConfig = false;
 
 function updateDirectBufferUi(msg: Record<string, unknown>) {
     const captureMode = typeof msg.captureMode === 'string' ? msg.captureMode : 'compat';
@@ -423,6 +424,7 @@ let isReinitializingWebRTC = false;
 
 function sendResize() {
     if (!displayContainerEl) { console.log('sendResize abort: no container'); return; }
+    if (!hasReceivedInitialConfig) { console.log('sendResize abort: waiting for initial config'); return; }
     const rect = displayContainerEl.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) { console.log('sendResize abort: rect too small', rect); return; }
     const scale = window.devicePixelRatio || 1;
@@ -431,9 +433,30 @@ function sendResize() {
 
     if (maxResSelect) {
         const maxCap = parseInt(maxResSelect.value, 10);
-        if (maxCap > 0 && height > maxCap) {
-            const ratio = maxCap / height;
+        if (maxCap > 0) {
+            // Fixed Resolution Mode: Force the vertical resolution to match the user's selection.
+            // We maintain the aspect ratio of the viewer container to avoid stretching,
+            // ensuring the remote desktop content is "exactly" the requested height (e.g., 1080p).
+            const containerWidth = rect.width;
+            const containerHeight = rect.height;
+            const ratio = containerWidth / containerHeight;
+            
             height = maxCap;
+            width = Math.round(height * ratio);
+            
+            // If we are in a fixed height mode (e.g., 720p, 1080p), and the container ratio
+            // is "reasonably" widescreen (between 1.5 and 2.1), snap to standard 16:9 widths.
+            // This fulfills the user expectation of "exactly 1080p" (1920x1080).
+            if (ratio > 1.2) {
+                if (maxCap === 720) width = 1280;
+                else if (maxCap === 1080) width = 1920;
+                else if (maxCap === 1440) width = 2560;
+                else if (maxCap === 2160) width = 3840;
+            }
+        } else if (height > 2160) {
+            // Responsive Mode with a safety cap for 4K+.
+            const ratio = 2160 / height;
+            height = 2160;
             width = Math.round(width * ratio);
         }
     }
@@ -564,6 +587,8 @@ export function clearLosslessCanvas(x?: number, y?: number, w?: number, h?: numb
 
 function handleJsonMessage(msg: Record<string, unknown>) {
     if (msg.type === 'config') {
+        const firstConfig = !hasReceivedInitialConfig;
+        hasReceivedInitialConfig = true;
         let codecChanged = false;
         updateDirectBufferUi(msg);
 
@@ -594,6 +619,14 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             if (hdpiSelect) {
                 hdpiSelect.value = currentHdpi.toString();
             }
+        }
+
+        if (msg.max_res !== undefined && typeof msg.max_res === 'number' && maxResSelect) {
+            maxResSelect.value = msg.max_res.toString();
+        }
+
+        if (firstConfig) {
+            scheduleResize();
         }
 
         if (webrtc.rtcPeer && codecChanged) {
