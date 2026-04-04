@@ -240,6 +240,7 @@ async function collectModeSummary(
         expect(ready.directBuffer?.active).not.toBe(true);
     }
 
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(baseUrl);
     await page.click('body');
     await expect(page.locator('#status')).toContainText(/\[WebRTC|\[WebCodecs/, { timeout: 45000 });

@@ -1,4 +1,4 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
@@ -12,11 +12,19 @@ export default defineConfig({
   reporter: 'line',
   use: {
     headless: false,
-    viewport: { width: 1280, height: 720 },
+    // Use a real headed browser window so Chromium's OS window can be larger
+    // than the emulated page viewport. Tests that need a deterministic viewport
+    // still call page.setViewportSize(), but the visible browser window stays large
+    // enough to show the entire desktop without manual stretching.
+    viewport: null,
+    screen: { width: 1324, height: 931 },
     launchOptions: {
       args: [
         '--autoplay-policy=no-user-gesture-required',
-        '--window-size=1280,850'
+        // Headed Chromium on native Wayland produces fractional viewport overshoot here.
+        // Force X11/XWayland so CSS pixels match Playwright's requested viewport exactly.
+        '--ozone-platform=x11',
+        '--window-size=1324,931'
       ]
     },
     trace: 'on-first-retry',
@@ -25,7 +33,6 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
     },
     // {
     //   name: 'webkit',
