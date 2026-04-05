@@ -13,8 +13,8 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
         } catch (e) {}
 
         console.log('Starting container for Wayland VBR UI test...');
-        // VBR is enabled by default in the new implementation
-        execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
+        // VBR is now disabled by default, we must explicitly enable it for this test
+        execSync(`PORT=${PORT} VBR=true ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
         
         await waitForServerReady(`http://localhost:${PORT}`);
     });

@@ -121,6 +121,11 @@ func initConfig() {
 
 	defaultWebRTCLowLatency := os.Getenv("WEBRTC_LOW_LATENCY") == "true"
 
+	defaultVBR := false
+	if vbr, err := strconv.ParseBool(os.Getenv("VBR")); err == nil {
+		defaultVBR = vbr
+	}
+
 	resStr := strings.ToLower(os.Getenv("RESOLUTION"))
 	defaultInitialRes := 0
 	if strings.Contains(resStr, "720") {
@@ -161,6 +166,7 @@ func initConfig() {
 		printFlag(os.Stderr, "webrtc-buffer", "WebRTC frame channel size (default 30)", WebRTCBufferSize)
 		printFlag(os.Stderr, "activity-hz", "Input heartbeat frequency in Hz (default 30)", ActivityPulseHz)
 		printFlag(os.Stderr, "activity-timeout", "Inactivity timeout in ms before stopping heartbeat (default 1500)", ActivityTimeout)
+		printFlag(os.Stderr, "vbr", "Enable variable bitrate (damage tracking) (default false)", defaultVBR)
 		printFlag(os.Stderr, "nvenc-latency", "Enable ultra-low latency NVENC optimizations (default true)", NVENCLatencyMode)
 		printFlag(os.Stderr, "webrtc-low-latency", "Enable ultra-low latency WebRTC transport optimizations (ICE Lite, disabled replay protection) (default false)", WebRTCLowLatency)
 
@@ -168,11 +174,6 @@ func initConfig() {
 		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of Wayland session", TestPattern)
 		printFlag(os.Stderr, "settle-time", "Hybrid sharpness settle time (ms)", SettleTime)
 		printFlag(os.Stderr, "tile-size", "Hybrid sharpness tile size (px)", TileSize)
-	}
-
-	defaultVBR := true
-	if vbr, err := strconv.ParseBool(os.Getenv("VBR")); err == nil {
-		defaultVBR = vbr
 	}
 
 	// Define flags

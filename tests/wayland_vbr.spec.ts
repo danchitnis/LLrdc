@@ -13,7 +13,7 @@ test.describe('Wayland VBR E2E', () => {
     } catch (e) {}
 
     console.log('Starting container for Wayland VBR test...');
-    execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
+    execSync(`PORT=${PORT} VBR=true ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });

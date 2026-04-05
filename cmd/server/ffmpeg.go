@@ -14,7 +14,7 @@ var (
 	targetMode             = "bandwidth" // "bandwidth" or "quality"
 	targetBandwidthMbps    = 5           // Initial default: 5 Mbps
 	targetQuality          = 70          // 10-100
-	targetVBR              = true        // Default VBR to true
+	targetVBR              = false       // Default VBR to false
 	targetMpdecimate       = false       // Default mpdecimate to false
 	targetCpuEffort        = 6           // Default: 6
 	targetCpuThreads       = 4           // Default: 4
