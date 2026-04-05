@@ -31,11 +31,11 @@
                         <select id="video-codec-select">
                             <option value="vp8">VP8</option>
                             <option value="h264">H.264 (CPU)</option>
-                            <option value="h264_nvenc" class="codec-opt-gpu" style="display: none;">H.264 (GPU - NVENC)</option>
+                            <option value="h264_nvenc" class="codec-opt-gpu">H.264 (GPU - NVENC)</option>
                             <option value="h265">H.265 (CPU)</option>
-                            <option value="h265_nvenc" class="codec-opt-gpu" style="display: none;">H.265 (GPU - NVENC)</option>
+                            <option value="h265_nvenc" class="codec-opt-gpu">H.265 (GPU - NVENC)</option>
                             <option value="av1">AV1 (CPU)</option>
-                            <option value="av1_nvenc" class="codec-opt-gpu" style="display: none;">AV1 (GPU - NVENC)</option>
+                            <option value="av1_nvenc" class="codec-opt-gpu">AV1 (GPU - NVENC)</option>
                         </select>
                     </div>
                     <div class="config-group">
@@ -69,16 +69,16 @@
                         </select>
                     </div>
                     <div class="config-group">
-                        <label><input type="checkbox" id="client-gpu-checkbox"> Enable Client GPU Decoding</label>
+                        <label><input type="checkbox" id="client-gpu-checkbox"> Enable Client Hardware Acceleration</label>
                     </div>
-                    <div class="config-group" style="align-items: flex-start; flex-direction: column;">
+                    <div class="config-group gpu-only" style="align-items: flex-start; flex-direction: column; display: none !important;">
                         <span id="direct-buffer-label">Direct Buffer</span>
                         <div id="direct-buffer-status" aria-labelledby="direct-buffer-label" title="Read-only startup status for DMA-BUF direct capture">Compat mode</div>
                     </div>
                 </div>
 
                 <!-- TAB 2: QUALITY & BANDWIDTH -->
-                <div id="tab-quality" class="config-tab-content" style="display: none;">
+                <div id="tab-quality" class="config-tab-content" style="display: none !important;">
                     <div class="config-group">
                         <label><input type="radio" name="target-type" value="bandwidth" checked> Target Bandwidth</label>
                         <select id="bandwidth-select" aria-label="Target Bandwidth Value">
@@ -123,7 +123,7 @@
                 </div>
 
                 <!-- TAB 3: PERFORMANCE -->
-                <div id="tab-performance" class="config-tab-content" style="display: none;">
+                <div id="tab-performance" class="config-tab-content" style="display: none !important;">
                     <div class="config-group">
                         <label for="cpu-effort-slider" title="Lower is faster but lower quality (libvpx only)">CPU Effort</label>
                         <input type="range" id="cpu-effort-slider" min="0" max="8" value="6">
@@ -144,7 +144,7 @@
                         <input type="range" id="webrtc-buffer-slider" min="1" max="100" value="30">
                         <span id="webrtc-buffer-value">30</span>
                     </div>
-                    <div class="config-group">
+                    <div class="config-group gpu-only" style="display: none !important;">
                         <label><input type="checkbox" id="nvenc-latency-checkbox" checked> Enable NVENC ULL (Ultra Low Latency)</label>
                     </div>
                     <div class="config-group">
@@ -153,7 +153,7 @@
                 </div>
 
                 <!-- TAB 4: INPUT -->
-                <div id="tab-input" class="config-tab-content" style="display: none;">
+                <div id="tab-input" class="config-tab-content" style="display: none !important;">
                     <div class="config-group">
                         <label><input type="checkbox" id="desktop-mouse-checkbox" checked> Enable Desktop Mouse</label>
                     </div>
@@ -173,7 +173,7 @@
                 </div>
 
                 <!-- TAB 5: AUDIO -->
-                <div id="tab-audio" class="config-tab-content" style="display: none;">
+                <div id="tab-audio" class="config-tab-content" style="display: none !important;">
                     <div class="config-group">
                         <label><input type="checkbox" id="enable-audio-checkbox" checked> Enable Audio</label>
                     </div>

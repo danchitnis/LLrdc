@@ -598,6 +598,12 @@ export function clearLosslessCanvas(x?: number, y?: number, w?: number, h?: numb
     }
 }
 
+let gpuOptionsList: HTMLOptionElement[] = [];
+
+if (codecGpuOpts) {
+    gpuOptionsList = Array.from(codecGpuOpts);
+}
+
 function handleJsonMessage(msg: Record<string, unknown>) {
     if (msg.type === 'config') {
         const firstConfig = !hasReceivedInitialConfig;
@@ -666,15 +672,32 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {
             if (msg.gpuAvailable !== undefined) {
                 window.gpuAvailable = msg.gpuAvailable as boolean;
-                if (codecGpuOpts) {
-                    codecGpuOpts.forEach(opt => {
+                
+                // Toggle visibility for all GPU-only elements
+                const gpuOnlyElements = document.querySelectorAll('.gpu-only') as NodeListOf<HTMLElement>;
+                gpuOnlyElements.forEach(el => {
+                    if (msg.gpuAvailable) {
+                        el.style.removeProperty('display');
+                    } else {
+                        el.style.setProperty('display', 'none', 'important');
+                    }
+                });
+
+                if (videoCodecSelect && gpuOptionsList.length > 0) {
+                    const av1Available = msg.av1NvencAvailable as boolean;
+                    
+                    gpuOptionsList.forEach(opt => {
                         const isAV1 = opt.value === 'av1_nvenc';
-                        const av1Available = msg.av1NvencAvailable as boolean;
+                        const shouldShow = msg.gpuAvailable && (!isAV1 || av1Available);
                         
-                        if (isAV1 && !av1Available) {
-                            opt.style.display = 'none';
+                        if (shouldShow) {
+                            if (!Array.from(videoCodecSelect.options).includes(opt)) {
+                                videoCodecSelect.appendChild(opt);
+                            }
                         } else {
-                            opt.style.display = msg.gpuAvailable ? '' : 'none';
+                            if (Array.from(videoCodecSelect.options).includes(opt)) {
+                                videoCodecSelect.removeChild(opt);
+                            }
                         }
                     });
                 }
