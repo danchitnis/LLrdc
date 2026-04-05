@@ -60,6 +60,7 @@ interface ConfigMessage {
     type: 'config';
     bandwidth?: number;
     quality?: number;
+    max_res?: number;
     framerate?: number;
     vbr?: boolean;
     mpdecimate?: boolean;
@@ -92,6 +93,8 @@ interface ConfigMessage {
 let configDebounceTimer: number | null = null;
 let currentHdpi = 100;
 let hasReceivedInitialConfig = false;
+let pendingHdpi: number | null = null;
+let pendingMaxRes: number | null = null;
 
 function updateDirectBufferUi(msg: Record<string, unknown>) {
     const captureMode = typeof msg.captureMode === 'string' ? msg.captureMode : 'compat';
@@ -161,6 +164,9 @@ function sendConfig() {
         config.framerate = parseInt(framerateSelect.value, 10);
         if (hdpiSelect) {
             config.hdpi = parseInt(hdpiSelect.value, 10);
+        }
+        if (maxResSelect) {
+            config.max_res = parseInt(maxResSelect.value, 10);
         }
         if (vbrCheckbox) {
             config.vbr = vbrCheckbox.checked;
@@ -311,11 +317,18 @@ if (framerateSelect) {
 }
 
 if (hdpiSelect) {
-    hdpiSelect.addEventListener('change', sendConfig);
+    hdpiSelect.addEventListener('change', () => {
+        pendingHdpi = parseInt(hdpiSelect.value, 10);
+        sendConfig();
+    });
 }
 
 if (maxResSelect) {
-    maxResSelect.addEventListener('change', scheduleResize);
+    maxResSelect.addEventListener('change', () => {
+        pendingMaxRes = parseInt(maxResSelect.value, 10);
+        sendConfig();
+        scheduleResize();
+    });
 }
 
 if (configTabBtns) {
@@ -617,12 +630,22 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         if (msg.hdpi !== undefined && typeof msg.hdpi === 'number') {
             currentHdpi = msg.hdpi === 0 ? 100 : msg.hdpi;
             if (hdpiSelect) {
-                hdpiSelect.value = currentHdpi.toString();
+                if (pendingHdpi !== null && currentHdpi !== pendingHdpi) {
+                    // Keep the optimistic local selection until the server echoes it back.
+                } else {
+                    hdpiSelect.value = currentHdpi.toString();
+                    pendingHdpi = null;
+                }
             }
         }
 
         if (msg.max_res !== undefined && typeof msg.max_res === 'number' && maxResSelect) {
-            maxResSelect.value = msg.max_res.toString();
+            if (pendingMaxRes !== null && msg.max_res !== pendingMaxRes) {
+                // Ignore stale config echoes while a local max-res change is still pending.
+            } else {
+                maxResSelect.value = msg.max_res.toString();
+                pendingMaxRes = null;
+            }
         }
 
         if (firstConfig) {

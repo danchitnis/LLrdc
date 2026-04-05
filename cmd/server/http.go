@@ -348,6 +348,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 						displayChanged = true
 					}
 				}
+				if maxResFloat, ok := configMsg["max_res"].(float64); ok {
+					maxRes := int(maxResFloat)
+					if InitialRes != maxRes {
+						log.Printf("Received max resolution config: %dp", maxRes)
+						InitialRes = maxRes
+					}
+				}
 				if vCodec, ok := configMsg["videoCodec"].(string); ok {
 					if VideoCodec != vCodec {
 						restartRequested = true

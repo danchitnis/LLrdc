@@ -15,7 +15,8 @@ test.describe('Wayland HDPI Scaling', () => {
     }
 
     console.log('Starting container with HDPI=200...');
-    execSync(`PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --hdpi 200`);
+    const containerImage = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';
+    execSync(`IMAGE_NAME=${containerImage.split(':')[0]} IMAGE_TAG=${containerImage.split(':')[1] || 'latest'} PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --hdpi 200`);
     
     await waitForServerReady(`http://localhost:${PORT}`, 60000);
   });
@@ -63,12 +64,74 @@ test.describe('Wayland HDPI Scaling', () => {
       timeout: 10000,
     }).toBeTruthy();
 
+    const getVideoResolution = async () => {
+      return await page.evaluate(() => {
+        const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
+        return {
+          width: video?.videoWidth ?? 0,
+          height: video?.videoHeight ?? 0,
+        };
+      });
+    };
+
     // 4. Verify initial HDPI dropdown value is 200
     const hdpiSelect = page.locator('#hdpi-select');
     await expect(hdpiSelect).toHaveValue('200', { timeout: 10000 });
 
+    // 4b. Verify resolution starts in responsive mode, then switch to a fixed mode.
+    const maxResSelect = page.locator('#max-res-select');
+    await expect(maxResSelect).toHaveValue('0', { timeout: 10000 });
+    const initialResponsiveResolution = await getVideoResolution();
+    expect(initialResponsiveResolution.width).toBeGreaterThan(0);
+    expect(initialResponsiveResolution.height).toBeGreaterThan(0);
+
     // 5. Open config menu
     await page.click('#config-btn');
+
+    console.log('Changing max resolution to 1080p...');
+    await maxResSelect.selectOption('1080');
+    await expect(maxResSelect).toHaveValue('1080');
+
+    await expect.poll(async () => {
+      return await page.evaluate(() => {
+        const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
+        return {
+          width: video?.videoWidth ?? 0,
+          height: video?.videoHeight ?? 0,
+        };
+      });
+    }, {
+      message: 'Stream should switch to a 1080p-class resolution after selecting 1080p',
+      timeout: 30000,
+    }).toMatchObject({
+      width: 1920,
+      height: 1080,
+    });
+
+    console.log('Switching back to responsive mode...');
+    await maxResSelect.selectOption('0');
+    await expect(maxResSelect).toHaveValue('0');
+
+    await expect.poll(async () => {
+      return await getVideoResolution();
+    }, {
+      message: 'Stream should return to the original responsive resolution after switching back to Responsive',
+      timeout: 30000,
+    }).toMatchObject(initialResponsiveResolution);
+
+    console.log('Switching back to 1080p before HDPI change...');
+    await maxResSelect.selectOption('1080');
+    await expect(maxResSelect).toHaveValue('1080');
+
+    await expect.poll(async () => {
+      return await getVideoResolution();
+    }, {
+      message: 'Stream should switch back to 1080p-class resolution before changing HDPI',
+      timeout: 30000,
+    }).toMatchObject({
+      width: 1920,
+      height: 1080,
+    });
     
     // 6. Change HDPI to 150%
     console.log('Changing HDPI to 150%...');
@@ -102,6 +165,9 @@ test.describe('Wayland HDPI Scaling', () => {
     await expect.poll(() => queryWlrRandr(), { timeout: 10000 }).toContain('Scale: 1.500000');
     console.log('Native Wayland scale verified successfully.');
 
+    // 8b. The fixed max resolution selection must survive the HDPI config round-trip.
+    await expect(maxResSelect).toHaveValue('1080', { timeout: 10000 });
+
     // 9. Verify the video stream successfully recovered and is STILL playing after the HDPI scale restart
     await expect.poll(async () => {
       return await page.evaluate(() => {
@@ -112,6 +178,16 @@ test.describe('Wayland HDPI Scaling', () => {
       message: 'Video should successfully resume playing after dynamic Wayland scale resizing',
       timeout: 10000,
     }).toBeTruthy();
+
+    await expect.poll(async () => {
+      return await getVideoResolution();
+    }, {
+      message: '1080p-class stream resolution should still be preserved after HDPI change',
+      timeout: 30000,
+    }).toMatchObject({
+      width: 1920,
+      height: 1080,
+    });
     
     console.log('Stream recovery verified successfully.');
   });
