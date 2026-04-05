@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
+#include <wayland-cursor.h>
 #include "xdg-shell-client-protocol.h"
 
 #define STATE_PATH "/tmp/llrdc-latency-probe.json"
@@ -25,6 +26,10 @@ struct probe_app {
     struct wl_pointer *pointer;
     struct wl_keyboard *keyboard;
 
+    struct wl_cursor_theme *cursor_theme;
+    struct wl_cursor *cursor;
+    struct wl_surface *cursor_surface;
+
     struct wl_surface *surface;
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
@@ -35,6 +40,9 @@ struct probe_app {
     int marker;
     double requested_at_ms;
     double drawn_at_ms;
+    double first_move_at_ms;
+    int last_mouse_x;
+    bool is_moving;
 
     struct wl_buffer *buffer;
     uint32_t *data;
@@ -49,8 +57,8 @@ static double get_now_ms(void) {
 static void write_state(struct probe_app *app) {
     FILE *f = fopen(STATE_PATH, "w");
     if (!f) return;
-    fprintf(f, "{\"marker\": %d, \"color\": \"%s\", \"requestedAtMs\": %.3f, \"drawnAtMs\": %.3f, \"pid\": %d}\n",
-            app->marker, app->color_white ? "white" : "black", app->requested_at_ms, app->drawn_at_ms, getpid());
+    fprintf(f, "{\"marker\": %d, \"color\": \"%s\", \"requestedAtMs\": %.3f, \"drawnAtMs\": %.3f, \"firstMoveAtMs\": %.3f, \"isMoving\": %s, \"pid\": %d}\n",
+            app->marker, app->color_white ? "white" : "black", app->requested_at_ms, app->drawn_at_ms, app->first_move_at_ms, app->is_moving ? "true" : "false", getpid());
     fclose(f);
 }
 
@@ -143,9 +151,40 @@ static void pointer_handle_button(void *data, struct wl_pointer *pointer, uint32
 }
 
 static void pointer_handle_enter(void *data, struct wl_pointer *wl_pointer, uint32_t serial,
-                                 struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {}
+                                 struct wl_surface *surface, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+    struct probe_app *app = data;
+    fprintf(stderr, "Pointer entered surface, setting cursor...\n");
+    if (app->cursor && app->cursor->image_count > 0 && app->cursor_surface) {
+        struct wl_cursor_image *image = app->cursor->images[0];
+        struct wl_buffer *buffer = wl_cursor_image_get_buffer(image);
+        wl_pointer_set_cursor(wl_pointer, serial, app->cursor_surface, image->hotspot_x, image->hotspot_y);
+        wl_surface_attach(app->cursor_surface, buffer, 0, 0);
+        wl_surface_damage(app->cursor_surface, 0, 0, image->width, image->height);
+        wl_surface_commit(app->cursor_surface);
+    }
+}
 static void pointer_handle_leave(void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface) {}
-static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {}
+static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+    struct probe_app *app = data;
+    int x = surface_x / 256;
+    
+    if (!app->is_moving) {
+        app->is_moving = true;
+        app->first_move_at_ms = get_now_ms();
+        write_state(app);
+    }
+
+    if (app->last_mouse_x >= 0) {
+        int mid = app->width / 2;
+        if (mid <= 0) mid = 960; // Fallback to 1920/2
+        if ((app->last_mouse_x < mid && x >= mid) || (app->last_mouse_x >= mid && x < mid)) {
+            fprintf(stderr, "Crossing midpoint: x=%d, last_x=%d, mid=%d\n", x, app->last_mouse_x, mid);
+            toggle(app);
+            app->is_moving = false; // Reset to catch the next sweep's start
+        }
+    }
+    app->last_mouse_x = x;
+}
 static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value) {}
 
 static void pointer_handle_frame(void *data, struct wl_pointer *wl_pointer) {}
@@ -229,6 +268,13 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
         app->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
     } else if (strcmp(interface, wl_shm_interface.name) == 0) {
         app->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+        app->cursor_theme = wl_cursor_theme_load(NULL, 24, app->shm);
+        if (app->cursor_theme) {
+            app->cursor = wl_cursor_theme_get_cursor(app->cursor_theme, "left_ptr");
+            if (!app->cursor) fprintf(stderr, "Failed to get left_ptr cursor\n");
+        } else {
+            fprintf(stderr, "Failed to load cursor theme\n");
+        }
     } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         app->xdg_wm_base = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1);
         xdg_wm_base_add_listener(app->xdg_wm_base, &xdg_wm_base_listener, app);
@@ -257,6 +303,10 @@ int main(void) {
     app.registry = wl_display_get_registry(app.display);
     wl_registry_add_listener(app.registry, &registry_listener, &app);
     wl_display_roundtrip(app.display);
+
+    if (app.compositor) {
+        app.cursor_surface = wl_compositor_create_surface(app.compositor);
+    }
 
     app.surface = wl_compositor_create_surface(app.compositor);
     app.xdg_surface = xdg_wm_base_get_xdg_surface(app.xdg_wm_base, app.surface);
