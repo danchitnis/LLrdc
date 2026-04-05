@@ -100,5 +100,6 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     }
     
     statusEl.style.color = color;
+    statusEl.style.setProperty('--status-accent', color);
     statusEl.textContent = `${transportInfo}${resInfo} | FPS: ${fps} | Latency (Video): ${latencyMonitor}ms | Ping: ${networkLatency}ms | BW: ${bandwidthMbps.toFixed(2)} Mbps | FFmpeg CPU: ${Math.round(serverFfmpegCpu)}%`;
 }
