@@ -312,8 +312,8 @@ async function sweepUntilProbeToggles(
         await page.waitForTimeout(200);
 
         const inputSentAtMs = Date.now();
-        // Fast sweep across the middle in 5 steps (~80ms)
-        await page.mouse.move(endX, midY, { steps: 5 });
+        // Instantaneous sweep across the middle to eliminate Playwright's event loop stepping delays
+        await page.mouse.move(endX, midY, { steps: 1 });
 
         try {
             await expect.poll(() => readProbeState(containerName).marker, {

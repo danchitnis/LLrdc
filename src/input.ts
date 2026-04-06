@@ -50,25 +50,11 @@ export function setupInput(sendMsg: (data: string) => void) {
         };
     };
 
-    let pendingMousePos: { x: number, y: number } | null = null;
-    let isMouseUpdatePending = false;
-
     overlayEl.addEventListener('mousemove', (e: MouseEvent) => {
         const pos = getNormalizedPos(e);
         if (!pos) return;
 
-        pendingMousePos = pos;
-
-        if (!isMouseUpdatePending) {
-            isMouseUpdatePending = true;
-            requestAnimationFrame(() => {
-                if (pendingMousePos) {
-                    sendMsg(JSON.stringify({ type: 'mousemove', x: pendingMousePos.x, y: pendingMousePos.y }));
-                    pendingMousePos = null;
-                }
-                isMouseUpdatePending = false;
-            });
-        }
+        sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
     });
 
     overlayEl.tabIndex = 0;
