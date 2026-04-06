@@ -102,6 +102,11 @@ func initConfig() {
 		defaultActivityTimeout = at
 	}
 
+	defaultCpuEffort := 6
+	if ce, err := strconv.Atoi(os.Getenv("CPU_EFFORT")); err == nil {
+		defaultCpuEffort = ce
+	}
+
 	defaultNVENCLatencyMode := os.Getenv("NVENC_LATENCY_MODE") != "false"
 
 	defaultHDPI := 0
@@ -204,6 +209,7 @@ func initConfig() {
 	flag.IntVar(&SettleTime, "settle-time", defaultSettleTime, "Hybrid sharpness settle time (ms)")
 	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Hybrid sharpness tile size (px)")
 	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (damage tracking)")
+	flag.IntVar(&targetCpuEffort, "cpu-effort", defaultCpuEffort, "FFmpeg CPU effort/used (default 6)")
 
 	flag.Parse()
 	initDirectBufferState()

@@ -107,24 +107,28 @@ export class WebRTCManager {
         this.rtcPeer.onconnectionstatechange = () => {
             if (this.rtcPeer) {
                 log('Connection state: ' + this.rtcPeer.connectionState);
+                if (this.rtcPeer.connectionState === 'connected') {
+                    this.rtcPeer.getReceivers().forEach(receiver => {
+                        if ('playoutDelayHint' in receiver) (receiver as any).playoutDelayHint = 0;
+                        if ('jitterBufferTarget' in receiver) (receiver as any).jitterBufferTarget = 0;
+                    });
+                }
             }
         };
 
         this.rtcPeer.ontrack = (e: RTCTrackEvent) => {
             log('WebRTC track received: ' + e.track.kind);
+            
+            // Apply low-latency hints immediately to the receiver
+            if ('playoutDelayHint' in e.receiver) (e.receiver as any).playoutDelayHint = 0;
+            if ('jitterBufferTarget' in e.receiver) (e.receiver as any).jitterBufferTarget = 0;
+
             let stream = videoEl.srcObject as MediaStream;
             if (!stream) {
                 stream = new MediaStream();
                 videoEl.srcObject = stream;
             }
             stream.addTrack(e.track);
-
-            if ('playoutDelayHint' in e.receiver) {
-                (e.receiver as any).playoutDelayHint = 0;
-            }
-            if ('jitterBufferTarget' in e.receiver) {
-                (e.receiver as any).jitterBufferTarget = 0;
-            }
 
             this.isWebRtcActive = true;
             videoEl.play().then(() => {

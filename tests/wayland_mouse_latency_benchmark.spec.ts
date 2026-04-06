@@ -129,6 +129,7 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
             FPS: TARGET_FPS.toString(),
             BANDWIDTH: TARGET_BANDWIDTH_MBPS.toString(),
             VBR: 'false',
+            ENABLE_AUDIO: 'false',
             VIDEO_CODEC: TARGET_VIDEO_CODEC,
         },
         stdio: 'inherit',
