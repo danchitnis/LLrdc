@@ -43,23 +43,18 @@ export class WebRTCManager {
     }
 
     public initWebRTC() {
-        console.log('[WebRTCManager] initWebRTC called');
         if (this.statsInterval) clearInterval(this.statsInterval);
 
-        const isReinit = !!this.rtcPeer;
         if (this.rtcPeer) {
-            console.log('[WebRTCManager] Closing existing PeerConnection');
             this.rtcPeer.close();
         }
-        if (videoEl && !isReinit) {
+        
+        // Always clear srcObject to ensure a fresh MediaStream is created for the new session
+        if (videoEl) {
             videoEl.srcObject = null;
         }
         
-        // Don't set isWebRtcActive = false if we are just re-initializing (codec switch)
-        // This prevents the WebSocket binary stream (WebCodecs) from taking over for a few seconds.
-        if (!isReinit) {
-            this.isWebRtcActive = false;
-        }
+        this.isWebRtcActive = false;
         this.lastTotalDecoded = -1;
         this.lastStatsTime = 0;
         this.lastBytesReceived = 0;
@@ -129,6 +124,19 @@ export class WebRTCManager {
                 videoEl.srcObject = stream;
             }
             stream.addTrack(e.track);
+
+            // Listen for resolution changes (e.g., recovering from 2x2 placeholder)
+            videoEl.onresize = () => {
+                log(`Video resolution changed: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+                if (videoEl.videoWidth > 4 && videoEl.videoHeight > 4) {
+                    displayEl.width = videoEl.videoWidth;
+                    displayEl.height = videoEl.videoHeight;
+                    if (sharpnessLayerEl) {
+                        sharpnessLayerEl.width = videoEl.videoWidth;
+                        sharpnessLayerEl.height = videoEl.videoHeight;
+                    }
+                }
+            };
 
             this.isWebRtcActive = true;
             videoEl.play().then(() => {

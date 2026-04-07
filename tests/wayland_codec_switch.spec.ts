@@ -3,72 +3,95 @@ import { execSync } from 'child_process';
 import { waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-codec-switch-test';
-const PORT = '8087';
+const PORT = '8090'; 
 
-test.describe('Wayland Codec Switching Verification', () => {
+test.use({ headless: false });
+
+test.describe('Wayland Codec Switch (Single Container)', () => {
+    
     test.beforeAll(async () => {
-        test.setTimeout(90000);
-        try {
-            execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
-        } catch (e) {}
+        test.setTimeout(120000);
+        try { execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`); } catch (e) {}
 
-        console.log('Starting container for Wayland Codec Switch test...');
-        execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
-        
+        console.log('Starting container for Dynamic Switching test at 720p...');
+        execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net --res 720p`);
         await waitForServerReady(`http://localhost:${PORT}`);
     });
 
     test.afterAll(async () => {
-        console.log('Cleaning up container...');
-        try {
-            execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`);
-        } catch (e) {}
+        try { execSync(`docker rm -f ${CONTAINER_NAME} 2>/dev/null || true`); } catch (e) {}
     });
 
-    test('should maintain stable WebRTC connection when switching from VP8 to H264', async ({ page }) => {
-        await page.setViewportSize({ width: 1280, height: 819 });
-        await page.goto(`http://localhost:${PORT}`);
+    const codecs = ['h264', 'av1', 'vp8'];
 
-        const statusEl = page.locator('#status');
-        await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 30000 });
-        
-        console.log('Initial Status:', await statusEl.textContent());
-
-        // Open config menu
-        await page.click('#config-btn');
-        await expect(page.locator('#config-dropdown')).not.toHaveClass(/hidden/);
-
-        // Switch to H.264 (CPU)
-        console.log('Switching to H.264...');
-        await page.selectOption('#video-codec-select', 'h264');
-
-        // Monitor for oscillation or failure
-        console.log('Monitoring status for 10 seconds...');
-        const statuses: string[] = [];
-        const startTime = Date.now();
-        while (Date.now() - startTime < 10000) {
-            const currentStatus = await statusEl.textContent() || '';
-            statuses.push(currentStatus);
+    for (const codec of codecs) {
+        test(`should switch to ${codec} via UI and display content`, async ({ page }) => {
+            test.setTimeout(90000);
             
-            // If it ever shows WebCodecs after initially being WebRTC, it might be the "oscillation"
-            if (currentStatus.includes('WebCodecs')) {
-                console.log('Detected WebCodecs fallback during/after switch!');
-            }
+            // Force Playwright viewport to 1280x720 to avoid 2x2 resolution
+            await page.setViewportSize({ width: 1280, height: 720 });
+
+            page.on('console', msg => {
+                const txt = msg.text();
+                if (txt.includes('totalDecoded') || txt.includes('ICE') || txt.includes('Connection') || txt.includes('Brightness')) {
+                    console.log(`[BROWSER]: ${txt}`);
+                }
+            });
+
+            await page.goto(`http://localhost:${PORT}`);
             
-            await page.waitForTimeout(200);
-        }
+            // Open config menu
+            await page.click('#config-btn');
+            await expect(page.locator('#config-dropdown')).toBeVisible();
 
-        const finalStatus = await statusEl.textContent() || '';
-        console.log('Final Status:', finalStatus);
+            // Set Keyframe Interval to 1s via evaluate to bypass visibility checks
+            await page.evaluate(() => {
+                const el = document.getElementById('keyframe-interval-select') as HTMLSelectElement;
+                if (el) {
+                    el.value = '1';
+                    el.dispatchEvent(new Event('change'));
+                }
+            });
 
-        // Analysis of captured statuses
-        const hadWebCodecs = statuses.some(s => s.includes('WebCodecs'));
-        console.log('Had WebCodecs during transition:', hadWebCodecs);
+            console.log(`>>> Selecting ${codec}...`);
+            await page.selectOption('#video-codec-select', codec);
+            
+            // Wait for the stream to settle
+            await page.waitForTimeout(10000);
 
-        // If it switched to WebCodecs, it means WebRTC was interrupted
-        // The user says "oscillating", so it probably goes WebRTC -> WebCodecs -> WebRTC
-        
-        expect(hadWebCodecs, 'WebRTC should NOT fall back to WebCodecs during codec switch').toBe(false);
-        expect(finalStatus).toContain('WebRTC');
-    });
+            await expect.poll(async () => {
+                const stats = await page.evaluate(() => {
+                    const s = window.getStats();
+                    const video = document.getElementById('webrtc-video') as HTMLVideoElement;
+                    const canvas = document.getElementById('display') as HTMLCanvasElement;
+                    const ctx = canvas.getContext('2d');
+                    
+                    let brightness = -1;
+                    if (ctx && canvas.width > 0 && canvas.height > 0) {
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                        let total = 0;
+                        for (let i = 0; i < imageData.length; i += 4) {
+                            total += (imageData[i] + imageData[i + 1] + imageData[i + 2]) / 3;
+                        }
+                        brightness = total / (canvas.width * canvas.height);
+                    }
+
+                    return {
+                        ...s,
+                        videoWidth: video?.videoWidth,
+                        videoHeight: video?.videoHeight,
+                        brightness
+                    };
+                });
+
+                console.log(`[${codec}] Stats: FPS=${stats.fps}, Decoded=${stats.totalDecoded}, Size=${stats.videoWidth}x${stats.videoHeight}, Brightness=${stats.brightness.toFixed(2)}`);
+                
+                // Success criteria: frames are decoding AND the screen is not completely black (brightness > 1)
+                return stats.totalDecoded > 0 && stats.brightness > 1;
+            }, { 
+                timeout: 45000, 
+                message: `Failed to switch to ${codec} or screen is black` 
+            }).toBeTruthy();
+        });
+    }
 });

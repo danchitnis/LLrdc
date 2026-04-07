@@ -421,7 +421,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 							args = append(args, "-p", fmt.Sprintf("x265-params=aud=1:fps=%d", FPS))
 						}
 					} else if codec == "libaom-av1" {
-						args = append(args, "-p", "usage=realtime")
+						args = append(args, "-p", "usage=realtime", "-p", "row-mt=1", "-p", "lag-in-frames=0", "-p", "static-thresh=0", "-p", "error-resilient=1")
 					}
 
 					args = append(args,

@@ -17,7 +17,7 @@ func buildAV1Args(mode string, bw int, quality int, fps int, vbr bool, keyframeI
 		// The server probe in config.go correctly detects this and disables the option.
 	} else {
 		// libaom-av1 is slow, but we provide it as a software fallback
-		outputArgs = append(outputArgs, "-c:v", "libaom-av1", "-cpu-used", "8", "-usage", "realtime", "-row-mt", "1", "-lag-in-frames", "0", "-error-resilient", "1")
+		outputArgs = append(outputArgs, "-c:v", "libaom-av1", "-cpu-used", "8", "-usage", "realtime", "-row-mt", "1", "-lag-in-frames", "0", "-error-resilient", "1", "-static-thresh", "0")
 	}
 
 	if mode == "bandwidth" {
