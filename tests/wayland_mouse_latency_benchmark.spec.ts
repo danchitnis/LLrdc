@@ -89,11 +89,11 @@ interface BenchmarkResult {
     delta?: Record<string, number | null>;
 }
 
-const TARGET_FPS = Number.parseInt(process.env.LLRDC_TARGET_FPS ?? '30', 10);
+const TARGET_FPS = Number.parseInt(process.env.LLRDC_TARGET_FPS ?? '60', 10);
 const TARGET_MAX_RES = Number.parseInt(process.env.LLRDC_TARGET_MAX_RES ?? '720', 10);
-const TARGET_BANDWIDTH_MBPS = Number.parseInt(process.env.LLRDC_TARGET_BANDWIDTH_MBPS ?? '5', 10);
+const TARGET_BANDWIDTH_MBPS = Number.parseInt(process.env.LLRDC_TARGET_BANDWIDTH_MBPS ?? '10', 10);
 const TARGET_VIEWPORT_WIDTH = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_WIDTH ?? '1280', 10);
-const TARGET_VIEWPORT_HEIGHT = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_HEIGHT ?? '819', 10);
+const TARGET_VIEWPORT_HEIGHT = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_HEIGHT ?? '720', 10);
 const TARGET_VIDEO_CODEC = process.env.LLRDC_TARGET_VIDEO_CODEC ?? 'vp8';
 const TARGET_USE_GPU = (process.env.LLRDC_USE_GPU ?? 'false') === 'true';
 const TARGET_CAPTURE_MODES = (process.env.LLRDC_CAPTURE_MODES ?? 'compat')
