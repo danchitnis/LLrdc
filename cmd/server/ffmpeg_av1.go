@@ -8,7 +8,7 @@ func buildAV1Args(mode string, bw int, quality int, fps int, vbr bool, keyframeI
 	var outputArgs []string
 
 	if VideoCodec == "av1_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "av1_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0")
+		outputArgs = append(outputArgs, "-c:v", "av1_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0", "-surfaces", "64", "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1")
 		if NVENCLatencyMode {
 			outputArgs = append(outputArgs, "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0")
 		}

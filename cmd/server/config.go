@@ -92,7 +92,7 @@ func initConfig() {
 		defaultWebRTCBufferSize = bs
 	}
 
-	defaultActivityPulseHz := 30
+	defaultActivityPulseHz := 10
 	if ap, err := strconv.Atoi(os.Getenv("ACTIVITY_PULSE_HZ")); err == nil {
 		defaultActivityPulseHz = ap
 	}

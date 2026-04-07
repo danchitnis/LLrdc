@@ -158,11 +158,9 @@ int main(int argc, char *argv[]) {
 			// This is invisible to the user but forces a frame through the VBR encoder.
 			zwlr_virtual_pointer_v1_motion(client.pointer, t, wl_fixed_from_double(1.0), wl_fixed_from_double(1.0));
 			zwlr_virtual_pointer_v1_frame(client.pointer);
-			wl_display_roundtrip(client.display);
 			
 			zwlr_virtual_pointer_v1_motion(client.pointer, t + 1, wl_fixed_from_double(-1.0), wl_fixed_from_double(-1.0));
 			zwlr_virtual_pointer_v1_frame(client.pointer);
-			wl_display_roundtrip(client.display);
 		}
 		wl_display_flush(client.display);
 	}

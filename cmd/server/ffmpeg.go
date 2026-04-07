@@ -395,11 +395,26 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 						"-p", "preset=p1",
 						"-p", "tune=ull",
 						"-p", "delay=0",
+						"-p", "surfaces=64",
 						"-p", "rgb_mode=yuv420",
+						"-p", "bf=0",
+						"-p", "spatial-aq=0",
+						"-p", "temporal-aq=0",
+						"-p", "strict_gop=1",
 						"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
 						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
-						"-p", "g=60",
+						"-p", fmt.Sprintf("bufsize=%dM", targetBandwidthMbps*2),
+						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
+					if NVENCLatencyMode {
+						args = append(args, "-p", "rc-lookahead=0", "-p", "no-scenecut=1", "-p", "b_ref_mode=0")
+					}
+					if !targetVBR {
+						args = append(args, "-p", "rc=cbr")
+					} else {
+						args = append(args, "-p", "rc=vbr", "-p", "cq=30")
+					}
+
 					if codec == "h264_nvenc" || codec == "hevc_nvenc" {
 						args = append(args, "-p", "aud=1")
 					}
