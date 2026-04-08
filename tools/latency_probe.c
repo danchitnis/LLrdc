@@ -80,7 +80,16 @@ static const struct wl_callback_listener frame_listener = {
     .done = frame_handle_done,
 };
 
+static double last_toggle_ms = 0;
+
 static void toggle(struct probe_app *app) {
+    double now = get_now_ms();
+    if (now - last_toggle_ms < 100.0) {
+        fprintf(stderr, "Ignoring double toggle\n");
+        return;
+    }
+    last_toggle_ms = now;
+
     fprintf(stderr, "Toggling color: marker=%d, color=%s\n", app->marker + 1, app->color_white ? "black" : "white");
     app->marker++;
     app->requested_at_ms = get_now_ms();
