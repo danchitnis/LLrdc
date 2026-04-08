@@ -36,10 +36,11 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     await page.click('#config-btn');
     await expect(page.locator('#config-dropdown')).toBeVisible();
 
-    // Disable VBR to ensure constant frames for verification
+    // Disable VBR and Damage Tracking to ensure constant frames for verification
     const qualityTabLocator = page.locator('.config-tab-btn[data-tab="tab-quality"]');
     await qualityTabLocator.click();
     await page.uncheck('#vbr-checkbox');
+    await page.uncheck('#damage-tracking-checkbox');
 
     const streamTabLocator = page.locator('.config-tab-btn[data-tab="tab-stream"]');
     await streamTabLocator.click();

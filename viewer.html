@@ -96,6 +96,12 @@
                     </div>
                     <div class="config-group" style="padding-top: 5px; flex-direction: column; align-items: flex-start;">
                         <label title="Allow encoder to use less bandwidth during static scenes"><input type="checkbox" id="vbr-checkbox"> Enable Variable Bitrate (VBR)</label>
+                        <div id="vbr-threshold-group" style="width: 100%; margin-top: 5px; display: flex; flex-direction: row; align-items: center; padding-left: 20px;">
+                            <label title="Higher threshold = more aggressive bandwidth reduction for static content" style="white-space: nowrap;">VBR Threshold</label>
+                            <input type="range" id="vbr-threshold-slider" min="0" max="1000" step="50" value="100" style="flex: 1; margin: 0 10px;">
+                            <span id="vbr-threshold-value">100</span>
+                        </div>
+                        <label title="Only send frames when the screen changes"><input type="checkbox" id="damage-tracking-checkbox"> Enable Damage Tracking</label>
                         <label title="Completely drop duplicate frames to save CPU and bandwidth"><input type="checkbox" id="mpdecimate-checkbox"> Enable Drop Duplicate Frames (mpdecimate)</label>
                         <label title="Achieve RDP-like sharpness by sending lossless patches for static regions"><input type="checkbox" id="hybrid-checkbox"> Enable Hybrid Sharpness (RDP-style)</label>
                         <div class="config-group" style="width: 100%; margin-top: 5px; flex-direction: row; align-items: center;">

@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -63,6 +63,8 @@ interface ConfigMessage {
     max_res?: number;
     framerate?: number;
     vbr?: boolean;
+    vbr_threshold?: number;
+    damageTracking?: boolean;
     mpdecimate?: boolean;
     keyframe_interval?: number;
     cpu_effort?: number;
@@ -171,6 +173,12 @@ function sendConfig() {
         if (vbrCheckbox) {
             config.vbr = vbrCheckbox.checked;
         }
+        if (vbrThresholdSlider) {
+            config.vbr_threshold = parseInt(vbrThresholdSlider.value, 10);
+        }
+        if (damageTrackingCheckbox) {
+            config.damageTracking = damageTrackingCheckbox.checked;
+        }
         if (mpdecimateCheckbox) {
             config.mpdecimate = mpdecimateCheckbox.checked;
         }
@@ -261,7 +269,21 @@ if (bandwidthSelect) {
 }
 
 if (vbrCheckbox) {
-    vbrCheckbox.addEventListener('change', sendConfig);
+    vbrCheckbox.addEventListener('change', () => {
+        if (vbrThresholdGroup) vbrThresholdGroup.style.display = vbrCheckbox.checked ? 'flex' : 'none';
+        sendConfig();
+    });
+}
+
+if (vbrThresholdSlider && vbrThresholdValue) {
+    vbrThresholdSlider.addEventListener('input', (e) => {
+        vbrThresholdValue.textContent = (e.target as HTMLInputElement).value;
+    });
+    vbrThresholdSlider.addEventListener('change', sendConfig);
+}
+
+if (damageTrackingCheckbox) {
+    damageTrackingCheckbox.addEventListener('change', sendConfig);
 }
 
 if (mpdecimateCheckbox) {
@@ -746,10 +768,19 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         
         if (msg.vbr !== undefined && vbrCheckbox) {
             vbrCheckbox.checked = msg.vbr as boolean;
+            if (vbrThresholdGroup) vbrThresholdGroup.style.display = vbrCheckbox.checked ? 'flex' : 'none';
         }
-        
-        if (msg.mpdecimate !== undefined && mpdecimateCheckbox) {
-            mpdecimateCheckbox.checked = msg.mpdecimate as boolean;
+
+        if (msg.vbr_threshold !== undefined && vbrThresholdSlider) {
+            vbrThresholdSlider.value = (msg.vbr_threshold as number).toString();
+            if (vbrThresholdValue) vbrThresholdValue.textContent = vbrThresholdSlider.value;
+        }
+
+        if (msg.damageTracking !== undefined && damageTrackingCheckbox) {
+            damageTrackingCheckbox.checked = msg.damageTracking as boolean;
+        }
+
+        if (msg.mpdecimate !== undefined && mpdecimateCheckbox) {            mpdecimateCheckbox.checked = msg.mpdecimate as boolean;
         }
 
         if (msg.enable_hybrid !== undefined && hybridCheckbox) {

@@ -17,16 +17,16 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 		bufSizeStr := fmt.Sprintf("%dk", bw*200)
 
 		if vbr {
-			// libvpx VBR: set a target bitrate but allow it to drop to 0 if static
+			// libvpx VBR: use CRF with a maxrate cap, and a high static-thresh
 			outputArgs = append(outputArgs,
-				"-b:v", bitrateStr,
+				"-b:v", "0",
+				"-crf", "30",
 				"-maxrate", bitrateStr,
 				"-bufsize", bufSizeStr,
-				"-crf", "20",
 				"-static-thresh", "1000",
 			)
 		} else {
-			// CBR
+			// CBR: force target and minrate to be equal
 			outputArgs = append(outputArgs,
 				"-b:v", bitrateStr,
 				"-maxrate", bitrateStr,

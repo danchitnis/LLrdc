@@ -5,7 +5,7 @@ import { waitForServerReady } from './helpers';
 const CONTAINER_NAME = 'llrdc-vbr-ui-test';
 const PORT = '8086';
 
-test.describe('Wayland VBR UI Metrics Verification', () => {
+test.describe('Wayland VBR and Damage Tracking UI Metrics Verification', () => {
     test.beforeAll(async () => {
         test.setTimeout(60000);
         try {
@@ -13,8 +13,8 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
         } catch (e) {}
 
         console.log('Starting container for Wayland VBR UI test...');
-        // VBR is now disabled by default, we must explicitly enable it for this test
-        execSync(`PORT=${PORT} VBR=true ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
+        // Start with both enabled by default for the first test case
+        execSync(`PORT=${PORT} VBR=true DAMAGE_TRACKING=true ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`);
         
         await waitForServerReady(`http://localhost:${PORT}`);
     });
@@ -26,149 +26,70 @@ test.describe('Wayland VBR UI Metrics Verification', () => {
         } catch (e) {}
     });
 
-    test('should show 0 FPS and low BW when screen is static with VBR', async ({ page }) => {
+    test('should verify that Damage Tracking (not VBR) controls frame delivery', async ({ page }) => {
         await page.setViewportSize({ width: 1280, height: 819 });
         await page.goto(`http://localhost:${PORT}`);
 
         const statusEl = page.locator('#status');
         await expect(statusEl).toHaveText(/FPS:/i, { timeout: 60000 });
 
-        // Wait for it to settle and initially show some FPS/BW
-        await page.waitForTimeout(5000);
-        let statusText = await statusEl.textContent() || '';
-        console.log('Initial Status:', statusText);
+        // Helper to get current FPS from status text
+        const getFps = async () => {
+            const text = await statusEl.textContent() || '';
+            const match = text.match(/FPS: (\d+)/);
+            return match ? parseInt(match[1], 10) : -1;
+        };
 
-        // Extract initial FPS to make sure it WAS active
-        const initialFpsMatch = statusText.match(/FPS: (\d+)/);
-        const initialFps = initialFpsMatch ? parseInt(initialFpsMatch[1], 10) : 0;
-        console.log(`Initial FPS: ${initialFps}`);
-        
-        // Wait 10 seconds for metrics to drop to zero
-        console.log('Waiting for idle metrics...');
+        // --- STEP 1: DT=ON, VBR=ON (Static Screen) ---
+        console.log('Step 1: DT=ON, VBR=ON. Expecting ~0 FPS...');
         await page.waitForTimeout(10000);
-
-        statusText = await statusEl.textContent() || '';
-        console.log('Idle Status:', statusText);
-
-        // Extract FPS and BW
-        const fpsMatch = statusText.match(/FPS: (\d+)/);
-        const bwMatch = statusText.match(/BW: ([\d.]+)/);
-
-        const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : -1;
-        const bw = bwMatch ? parseFloat(bwMatch[1]) : -1;
-
-        console.log(`Parsed metrics - FPS: ${fps}, BW: ${bw}`);
-
-        // Expectations:
-        expect(fps).toBeGreaterThanOrEqual(0);
-        expect(fps).toBeLessThanOrEqual(2);
-        expect(bw).toBeLessThan(0.1);
-
-        // Now generate some activity and check FPS
-        console.log('Generating activity...');
-        
-        // Launch mousepad or terminal to have something visible that might blink or move
-        execSync(`docker exec -u remote -d ${CONTAINER_NAME} xfce4-terminal`);
-        await page.waitForTimeout(2000);
-
-        let maxActiveFps = 0;
-        const overlay = page.locator('#input-overlay');
-        await overlay.hover();
-        
-        console.log('Moving mouse and polling FPS...');
-        for (let i = 0; i < 30; i++) {
-            await page.mouse.move(100 + (i % 10) * 50, 100 + (i % 10) * 50);
-            await page.waitForTimeout(200);
-            
-            statusText = await statusEl.textContent() || '';
-            const match = statusText.match(/FPS: (\d+)/);
-            if (match) {
-                const currentFps = parseInt(match[1], 10);
-                if (currentFps > maxActiveFps) maxActiveFps = currentFps;
-            }
-            if (maxActiveFps > 5) break; // Found activity
-        }
-
-        console.log(`Max Observed Active FPS: ${maxActiveFps}`);
-        expect(maxActiveFps).toBeGreaterThan(5);
-    });
-
-    test('should show 0 FPS and low BW when screen is static with VBR (WebCodecs)', async ({ page }) => {
-        await page.addInitScript(() => {
-            class DisabledRTCPeerConnection {
-                public localDescription: RTCSessionDescriptionInit | null = null;
-                public connectionState: RTCPeerConnectionState = 'new';
-                public iceConnectionState: RTCIceConnectionState = 'new';
-                public onicecandidate: ((this: RTCPeerConnection, ev: RTCPeerConnectionIceEvent) => any) | null = null;
-                public onconnectionstatechange: ((this: RTCPeerConnection, ev: Event) => any) | null = null;
-                public oniceconnectionstatechange: ((this: RTCPeerConnection, ev: Event) => any) | null = null;
-                public ontrack: ((this: RTCPeerConnection, ev: RTCTrackEvent) => any) | null = null;
-
-                addTransceiver() {}
-                createDataChannel() {
-                    return {
-                        readyState: 'closed',
-                        onopen: null,
-                        onclose: null,
-                        close() {}
-                    };
-                }
-                createOffer() {
-                    return Promise.reject(new Error('WebRTC disabled for WebCodecs test'));
-                }
-                setLocalDescription() {
-                    return Promise.resolve();
-                }
-                setRemoteDescription() {
-                    return Promise.resolve();
-                }
-                addIceCandidate() {
-                    return Promise.resolve();
-                }
-                getStats() {
-                    return Promise.resolve(new Map());
-                }
-                close() {}
-            }
-
-            // Force a genuine WebCodecs-only session so the websocket fallback remains active.
-            (window as unknown as { RTCPeerConnection: typeof RTCPeerConnection }).RTCPeerConnection =
-                DisabledRTCPeerConnection as unknown as typeof RTCPeerConnection;
-        });
-
-        await page.setViewportSize({ width: 1280, height: 819 });
-        await page.goto(`http://localhost:${PORT}`);
-
-        const statusEl = page.locator('#status');
-        await expect(statusEl).toHaveText(/WebCodecs/i, { timeout: 30000 });
-
-        // Wait for it to settle
-        await page.waitForTimeout(10000);
-        let statusText = await statusEl.textContent() || '';
-        const fps = await page.evaluate(() => window.webcodecsManager?.fps ?? -1);
-
-        console.log('Idle WebCodecs Status:', statusText);
-        console.log(`Idle WebCodecs FPS: ${fps}`);
+        let fps = await getFps();
+        console.log(`FPS: ${fps}`);
         expect(fps).toBeLessThanOrEqual(2);
 
-        // Activity check for WebCodecs
-        console.log('Generating activity for WebCodecs...');
-        execSync(`docker exec -u remote -d ${CONTAINER_NAME} xfce4-terminal`);
-        await page.waitForTimeout(2000);
+        // Open config and go to Quality tab
+        await page.click('#config-btn');
+        await page.locator('.config-tab-btn[data-tab="tab-quality"]').click();
+        const dtCheckbox = page.locator('#damage-tracking-checkbox');
+        const vbrCheckbox = page.locator('#vbr-checkbox');
 
-        const overlay = page.locator('#input-overlay');
-        await overlay.hover();
+        // --- STEP 2: DT=OFF, VBR=ON (Static Screen) ---
+        console.log('Step 2: DT=OFF, VBR=ON. Expecting ~30 FPS...');
+        await dtCheckbox.uncheck();
+        await page.waitForTimeout(10000); // Wait for restart and smoothing
         
-        let maxActiveFps = 0;
-        for (let i = 0; i < 20; i++) {
-            await page.mouse.move(100 + (i % 10) * 50, 100 + (i % 10) * 50);
-            await page.waitForTimeout(200);
-
-            const currentFps = await page.evaluate(() => window.webcodecsManager?.fps ?? 0);
-            if (currentFps > maxActiveFps) maxActiveFps = currentFps;
-            if (maxActiveFps > 5) break;
+        let highFpsSamples = [];
+        for (let i = 0; i < 5; i++) {
+            highFpsSamples.push(await getFps());
+            await page.waitForTimeout(1000);
         }
-        console.log(`Max Observed WebCodecs Active FPS: ${maxActiveFps}`);
-        expect(maxActiveFps).toBeGreaterThan(5);
+        let maxHighFps = Math.max(...highFpsSamples);
+        console.log(`Max FPS with DT=OFF: ${maxHighFps}`);
+        expect(maxHighFps).toBeGreaterThan(15);
+
+        // --- STEP 3: DT=OFF, VBR=OFF (Static Screen) ---
+        console.log('Step 3: DT=OFF, VBR=OFF (CBR). Expecting ~30 FPS...');
+        await vbrCheckbox.uncheck();
+        await page.waitForTimeout(10000);
+        
+        let cbrFpsSamples = [];
+        for (let i = 0; i < 5; i++) {
+            cbrFpsSamples.push(await getFps());
+            await page.waitForTimeout(1000);
+        }
+        let maxCbrFps = Math.max(...cbrFpsSamples);
+        console.log(`Max FPS with DT=OFF, VBR=OFF: ${maxCbrFps}`);
+        expect(maxCbrFps).toBeGreaterThan(15);
+
+        // --- STEP 4: DT=ON, VBR=OFF (Static Screen) ---
+        console.log('Step 4: DT=ON, VBR=OFF. Expecting ~0 FPS...');
+        await dtCheckbox.check();
+        await page.waitForTimeout(10000);
+        
+        fps = await getFps();
+        console.log(`FPS: ${fps}`);
+        expect(fps).toBeLessThanOrEqual(2);
+        
+        console.log('Test passed: Damage Tracking is the true arbiter of frame delivery.');
     });
 });

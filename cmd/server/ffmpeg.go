@@ -15,6 +15,8 @@ var (
 	targetBandwidthMbps    = 5           // Initial default: 5 Mbps
 	targetQuality          = 70          // 10-100
 	targetVBR              = false       // Default VBR to false
+	targetVBRThreshold     = 100         // Default VBR threshold to 100
+	targetDamageTracking   = false       // Default Damage Tracking to false
 	targetMpdecimate       = false       // Default mpdecimate to false
 	targetCpuEffort        = 6           // Default: 6
 	targetCpuThreads       = 4           // Default: 4
@@ -200,6 +202,34 @@ func SetVBR(vbr bool) {
 	killFFmpegWithTimestamp()
 }
 
+func SetVBRThreshold(threshold int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetVBRThreshold == threshold {
+		return
+	}
+
+	targetVBRThreshold = threshold
+
+	log.Printf("Received VBR Threshold config: %d", threshold)
+	killFFmpegWithTimestamp()
+}
+
+func SetDamageTracking(dt bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetDamageTracking == dt {
+		return
+	}
+
+	targetDamageTracking = dt
+
+	log.Printf("Received Damage Tracking config: %v", dt)
+	killFFmpegWithTimestamp()
+}
+
 func SetBandwidth(bwMbps int) {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
@@ -374,7 +404,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 					"-o0", "wf-recorder",
 				}
 
-				if !targetVBR {
+				if !targetDamageTracking {
 					args = append(args, "-D") // Disable damage tracking to continuously emit frames
 				}
 
@@ -425,24 +455,45 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 					if codec == "libvpx" {
 						args = append(args,
 							"-p", "deadline=realtime",
-							"-p", "static-thresh=0",
 							"-p", "lag-in-frames=0",
 						)
+						if targetVBR {
+							// For VBR: set a low target bitrate and higher CRF to save bits on static scenes
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", "b=1M")
+						} else {
+							// For CBR: target, maxrate, and minrate should match
+							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+						}
 					} else if codec == "libx264" || codec == "libx265" {
 						args = append(args, "-p", "tune=zerolatency")
+						if targetVBR {
+							// For H264/H265, use the threshold to offset CRF (more threshold = higher CRF = more aggressive bit saving)
+							crf := 30 + (targetVBRThreshold / 100)
+							if crf > 51 {
+								crf = 51
+							}
+							args = append(args, "-p", fmt.Sprintf("crf=%d", crf), "-p", "b=1M")
+						} else {
+							args = append(args, "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+						}
+
 						if codec == "libx264" {
 							args = append(args, "-p", fmt.Sprintf("x264-params=aud=1:fps=%d", FPS))
 						} else {
 							args = append(args, "-p", fmt.Sprintf("x265-params=aud=1:fps=%d", FPS))
 						}
 					} else if codec == "libaom-av1" {
-						args = append(args, "-p", "usage=realtime", "-p", "row-mt=1", "-p", "lag-in-frames=0", "-p", "static-thresh=0", "-p", "error-resilient=1")
+						args = append(args, "-p", "usage=realtime", "-p", "row-mt=1", "-p", "lag-in-frames=0", "-p", "error-resilient=1")
+						if targetVBR {
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", "b=1M")
+						} else {
+							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+						}
 					}
 
 					args = append(args,
 						"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
 						"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
-						"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
 						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
@@ -478,7 +529,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				setDirectBufferActive(true, "Direct-buffer probe passed and NVENC capture is active")
 			}
 
-			// Prime the compositor so VBR sessions emit an initial frame without waiting for user input.
+			// Prime the compositor so damage tracking sessions emit an initial frame without waiting for user input.
 			PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
 			doneCh := make(chan bool, 1)

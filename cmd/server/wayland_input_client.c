@@ -155,7 +155,7 @@ int main(int argc, char *argv[]) {
 			}
 		} else if (strcmp(type, "ping") == 0) {
 			// Trigger a tiny 1-pixel jitter to force a damage update.
-			// This is invisible to the user but forces a frame through the VBR encoder.
+			// This is invisible to the user but forces a frame out during damage tracking.
 			zwlr_virtual_pointer_v1_motion(client.pointer, t, wl_fixed_from_double(1.0), wl_fixed_from_double(1.0));
 			zwlr_virtual_pointer_v1_frame(client.pointer);
 			

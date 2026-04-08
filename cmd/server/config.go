@@ -131,6 +131,16 @@ func initConfig() {
 		defaultVBR = vbr
 	}
 
+	defaultVBRThreshold := 100
+	if vt, err := strconv.Atoi(os.Getenv("VBR_THRESHOLD")); err == nil {
+		defaultVBRThreshold = vt
+	}
+
+	defaultDamageTracking := false
+	if dt, err := strconv.ParseBool(os.Getenv("DAMAGE_TRACKING")); err == nil {
+		defaultDamageTracking = dt
+	}
+
 	resStr := strings.ToLower(os.Getenv("RESOLUTION"))
 	defaultInitialRes := 0
 	if strings.Contains(resStr, "720") {
@@ -171,7 +181,9 @@ func initConfig() {
 		printFlag(os.Stderr, "webrtc-buffer", "WebRTC frame channel size (default 30)", WebRTCBufferSize)
 		printFlag(os.Stderr, "activity-hz", "Input heartbeat frequency in Hz (default 30)", ActivityPulseHz)
 		printFlag(os.Stderr, "activity-timeout", "Inactivity timeout in ms before stopping heartbeat (default 1500)", ActivityTimeout)
-		printFlag(os.Stderr, "vbr", "Enable variable bitrate (damage tracking) (default false)", defaultVBR)
+		printFlag(os.Stderr, "vbr", "Enable variable bitrate (encoder rate control) (default false)", defaultVBR)
+		printFlag(os.Stderr, "vbr-threshold", "VBR threshold for static content (default 100)", defaultVBRThreshold)
+		printFlag(os.Stderr, "damage-tracking", "Enable Wayland damage tracking (frame skipping) (default false)", defaultDamageTracking)
 		printFlag(os.Stderr, "nvenc-latency", "Enable ultra-low latency NVENC optimizations (default true)", NVENCLatencyMode)
 		printFlag(os.Stderr, "webrtc-low-latency", "Enable ultra-low latency WebRTC transport optimizations (ICE Lite, disabled replay protection) (default false)", WebRTCLowLatency)
 
@@ -208,7 +220,9 @@ func initConfig() {
 	flag.BoolVar(&WebRTCLowLatency, "webrtc-low-latency", defaultWebRTCLowLatency, "Enable ultra-low latency WebRTC transport optimizations (default false)")
 	flag.IntVar(&SettleTime, "settle-time", defaultSettleTime, "Hybrid sharpness settle time (ms)")
 	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Hybrid sharpness tile size (px)")
-	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (damage tracking)")
+	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (encoder rate control)")
+	flag.IntVar(&targetVBRThreshold, "vbr-threshold", defaultVBRThreshold, "VBR threshold for static content")
+	flag.BoolVar(&targetDamageTracking, "damage-tracking", defaultDamageTracking, "Enable Wayland damage tracking (frame skipping)")
 	flag.IntVar(&targetCpuEffort, "cpu-effort", defaultCpuEffort, "FFmpeg CPU effort/used (default 6)")
 
 	flag.Parse()

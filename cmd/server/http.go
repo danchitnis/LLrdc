@@ -53,6 +53,8 @@ func configPayload(restarted bool) map[string]interface{} {
 		"bandwidth":              targetBandwidthMbps,
 		"quality":                targetQuality,
 		"vbr":                    targetVBR,
+		"vbr_threshold":          targetVBRThreshold,
+		"damageTracking":         targetDamageTracking,
 		"mpdecimate":             targetMpdecimate,
 		"keyframe_interval":      targetKeyframeInterval,
 		"settle_time":            SettleTime,
@@ -373,6 +375,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 					SetVBR(vbrBool)
 				}
+				if threshold, ok := configMsg["vbr_threshold"].(float64); ok {
+					if targetVBRThreshold != int(threshold) {
+						restartRequested = true
+					}
+					SetVBRThreshold(int(threshold))
+				}
+				if dtBool, ok := configMsg["damageTracking"].(bool); ok {
+					if targetDamageTracking != dtBool {
+						restartRequested = true
+					}
+					SetDamageTracking(dtBool)
+				}
 				if mpdecimateBool, ok := configMsg["mpdecimate"].(bool); ok {
 					if targetMpdecimate != mpdecimateBool {
 						restartRequested = true
@@ -540,7 +554,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				c.webrtcReady = true
 			}
 			clientsMutex.Unlock()
-			// Trigger a ping to push the first frame in VBR mode
+			// Trigger a ping to push the first frame in damage tracking mode
 			TriggerPing()
 		case "ping":
 			if ts, ok := msg["timestamp"].(float64); ok {

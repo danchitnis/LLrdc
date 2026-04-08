@@ -121,7 +121,16 @@ async function disableVbr(page: import('@playwright/test').Page, containerName: 
         }).toContain('Received VBR config: false');
     }
 
-    await waitForDecodedFrames(page, `VBR disabled in ${containerName}`);
+    const dtCheckbox = page.locator('#damage-tracking-checkbox');
+    if (await dtCheckbox.isChecked()) {
+        await dtCheckbox.uncheck();
+        await expect.poll(() => execSync(`docker logs ${containerName}`).toString(), {
+            timeout: 20000,
+            message: `Wait for Damage Tracking=false to be applied in ${containerName}`,
+        }).toContain('Received Damage Tracking config: false');
+    }
+
+    await waitForDecodedFrames(page, `VBR and Damage Tracking disabled in ${containerName}`);
     await page.click('#config-btn');
     await expect(page.locator('#config-dropdown')).not.toBeVisible();
 }

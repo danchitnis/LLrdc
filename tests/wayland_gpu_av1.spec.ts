@@ -117,16 +117,23 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
 
         const status = page.locator('#status');
         
-        console.log('Ensuring H.264 (GPU - NVENC) is selected and VBR is disabled...');
+        console.log('Ensuring H.264 (GPU - NVENC) is selected and VBR/Damage Tracking are disabled...');
         await page.evaluate(() => {
             const vbr = document.getElementById('vbr-checkbox') as HTMLInputElement;
             if (vbr && vbr.checked) {
                 vbr.click();
             }
+            const dt = document.getElementById('damage-tracking-checkbox') as HTMLInputElement;
+            if (dt && dt.checked) {
+                dt.click();
+            }
         });
         await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
             timeout: 20000
         }).toContain('Received VBR config: false');
+        await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+            timeout: 20000
+        }).toContain('Received Damage Tracking config: false');
 
         await page.evaluate(() => {
             const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
