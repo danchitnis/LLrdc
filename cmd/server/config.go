@@ -131,7 +131,7 @@ func initConfig() {
 		defaultVBR = vbr
 	}
 
-	defaultVBRThreshold := 100
+	defaultVBRThreshold := 0
 	if vt, err := strconv.Atoi(os.Getenv("VBR_THRESHOLD")); err == nil {
 		defaultVBRThreshold = vt
 	}

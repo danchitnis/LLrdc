@@ -7,7 +7,7 @@ import (
 	"log"
 )
 
-func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuThreads int, vbr bool, keyframeInterval int) []string {
+func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuThreads int, vbr bool, vbrThreshold int, keyframeInterval int) []string {
 	var outputArgs []string
 
 	outputArgs = append(outputArgs, "-c:v", "libvpx")
@@ -23,7 +23,7 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 				"-crf", "30",
 				"-maxrate", bitrateStr,
 				"-bufsize", bufSizeStr,
-				"-static-thresh", "1000",
+				"-static-thresh", fmt.Sprintf("%d", vbrThreshold),
 			)
 		} else {
 			// CBR: force target and minrate to be equal
@@ -44,7 +44,7 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 		outputArgs = append(outputArgs,
 			"-b:v", "2M",
 			"-crf", fmt.Sprintf("%d", crf),
-			"-static-thresh", "1000",
+			"-static-thresh", fmt.Sprintf("%d", vbrThreshold),
 		)
 
 		maxKbps := 2000 + (quality-10)*18000/90

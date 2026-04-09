@@ -7,7 +7,7 @@ import (
 	"log"
 )
 
-func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, keyframeInterval int) []string {
+func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int) []string {
 	var outputArgs []string
 
 	if VideoCodec == "h264_nvenc" {
@@ -39,8 +39,10 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 					"-bufsize", bufSizeStr,
 				)
 			} else {
+				crf := 28 + (vbrThreshold / 50)
+				if crf > 51 { crf = 51 }
 				outputArgs = append(outputArgs,
-					"-crf", "30",
+					"-crf", fmt.Sprintf("%d", crf),
 					"-maxrate", bitrateStr,
 					"-bufsize", bufSizeStr,
 				)
@@ -57,6 +59,10 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, keyframe
 		}
 	} else {
 		val := 51 - (quality-10)*33/90 // Map 10-100 to 51-18
+		if vbr {
+			val += (vbrThreshold / 50)
+			if val > 51 { val = 51 }
+		}
 		if VideoCodec == "h264_nvenc" {
 			outputArgs = append(outputArgs, "-rc", "vbr", "-cq", fmt.Sprintf("%d", val))
 		} else {

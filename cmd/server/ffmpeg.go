@@ -15,7 +15,7 @@ var (
 	targetBandwidthMbps    = 5           // Initial default: 5 Mbps
 	targetQuality          = 70          // 10-100
 	targetVBR              = false       // Default VBR to false
-	targetVBRThreshold     = 100         // Default VBR threshold to 100
+	targetVBRThreshold     = 0           // Default VBR threshold to 0
 	targetDamageTracking   = false       // Default Damage Tracking to false
 	targetMpdecimate       = false       // Default mpdecimate to false
 	targetCpuEffort        = 6           // Default: 6
@@ -385,13 +385,13 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				w, h := GetScreenSize()
 				var ffmpegArgs []string
 				if VideoCodec == "vp8" {
-					ffmpegArgs = buildVP8Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetKeyframeInterval)
+					ffmpegArgs = buildVP8Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
-					ffmpegArgs = buildH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetKeyframeInterval)
+					ffmpegArgs = buildH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
-					ffmpegArgs = buildH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetKeyframeInterval)
+					ffmpegArgs = buildH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
-					ffmpegArgs = buildAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetKeyframeInterval)
+					ffmpegArgs = buildAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				}
 
 				// Insert testsrc at the beginning
@@ -458,8 +458,8 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 							"-p", "lag-in-frames=0",
 						)
 						if targetVBR {
-							// For VBR: set a low target bitrate and higher CRF to save bits on static scenes
-							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", "b=1M")
+							// For VBR: set a target maxrate and use static-thresh for bit saving
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=30", "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
 						} else {
 							// For CBR: target, maxrate, and minrate should match
 							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
@@ -467,12 +467,10 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 					} else if codec == "libx264" || codec == "libx265" {
 						args = append(args, "-p", "tune=zerolatency")
 						if targetVBR {
-							// For H264/H265, use the threshold to offset CRF (more threshold = higher CRF = more aggressive bit saving)
-							crf := 30 + (targetVBRThreshold / 100)
-							if crf > 51 {
-								crf = 51
-							}
-							args = append(args, "-p", fmt.Sprintf("crf=%d", crf), "-p", "b=1M")
+							// For H264/H265 VBR, use threshold to offset CRF
+							crf := 28 + (targetVBRThreshold / 50)
+							if crf > 51 { crf = 51 }
+							args = append(args, "-p", fmt.Sprintf("crf=%d", crf), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
 						} else {
 							args = append(args, "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
 						}
@@ -485,14 +483,14 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 					} else if codec == "libaom-av1" {
 						args = append(args, "-p", "usage=realtime", "-p", "row-mt=1", "-p", "lag-in-frames=0", "-p", "error-resilient=1")
 						if targetVBR {
-							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", "b=1M")
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
 						} else {
 							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
 						}
 					}
 
 					args = append(args,
-						"-p", fmt.Sprintf("cpu-used=%d", targetCpuEffort),
+						"-p", "cpu-used=8",
 						"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
 						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
