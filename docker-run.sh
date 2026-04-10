@@ -18,8 +18,8 @@ SERVER_RESOLUTION="${RESOLUTION:-0}"
 # Port mappings (override via env vars)
 HOST_PORT="${HOST_PORT:-8080}"
 CONTAINER_PORT="${CONTAINER_PORT:-$SERVER_PORT}"
-
 USE_GPU="false"
+USE_INTEL="false"
 USE_DETACHED="false"
 USE_HOST_NET="false"
 USE_DEBUG_FFMPEG="false"
@@ -44,6 +44,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --host-net)
       USE_HOST_NET="true"
+      shift
+      ;;
+    --intel)
+      USE_INTEL="true"
       shift
       ;;
     --webrtc-buffer)
@@ -159,19 +163,43 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ "$USE_GPU" = "false" ]; then
+if [ "$USE_GPU" = "false" ] && [ "$USE_INTEL" = "false" ]; then
   SERVER_VIDEO_CODEC="${VIDEO_CODEC:-vp8}"
   echo "  Mode  : Wayland (Minimal ${SERVER_VIDEO_CODEC} CPU)"
+elif [ "$USE_INTEL" = "true" ]; then
+  echo "  Mode  : Wayland (Intel GPU)"
 else
-  echo "  Mode  : Wayland (GPU)"
+  echo "  Mode  : Wayland (NVIDIA GPU)"
 fi
 
-if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ "$USE_GPU" != "true" ]; then
-  echo "❌ ERROR: --capture-mode direct requires --gpu."
+if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ "$USE_GPU" != "true" ] && [ "$USE_INTEL" != "true" ]; then
+  echo "❌ ERROR: --capture-mode direct requires --gpu or --intel."
   exit 1
 fi
 
 GPU_ARGS=""
+if [ "$USE_INTEL" = "true" ]; then
+  if [ -z "${VIDEO_CODEC:-}" ]; then
+    SERVER_VIDEO_CODEC="h264_qsv"
+  fi
+  if [ -d /dev/dri ]; then
+    GPU_ARGS="--device /dev/dri:/dev/dri"
+    for node in /dev/dri/card* /dev/dri/renderD*; do
+      if [ -e "$node" ]; then
+        GPU_ARGS="$GPU_ARGS --device $node:$node"
+      fi
+    done
+    if [ -z "$HOST_RENDER_GID" ] && [ -e /dev/dri/renderD128 ]; then
+      HOST_RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
+    fi
+    if [ -z "$HOST_VIDEO_GID" ] && [ -e /dev/dri/card0 ]; then
+      HOST_VIDEO_GID=$(stat -c '%g' /dev/dri/card0)
+    fi
+  else
+    echo "Warning: /dev/dri not found, but Intel GPU was requested."
+  fi
+fi
+
 if [ "$USE_GPU" = "true" ]; then
   # Verify if Docker has NVIDIA runtime/toolkit support
   if ! docker info 2>/dev/null | grep -qi "Runtimes.*nvidia"; then
@@ -191,12 +219,12 @@ if [ "$USE_GPU" = "true" ]; then
   NVCC_PATH=$(command -v nvcc || true)
   if [ -n "$NVCC_PATH" ]; then
     CUDA_DIR=$(dirname $(dirname "$NVCC_PATH"))
-    GPU_ARGS="--gpus all -v $CUDA_DIR:$CUDA_DIR -v $NVCC_PATH:$NVCC_PATH -e NVIDIA_DRIVER_CAPABILITIES=all"
+    GPU_ARGS="$GPU_ARGS --gpus all -v $CUDA_DIR:$CUDA_DIR -v $NVCC_PATH:$NVCC_PATH -e NVIDIA_DRIVER_CAPABILITIES=all"
   else
     echo "Warning: nvcc not found, but GPU was requested."
-    GPU_ARGS="--gpus all -e NVIDIA_DRIVER_CAPABILITIES=all"
+    GPU_ARGS="$GPU_ARGS --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all"
   fi
-  if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ -d /dev/dri ]; then
+  if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ -d /dev/dri ] && ! echo "$GPU_ARGS" | grep -q "/dev/dri"; then
     GPU_ARGS="$GPU_ARGS --device /dev/dri:/dev/dri"
     if [ -z "$HOST_RENDER_GID" ] && [ -e /dev/dri/renderD128 ]; then
       HOST_RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
@@ -282,6 +310,8 @@ docker run \
   --env DAMAGE_TRACKING="${SERVER_DAMAGE_TRACKING}" \
   --env VIDEO_CODEC="${SERVER_VIDEO_CODEC}" \
   --env USE_GPU="${USE_GPU}" \
+  --env USE_INTEL="${USE_INTEL}" \
+  --env LIBVA_DRIVER_NAME="iHD" \
   --env CAPTURE_MODE="${SERVER_CAPTURE_MODE}" \
   --env TEST_PATTERN="${TEST_PATTERN:-}" \
   --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP:-}" \

@@ -16,11 +16,14 @@ var (
 	VideoCodec  string
 	Chroma      string
 	UseGPU      bool
+	UseIntel    bool
 	CaptureMode string
 
 	AV1NVENCAvailable       bool
 	H264NVENC444Available   bool
 	H265NVENC444Available   bool
+	QSVAvailable            bool
+	AV1QSVAvailable         bool
 	UseDebugFFmpeg          bool
 	UseDebugInput           bool
 	TestPattern             bool
@@ -69,6 +72,7 @@ func initConfig() {
 	}
 
 	defaultUseGPU := os.Getenv("USE_GPU") == "true"
+	defaultUseIntel := os.Getenv("USE_INTEL") == "true"
 	defaultCaptureMode := os.Getenv("CAPTURE_MODE")
 	if defaultCaptureMode == "" {
 		defaultCaptureMode = CaptureModeCompat
@@ -163,9 +167,10 @@ func initConfig() {
 		printFlag(os.Stderr, "port", "Port for HTTP and WebRTC UDP", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
 		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", targetBandwidthMbps)
-		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)", VideoCodec)
+		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, av1, av1_nvenc, av1_qsv)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-gpu", "Enable GPU acceleration if available", UseGPU)
+		printFlag(os.Stderr, "use-intel", "Enable Intel QSV acceleration if available", UseIntel)
 		printFlag(os.Stderr, "capture-mode", "Capture mode (compat or direct)", CaptureMode)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
 		printFlag(os.Stderr, "wallpaper", "Path to wallpaper image", Wallpaper)
@@ -197,9 +202,10 @@ func initConfig() {
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
 	flag.IntVar(&targetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
-	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h265, h265_nvenc, av1, av1_nvenc)")
+	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, av1, av1_nvenc, av1_qsv)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseGPU, "use-gpu", defaultUseGPU, "Enable GPU acceleration if available")
+	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel QSV acceleration if available")
 	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat or direct)")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")
 	flag.BoolVar(&UseDebugInput, "use-debug-input", defaultUseDebugInput, "Enable Input debugging")
@@ -261,6 +267,23 @@ func initConfig() {
 			log.Printf("H.265 NVENC 4:4:4 support NOT detected")
 		}
 	}
+
+	if UseIntel {
+		log.Printf("Checking Intel QSV capabilities...")
+		outQSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q h264_qsv && echo true || echo false").Output()
+		QSVAvailable = strings.TrimSpace(string(outQSV)) == "true"
+		if QSVAvailable {
+			log.Printf("Intel QSV hardware acceleration detected")
+			outAV1QSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_qsv && echo true || echo false").Output()
+			AV1QSVAvailable = strings.TrimSpace(string(outAV1QSV)) == "true"
+			if AV1QSVAvailable {
+				log.Printf("AV1 QSV support detected")
+			}
+		} else {
+			log.Printf("Intel QSV hardware acceleration NOT detected")
+		}
+	}
+
 }
 
 func printFlag(w *os.File, name, usage string, def any) {

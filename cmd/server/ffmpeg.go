@@ -65,6 +65,10 @@ func ResumeStreaming() {
 	isResizing = false
 }
 
+func isQSVCodec(codec string) bool {
+	return codec == "h264_qsv" || codec == "h265_qsv" || codec == "av1_qsv" || codec == "h264_vaapi" || codec == "hevc_vaapi" || codec == "av1_vaapi"
+}
+
 func SetChroma(chroma string) {
 	if chroma != "420" && chroma != "444" {
 		log.Printf("Invalid chroma setting: %s", chroma)
@@ -89,7 +93,7 @@ func SetChroma(chroma string) {
 }
 
 func SetVideoCodec(codec string) {
-	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h265" && codec != "h265_nvenc" && codec != "av1" && codec != "av1_nvenc" {
+	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h264_qsv" && codec != "h265" && codec != "h265_nvenc" && codec != "h265_qsv" && codec != "av1" && codec != "av1_nvenc" && codec != "av1_qsv" {
 		log.Printf("Invalid video codec: %s", codec)
 		return
 	}
@@ -319,6 +323,13 @@ func SetAudioBitrate(bitrate string) {
 	}
 }
 
+func getIntelDRMNode() string {
+	if _, err := os.Stat("/dev/dri/renderD129"); err == nil {
+		return "/dev/dri/renderD129"
+	}
+	return "/dev/dri/renderD128"
+}
+
 func startStreaming(onFrame func([]byte, uint32, string)) {
 	var lastStreamID uint32
 
@@ -360,12 +371,20 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				codec = "h264_nvenc"
 				codecName = "h264"
 				format = "h264"
+			} else if VideoCodec == "h264_qsv" {
+				codec = "h264_vaapi"
+				codecName = "h264"
+				format = "h264"
 			} else if VideoCodec == "h265" {
 				codec = "libx265"
 				codecName = "h265"
 				format = "hevc"
 			} else if VideoCodec == "h265_nvenc" {
 				codec = "hevc_nvenc"
+				codecName = "h265"
+				format = "hevc"
+			} else if VideoCodec == "h265_qsv" {
+				codec = "hevc_vaapi"
 				codecName = "h265"
 				format = "hevc"
 			} else if VideoCodec == "av1" {
@@ -376,7 +395,13 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				codec = "av1_nvenc"
 				codecName = "av1"
 				format = "ivf"
+			} else if VideoCodec == "av1_qsv" {
+				codec = "av1_vaapi"
+				codecName = "av1"
+				format = "ivf"
 			}
+
+
 
 			var cmd *exec.Cmd
 			if TestPattern {
@@ -388,10 +413,16 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 					ffmpegArgs = buildVP8Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
 					ffmpegArgs = buildH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+				} else if VideoCodec == "h264_qsv" {
+					ffmpegArgs = buildQSVH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
 					ffmpegArgs = buildH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+				} else if VideoCodec == "h265_qsv" {
+					ffmpegArgs = buildQSVH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
 					ffmpegArgs = buildAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+				} else if VideoCodec == "av1_qsv" {
+					ffmpegArgs = buildQSVAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				}
 
 				// Insert testsrc at the beginning
@@ -447,6 +478,30 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 
 					if codec == "h264_nvenc" || codec == "hevc_nvenc" {
 						args = append(args, "-p", "aud=1")
+					}
+				} else if isQSVCodec(codec) {
+					// Intel hardware encoding via VAAPI (mapped from QSV names internally)
+					args = append(args, "-d", getIntelDRMNode())
+					
+					// We do not pass -x nv12 here because wf-recorder automatically 
+					// adds the necessary hwupload and scale_vaapi=format=nv12 filters.
+
+					args = append(args,
+						"-p", fmt.Sprintf("b=%dk", targetBandwidthMbps*1000),
+						"-p", fmt.Sprintf("maxrate=%dk", targetBandwidthMbps*1000),
+						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
+					)
+
+					if codec == "h264_vaapi" || codec == "hevc_vaapi" {
+						args = append(args, "-p", "aud=1")
+					}
+					
+					if codec == "h264_vaapi" {
+						args = append(args, "-p", "profile=77") // main
+					} else if codec == "hevc_vaapi" {
+						args = append(args, "-p", "profile=1") // main
+					} else if codec == "av1_vaapi" {
+						args = append(args, "-p", "profile=0") // main
 					}
 				} else {
 					// CPU encoding

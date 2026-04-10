@@ -17,7 +17,9 @@ FROM ubuntu:25.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV USE_WAYLAND=true
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+  && add-apt-repository -y ppa:kobuk-team/intel-graphics \
+  && apt-get update && apt-get install -y --no-install-recommends \
   labwc \
   xwayland \
   wlr-randr \
@@ -28,6 +30,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   wf-recorder \
   swaybg \
   ffmpeg \
+  intel-media-va-driver-non-free \
+  libvpl2 \
+  libvpl-tools \
+  libmfx-gen1.2 \
+  va-driver-all \
+  libva-drm2 \
+  libva2 \
+  vainfo \
   xfce4 \
   xfce4-goodies \
   xfce4-pulseaudio-plugin \

@@ -30,11 +30,11 @@ var (
 
 func normalizeCodecFamily(codec string) string {
 	switch codec {
-	case "h264", "h264_nvenc":
+	case "h264", "h264_nvenc", "h264_qsv":
 		return "h264"
-	case "h265", "h265_nvenc":
+	case "h265", "h265_nvenc", "h265_qsv":
 		return "h265"
-	case "av1", "av1_nvenc":
+	case "av1", "av1_nvenc", "av1_qsv":
 		return "av1"
 	default:
 		return codec
@@ -47,11 +47,11 @@ func initWebRTCTrack() {
 
 	var err error
 	mimeType := webrtc.MimeTypeVP8
-	if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
+	if VideoCodec == "h264" || VideoCodec == "h264_nvenc" || VideoCodec == "h264_qsv" {
 		mimeType = webrtc.MimeTypeH264
-	} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
+	} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" || VideoCodec == "h265_qsv" {
 		mimeType = "video/H265"
-	} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
+	} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" || VideoCodec == "av1_qsv" {
 		mimeType = webrtc.MimeTypeAV1
 	}
 	log.Printf("Initializing WebRTC with %s track", mimeType)

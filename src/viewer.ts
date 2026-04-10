@@ -144,6 +144,9 @@ function updateDirectBufferUi(msg: Record<string, unknown>) {
 }
 
 function sendConfig() {
+    if (isReinitializingWebRTC) {
+        return;
+    }
     if (configDebounceTimer) {
         clearTimeout(configDebounceTimer);
     }
@@ -626,6 +629,14 @@ if (codecGpuOpts) {
     gpuOptionsList = Array.from(codecGpuOpts);
 }
 
+function normalizeCodecFamily(codec: string): string {
+    if (!codec) return 'vp8';
+    if (codec.startsWith('h264')) return 'h264';
+    if (codec.startsWith('h265')) return 'h265';
+    if (codec.startsWith('av1')) return 'av1';
+    return codec;
+}
+
 function handleJsonMessage(msg: Record<string, unknown>) {
     if (msg.type === 'config') {
         const firstConfig = !hasReceivedInitialConfig;
@@ -635,7 +646,11 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {
             log(`Server codec: ${msg.videoCodec}`);
-            if (webcodecs.videoCodec !== msg.videoCodec || webrtc.videoCodec !== msg.videoCodec) {
+            const normalizedNew = normalizeCodecFamily(msg.videoCodec);
+            const normalizedWebCodecs = normalizeCodecFamily(webcodecs.videoCodec);
+            const normalizedWebRTC = normalizeCodecFamily(webrtc.videoCodec);
+
+            if (normalizedWebCodecs !== normalizedNew || normalizedWebRTC !== normalizedNew) {
                 webcodecs.videoCodec = msg.videoCodec;
                 webrtc.videoCodec = msg.videoCodec;
                 
@@ -682,23 +697,25 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (webrtc.rtcPeer && codecChanged) {
             log('Codec change triggered WebRTC re-initialization...');
+            isReinitializingWebRTC = true;
             webrtc.initWebRTC();
             // Clear flag after 2 seconds or when WebRTC becomes active again
             setTimeout(() => { isReinitializingWebRTC = false; }, 2000);
         }
 
         if (msg.restarted === true) {
-            log('Config updated, sending Kill() to restart stream...');
+            log('Server stream restarted');
         }
 
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {
-            if (msg.gpuAvailable !== undefined) {
-                window.gpuAvailable = msg.gpuAvailable as boolean;
+            if (msg.gpuAvailable !== undefined || msg.qsvAvailable !== undefined) {
+                const anyGpuAvailable = (msg.gpuAvailable as boolean) || (msg.qsvAvailable as boolean);
+                window.gpuAvailable = anyGpuAvailable;
                 
                 // Toggle visibility for all GPU-only elements
                 const gpuOnlyElements = document.querySelectorAll('.gpu-only') as NodeListOf<HTMLElement>;
                 gpuOnlyElements.forEach(el => {
-                    if (msg.gpuAvailable) {
+                    if (anyGpuAvailable) {
                         el.style.removeProperty('display');
                     } else {
                         el.style.setProperty('display', 'none', 'important');
@@ -706,11 +723,22 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                 });
 
                 if (videoCodecSelect && gpuOptionsList.length > 0) {
-                    const av1Available = msg.av1NvencAvailable as boolean;
+                    const nvencAvailable = msg.gpuAvailable as boolean;
+                    const av1NvencAvailable = msg.av1NvencAvailable as boolean;
+                    const qsvAvailable = msg.qsvAvailable as boolean;
+                    const av1QsvAvailable = msg.av1QsvAvailable as boolean;
                     
                     gpuOptionsList.forEach(opt => {
-                        const isAV1 = opt.value === 'av1_nvenc';
-                        const shouldShow = msg.gpuAvailable && (!isAV1 || av1Available);
+                        const isNVENC = opt.value.endsWith('_nvenc');
+                        const isQSV = opt.value.endsWith('_qsv');
+                        const isAV1 = opt.value.startsWith('av1');
+                        
+                        let shouldShow = false;
+                        if (isNVENC) {
+                            shouldShow = nvencAvailable && (!isAV1 || av1NvencAvailable);
+                        } else if (isQSV) {
+                            shouldShow = qsvAvailable && (!isAV1 || av1QsvAvailable);
+                        }
                         
                         if (shouldShow) {
                             if (!Array.from(videoCodecSelect.options).includes(opt)) {

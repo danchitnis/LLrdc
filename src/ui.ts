@@ -83,8 +83,8 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     if (!statusEl) return;
     
     // Clean up codec name for display and check for GPU
-    const isGpu = codec.includes('nvenc');
-    const displayCodec = codec.replace('_nvenc', '');
+    const isGpu = codec.includes('nvenc') || codec.includes('qsv');
+    const displayCodec = codec.replace('_nvenc', '').replace('_qsv', '');
     const gpuTag = isGpu ? ' 🚀 GPU' : '';
     
     const transportInfo = isWebRtcActive ? `[WebRTC ${displayCodec}${gpuTag}]` : `[WebCodecs ${displayCodec}${gpuTag}]`;

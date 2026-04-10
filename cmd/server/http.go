@@ -49,6 +49,8 @@ func configPayload(restarted bool) map[string]interface{} {
 		"av1NvencAvailable":      AV1NVENCAvailable,
 		"h264Nvenc444Available":  H264NVENC444Available,
 		"h265Nvenc444Available":  H265NVENC444Available,
+		"qsvAvailable":           QSVAvailable,
+		"av1QsvAvailable":        AV1QSVAvailable,
 		"framerate":              FPS,
 		"bandwidth":              targetBandwidthMbps,
 		"quality":                targetQuality,
