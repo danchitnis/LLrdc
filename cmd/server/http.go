@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ func configPayload(restarted bool) map[string]interface{} {
 		"h265Nvenc444Available":  H265NVENC444Available,
 		"qsvAvailable":           QSVAvailable,
 		"av1QsvAvailable":        AV1QSVAvailable,
+		"useIntel":               UseIntel,
 		"framerate":              FPS,
 		"bandwidth":              targetBandwidthMbps,
 		"quality":                targetQuality,
@@ -74,10 +76,48 @@ func configPayload(restarted bool) map[string]interface{} {
 	}
 }
 
+func getIntelGPUUtil() float64 {
+	// Sample for 0.8s with 100ms frequency to get multiple full samples
+	cmd := exec.Command("sudo", "timeout", "0.8", "intel_gpu_top", "-d", "drm:"+getIntelDRMNode(), "-J", "-s", "100")
+	out, _ := cmd.Output()
+	raw := string(out)
+
+	if raw == "" {
+		return 0
+	}
+
+	// Use regex to find the 'busy' percentage for Video and VideoEnhance engines.
+	// This is much more robust than parsing the whole JSON stream which might be truncated or misformatted.
+	reVideo := regexp.MustCompile(`"Video":\s*\{\s*"busy":\s*([0-9.]+)`)
+	reEnhance := regexp.MustCompile(`"VideoEnhance":\s*\{\s*"busy":\s*([0-9.]+)`)
+
+	videoMatches := reVideo.FindAllStringSubmatch(raw, -1)
+	enhanceMatches := reEnhance.FindAllStringSubmatch(raw, -1)
+
+	var total float64 = 0
+	
+	// We take the last valid match for each engine to get the most recent reading
+	if len(videoMatches) > 0 {
+		last := videoMatches[len(videoMatches)-1]
+		if val, err := strconv.ParseFloat(last[1], 64); err == nil {
+			total += val
+		}
+	}
+	
+	if len(enhanceMatches) > 0 {
+		last := enhanceMatches[len(enhanceMatches)-1]
+		if val, err := strconv.ParseFloat(last[1], 64); err == nil {
+			total += val
+		}
+	}
+	
+	return total
+}
+
 func startHTTPServer() {
 	go func() {
 		for {
-			time.Sleep(2 * time.Second)
+			time.Sleep(5 * time.Second)
 
 			ffmpegMutex.Lock()
 			cmd := ffmpegCmd
@@ -100,9 +140,15 @@ func startHTTPServer() {
 				}
 			}
 
+			var intelGpuUtil float64 = 0
+			if UseIntel {
+				intelGpuUtil = getIntelGPUUtil()
+			}
+
 			statsMsg := map[string]interface{}{
-				"type":      "stats",
-				"ffmpegCpu": cpuUsage,
+				"type":         "stats",
+				"ffmpegCpu":    cpuUsage,
+				"intelGpuUtil": intelGpuUtil,
 			}
 
 			clientsMutex.Lock()

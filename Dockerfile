@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
   wf-recorder \
   swaybg \
   ffmpeg \
+  intel-gpu-tools \
   intel-media-va-driver-non-free \
   libvpl2 \
   libvpl-tools \
@@ -86,6 +87,7 @@ ARG UID=1000
 RUN userdel -r ubuntu || true \
   && useradd -m -s /bin/bash -u ${UID} remote \
   && echo 'remote ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/remote \
+  && echo 'remote ALL=(ALL) NOPASSWD: /usr/bin/intel_gpu_top' >> /etc/sudoers.d/remote \
   && chmod 0440 /etc/sudoers.d/remote
 
 WORKDIR /app

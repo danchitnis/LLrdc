@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setUseIntel, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -708,6 +708,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         }
 
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {
+            if (msg.useIntel !== undefined && typeof msg.useIntel === 'boolean') {
+                setUseIntel(msg.useIntel);
+            }
+
             if (msg.gpuAvailable !== undefined || msg.qsvAvailable !== undefined) {
                 const anyGpuAvailable = (msg.gpuAvailable as boolean) || (msg.qsvAvailable as boolean);
                 window.gpuAvailable = anyGpuAvailable;
@@ -887,6 +891,9 @@ function handleJsonMessage(msg: Record<string, unknown>) {
     } else if (msg.type === 'stats') {
         if (typeof msg.ffmpegCpu === 'number') {
             setServerFfmpegCpu(msg.ffmpegCpu);
+        }
+        if (typeof msg.intelGpuUtil === 'number') {
+            setServerIntelGpuUtil(msg.intelGpuUtil);
         }
     } else if (msg.type === 'lossless_patch') {
         if (sharpnessCtx && msg.data && typeof msg.data === 'string' && typeof msg.x === 'number' && typeof msg.y === 'number') {
