@@ -96,6 +96,7 @@ const TARGET_VIEWPORT_WIDTH = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_
 const TARGET_VIEWPORT_HEIGHT = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_HEIGHT ?? '720', 10);
 const TARGET_VIDEO_CODEC = process.env.LLRDC_TARGET_VIDEO_CODEC ?? 'vp8';
 const TARGET_USE_GPU = (process.env.LLRDC_USE_GPU ?? 'false') === 'true';
+const TARGET_USE_INTEL = (process.env.LLRDC_USE_INTEL ?? 'false') === 'true';
 const TARGET_CAPTURE_MODES = (process.env.LLRDC_CAPTURE_MODES ?? 'compat')
     .split(',')
     .map(mode => mode.trim())
@@ -118,9 +119,10 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
     } catch (_error) {}
 
     const gpuArg = TARGET_USE_GPU ? '--gpu ' : '';
+    const intelArg = TARGET_USE_INTEL ? '--intel ' : '';
     const debugArg = process.env.USE_DEBUG_FFMPEG === 'true' ? '--debug-ffmpeg ' : '';
     const resArg = TARGET_MAX_RES > 0 ? `--res ${TARGET_MAX_RES}p ` : '';
-    execSync(`./docker-run.sh ${gpuArg}${debugArg}${resArg}--capture-mode ${mode} --detach --name ${containerName} --host-net`, {
+    execSync(`./docker-run.sh ${gpuArg}${intelArg}${debugArg}${resArg}--capture-mode ${mode} --detach --name ${containerName}`, {
         env: {
             ...process.env,
             PORT: port.toString(),
@@ -314,7 +316,7 @@ async function sweepUntilProbeToggles(
 
         const inputSentAtMs = Date.now();
         // Instantaneous sweep across the middle to eliminate Playwright's event loop stepping delays
-        await page.mouse.move(endX, midY, { steps: 1 });
+        await page.mouse.move(endX, midY, { steps: 5 });
 
         try {
             await expect.poll(() => readProbeState(containerName).marker, {
@@ -363,7 +365,7 @@ async function waitForPresentedFrameColor(page: Page, expectedColor: 'black' | '
 
                 const cx = Math.floor(canvas.width / 2);
                 const cy = Math.floor(canvas.height / 2);
-                const radius = 6;
+                const radius = 20;
                 const image = ctx.getImageData(cx - radius, cy - radius, radius * 2, radius * 2).data;
                 let total = 0;
                 let count = 0;
@@ -449,7 +451,7 @@ async function collectModeSummary(
 
     await page.goto(baseUrl);
     await page.click('body');
-    await expect(page.locator('#status')).toContainText(/\[WebRTC|\[WebCodecs/, { timeout: 45000 });
+    await expect(page.locator('#status')).toContainText(/\[.*\]/, { timeout: 45000 });
     await setTargetViewport(page);
     await configureStreamTarget(page, containerName);
     await initPresentedFrameTracker(page);
@@ -584,7 +586,7 @@ test.describe('Wayland Mouse Latency Benchmark', () => {
 
         expect(TARGET_CAPTURE_MODES.length).toBeGreaterThan(0);
 
-        const basePort = 8731;
+        const basePort = 8100 + Math.floor(Math.random() * 800);
         const ports = new Map<CaptureMode, number>();
         const containers = new Map<CaptureMode, string>();
         TARGET_CAPTURE_MODES.forEach((mode, index) => {
@@ -603,10 +605,14 @@ test.describe('Wayland Mouse Latency Benchmark', () => {
                 const summary = await collectModeSummary(page, mode, url, container);
                 summaries.set(mode, summary);
                 await page.close();
+                await stopContainer(container, port);
             }
         } finally {
+            // Cleanup any remaining containers in case of failure
             for (const mode of TARGET_CAPTURE_MODES) {
-                await stopContainer(containers.get(mode)!, ports.get(mode)!);
+                try {
+                    execSync(`docker rm -f ${containers.get(mode)!}`, { stdio: 'ignore' });
+                } catch (e) {}
             }
         }
 

@@ -313,7 +313,7 @@ touch "$READY_FILE"
 			markDirectBufferProbeResult(renderNode, false, reason, probeResult)
 			return fmt.Errorf(reason)
 		}
-		markDirectBufferProbeResult(renderNode, true, "Direct-buffer probe passed; waiting for NVENC capture", probeResult)
+		markDirectBufferProbeResult(renderNode, true, "Direct-buffer probe passed; waiting for hardware capture", probeResult)
 		log.Printf("Direct-buffer probe passed (render node: %s, renderer: %s)", renderNode, compatibleRendererName())
 	}
 

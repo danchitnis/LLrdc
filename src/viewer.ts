@@ -121,7 +121,8 @@ function updateDirectBufferUi(msg: Record<string, unknown>) {
     if (videoCodecSelect) {
         Array.from(videoCodecSelect.options).forEach(option => {
             if (captureMode === 'direct') {
-                option.disabled = !option.value.endsWith('_nvenc');
+                const isHardware = option.value.endsWith('_nvenc') || option.value.endsWith('_qsv') || option.value.endsWith('_vaapi');
+                option.disabled = !isHardware;
             } else {
                 option.disabled = false;
             }

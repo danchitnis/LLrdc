@@ -129,6 +129,8 @@ func marshalReadinessStatus() ([]byte, error) {
 		"ready":        readiness.IsReady(),
 		"conditions":   readiness.Snapshot(),
 		"directBuffer": directState,
+		"useIntel":     UseIntel,
+		"useGpu":       UseGPU,
 	}
 	return json.Marshal(payload)
 }

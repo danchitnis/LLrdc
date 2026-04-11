@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,8 +36,12 @@ type directBufferProbeResult struct {
 var (
 	directBufferMu     sync.RWMutex
 	directBufferState  = directBufferStatus{CaptureMode: CaptureModeCompat, Reason: "Direct buffer disabled in compat mode"}
-	errDirectModeCodec = errors.New("direct capture mode requires an NVENC codec")
+	errDirectModeCodec = errors.New("direct capture mode requires a hardware codec (NVENC or QSV/VAAPI)")
 )
+
+func isHardwareCodec(codec string) bool {
+	return isNVENCCodec(codec) || isQSVCodec(codec)
+}
 
 func initDirectBufferState() {
 	directBufferMu.Lock()
@@ -90,6 +95,10 @@ func setDirectBufferActive(active bool, reason string) {
 			return
 		}
 
+		if state.Active != active && reason != "" {
+			log.Printf("Direct-buffer active status changed to %v: %s", active, reason)
+		}
+
 		state.Active = active && state.Supported
 		if reason != "" {
 			state.Reason = reason
@@ -116,10 +125,10 @@ func validateCaptureModeConfig() error {
 	if CaptureMode != CaptureModeDirect {
 		return nil
 	}
-	if !UseGPU {
-		return errors.New("direct capture mode requires --use-gpu")
+	if !UseGPU && !UseIntel {
+		return errors.New("direct capture mode requires --use-gpu or --use-intel")
 	}
-	if !isNVENCCodec(VideoCodec) {
+	if !isHardwareCodec(VideoCodec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, VideoCodec)
 	}
 	if Chroma != "420" {
@@ -132,7 +141,7 @@ func validateRuntimeDirectMode(codec string, chroma string) error {
 	if CaptureMode != CaptureModeDirect {
 		return nil
 	}
-	if !isNVENCCodec(codec) {
+	if !isHardwareCodec(codec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, codec)
 	}
 	if chroma != "420" {
@@ -146,11 +155,19 @@ func validateRuntimeDirectMode(codec string, chroma string) error {
 }
 
 func detectRenderNode() (string, error) {
+	if UseIntel {
+		if _, err := os.Stat("/dev/dri/renderD129"); err == nil {
+			return "/dev/dri/renderD129", nil
+		}
+	}
+
 	nodes, err := filepath.Glob("/dev/dri/renderD*")
 	if err != nil {
 		return "", err
 	}
-	for _, node := range nodes {
+	// Sort nodes to prefer higher indices which are usually discrete GPUs
+	for i := len(nodes) - 1; i >= 0; i-- {
+		node := nodes[i]
 		if info, statErr := os.Stat(node); statErr == nil && !info.IsDir() {
 			return node, nil
 		}

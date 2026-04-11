@@ -97,8 +97,8 @@ func SetVideoCodec(codec string) {
 		log.Printf("Invalid video codec: %s", codec)
 		return
 	}
-	if CaptureMode == CaptureModeDirect && !isNVENCCodec(codec) {
-		log.Printf("Ignoring codec change to %s: direct capture mode requires NVENC", codec)
+	if CaptureMode == CaptureModeDirect && !isHardwareCodec(codec) {
+		log.Printf("Ignoring codec change to %s: direct capture mode requires a hardware codec (NVENC or QSV/VAAPI)", codec)
 		return
 	}
 
@@ -324,6 +324,12 @@ func SetAudioBitrate(bitrate string) {
 }
 
 func getIntelDRMNode() string {
+	if CaptureMode == CaptureModeDirect {
+		state := snapshotDirectBufferState()
+		if state.RenderNode != "" {
+			return state.RenderNode
+		}
+	}
 	if _, err := os.Stat("/dev/dri/renderD129"); err == nil {
 		return "/dev/dri/renderD129"
 	}
@@ -579,7 +585,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				log.Fatalf("Failed to start wf-recorder: %v", err)
 			}
 			if CaptureMode == CaptureModeDirect {
-				setDirectBufferActive(true, "Direct-buffer probe passed and NVENC capture is active")
+				setDirectBufferActive(true, "Direct-buffer probe passed and hardware capture is active")
 			}
 
 			// Prime the compositor so damage tracking sessions emit an initial frame without waiting for user input.
