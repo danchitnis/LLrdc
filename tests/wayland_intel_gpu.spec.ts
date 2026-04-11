@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { spawn, ChildProcess, execSync } from 'child_process';
-import { waitForServerReady } from './helpers';
+import { waitForServerReady, waitForStreamingFrames } from './helpers';
 
 const PORT = 8100 + Math.floor(Math.random() * 1000);
 
@@ -28,6 +28,7 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
         serverProcess = spawn('./docker-run.sh', ['--intel', '--host-net'], {
             env: { 
                 ...process.env, 
+                IMAGE_TAG: 'local-test',
                 PORT: PORT.toString(), 
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME: CONTAINER_NAME
@@ -89,21 +90,7 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
             await page.waitForTimeout(100);
         }
 
-        await page.waitForFunction(() => {
-            const statusEl = document.getElementById('status');
-            return statusEl && statusEl.textContent && statusEl.textContent.includes('WebRTC');
-        }, { timeout: 30000 });
-
-        const getFrames = () => page.evaluate(() => (window as any).getStats ? (window as any).getStats().totalDecoded : 0);
-        
-        // Wait for frames to start increasing
-        await expect(async () => {
-            const f1 = await getFrames();
-            await page.waitForTimeout(2000);
-            const f2 = await getFrames();
-            expect(f2, `Stream should be active: ${message}`).toBeGreaterThan(f1);
-            console.log(`Active (${message}): ${f1} -> ${f2}`);
-        }).toPass({ timeout: 20000 });
+        await waitForStreamingFrames(page, `Stream should remain active: ${message}`, 30000);
     };
 
     test('should handle Intel QSV codec changes', async ({ page }) => {
@@ -138,12 +125,12 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
         await expect(status).toContainText(/av1_qsv|av1/i, { timeout: 45000 });
         await verifyStreaming(page, 'AV1 QSV after reload');
 
-        // 3. Change Codec: AV1 QSV -> H.265 QSV
-        console.log('Transitioning to H.265 QSV via reload...');
+        // 3. Change Codec: AV1 QSV -> H.265 CPU fallback
+        console.log('Transitioning to H.265 CPU via reload...');
         await page.evaluate(() => {
             const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
             if (sel) {
-                sel.value = 'h265_qsv';
+                sel.value = 'h265';
                 sel.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
@@ -151,8 +138,8 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
         await page.reload();
         await page.click('body');
 
-        await expect(status).toContainText(/h265_qsv|h265/i, { timeout: 45000 });
-        await verifyStreaming(page, 'H.265 QSV after reload');
+        await expect(status).toContainText(/\[h265\]/i, { timeout: 45000 });
+        await verifyStreaming(page, 'H.265 CPU after reload');
 
         console.log('Intel QSV reconfiguration scenarios verified!');
     });

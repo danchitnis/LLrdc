@@ -731,18 +731,20 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                     const nvencAvailable = msg.gpuAvailable as boolean;
                     const av1NvencAvailable = msg.av1NvencAvailable as boolean;
                     const qsvAvailable = msg.qsvAvailable as boolean;
+                    const h265QsvAvailable = msg.h265QsvAvailable !== false;
                     const av1QsvAvailable = msg.av1QsvAvailable as boolean;
                     
                     gpuOptionsList.forEach(opt => {
                         const isNVENC = opt.value.endsWith('_nvenc');
                         const isQSV = opt.value.endsWith('_qsv');
                         const isAV1 = opt.value.startsWith('av1');
+                        const isH265 = opt.value.startsWith('h265');
                         
                         let shouldShow = false;
                         if (isNVENC) {
                             shouldShow = nvencAvailable && (!isAV1 || av1NvencAvailable);
                         } else if (isQSV) {
-                            shouldShow = qsvAvailable && (!isAV1 || av1QsvAvailable);
+                            shouldShow = qsvAvailable && (!isAV1 || av1QsvAvailable) && (!isH265 || h265QsvAvailable);
                         }
                         
                         if (shouldShow) {

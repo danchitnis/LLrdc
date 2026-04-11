@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -39,7 +38,9 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 				)
 			} else {
 				crf := 28 + (vbrThreshold / 50)
-				if crf > 51 { crf = 51 }
+				if crf > 51 {
+					crf = 51
+				}
 				outputArgs = append(outputArgs,
 					"-crf", fmt.Sprintf("%d", crf),
 					"-maxrate", bitrateStr,
@@ -60,7 +61,9 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 		val := 51 - (quality-10)*33/90 // Map 10-100 to 51-18
 		if vbr {
 			val += (vbrThreshold / 50)
-			if val > 51 { val = 51 }
+			if val > 51 {
+				val = 51
+			}
 		}
 		if VideoCodec == "h265_nvenc" {
 			outputArgs = append(outputArgs, "-rc", "vbr", "-cq", fmt.Sprintf("%d", val))
@@ -85,41 +88,150 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	return outputArgs
 }
 
+func findAnnexBStartCode(data []byte, from int) (int, int, bool) {
+	if from < 0 {
+		from = 0
+	}
+	for i := from; i+3 < len(data); i++ {
+		if data[i] != 0 || data[i+1] != 0 {
+			continue
+		}
+		if data[i+2] == 1 {
+			return i, 3, true
+		}
+		if i+4 < len(data) && data[i+2] == 0 && data[i+3] == 1 {
+			return i, 4, true
+		}
+	}
+	return -1, 0, false
+}
+
+func h265NALType(nal []byte) (int, int, bool) {
+	start, prefixLen, ok := findAnnexBStartCode(nal, 0)
+	if !ok || start+prefixLen+1 >= len(nal) {
+		return -1, 0, false
+	}
+	return int((nal[start+prefixLen] & 0x7e) >> 1), prefixLen, true
+}
+
+func isH265VCLNAL(nalType int) bool {
+	return nalType >= 0 && nalType <= 31
+}
+
+func isH265PrefixBoundaryNAL(nalType int) bool {
+	switch nalType {
+	case 32, 33, 34, 35, 36, 37, 38, 39:
+		return true
+	default:
+		return false
+	}
+}
+
+func isH265SuffixNAL(nalType int) bool {
+	return nalType == 40
+}
+
+func isH265FirstSliceSegment(nal []byte, prefixLen int) bool {
+	payloadIdx := prefixLen + 2
+	if payloadIdx >= len(nal) {
+		return false
+	}
+	return nal[payloadIdx]&0x80 != 0
+}
+
+func joinNALUnits(nals [][]byte) []byte {
+	totalLen := 0
+	for _, nal := range nals {
+		totalLen += len(nal)
+	}
+
+	frame := make([]byte, 0, totalLen)
+	for _, nal := range nals {
+		frame = append(frame, nal...)
+	}
+	return frame
+}
+
 func splitH265AnnexB(reader io.Reader, onFrame func([]byte)) {
 	buffer := make([]byte, 0, 1024*1024)
 	temp := make([]byte, 16384)
-	// AUD markers for H.265 (NAL type 35 is 0x46 in the first byte)
-	marker4 := []byte{0x00, 0x00, 0x00, 0x01, 0x46}
-	marker3 := []byte{0x00, 0x00, 0x01, 0x46}
+	pendingPrefix := make([][]byte, 0, 4)
+	currentAU := make([][]byte, 0, 8)
+	currentHasVCL := false
+
+	emitCurrent := func() {
+		if len(currentAU) == 0 {
+			return
+		}
+		onFrame(joinNALUnits(currentAU))
+		currentAU = currentAU[:0]
+		currentHasVCL = false
+	}
+
+	processNAL := func(nal []byte) {
+		if len(nal) == 0 {
+			return
+		}
+
+		nalCopy := append([]byte(nil), nal...)
+		nalType, prefixLen, ok := h265NALType(nalCopy)
+		if !ok {
+			if currentHasVCL {
+				currentAU = append(currentAU, nalCopy)
+			} else {
+				pendingPrefix = append(pendingPrefix, nalCopy)
+			}
+			return
+		}
+
+		if isH265VCLNAL(nalType) {
+			if isH265FirstSliceSegment(nalCopy, prefixLen) && currentHasVCL {
+				emitCurrent()
+			}
+			if len(currentAU) == 0 && len(pendingPrefix) > 0 {
+				currentAU = append(currentAU, pendingPrefix...)
+				pendingPrefix = pendingPrefix[:0]
+			}
+			currentAU = append(currentAU, nalCopy)
+			currentHasVCL = true
+			return
+		}
+
+		if isH265SuffixNAL(nalType) && currentHasVCL {
+			currentAU = append(currentAU, nalCopy)
+			return
+		}
+
+		if currentHasVCL && isH265PrefixBoundaryNAL(nalType) {
+			emitCurrent()
+		}
+
+		pendingPrefix = append(pendingPrefix, nalCopy)
+	}
 
 	for {
 		n, err := reader.Read(temp)
 		if n > 0 {
 			buffer = append(buffer, temp[:n]...)
 			for {
-				if len(buffer) < 6 {
+				startIdx, prefixLen, ok := findAnnexBStartCode(buffer, 0)
+				if !ok {
+					if len(buffer) > 4 {
+						buffer = append([]byte(nil), buffer[len(buffer)-4:]...)
+					}
+					break
+				}
+				if startIdx > 0 {
+					buffer = buffer[startIdx:]
+				}
+
+				nextIdx, _, hasNext := findAnnexBStartCode(buffer, prefixLen)
+				if !hasNext {
 					break
 				}
 
-				// Find next AUD marker, skipping the first 4 bytes
-				nextIdx := -1
-				m4Idx := bytes.Index(buffer[4:], marker4)
-				m3Idx := bytes.Index(buffer[4:], marker3)
-
-				if m4Idx != -1 && (m3Idx == -1 || m4Idx <= m3Idx) {
-					nextIdx = m4Idx + 4
-				} else if m3Idx != -1 {
-					nextIdx = m3Idx + 4
-				}
-
-				if nextIdx != -1 {
-					frame := make([]byte, nextIdx)
-					copy(frame, buffer[:nextIdx])
-					onFrame(frame)
-					buffer = buffer[nextIdx:]
-				} else {
-					break
-				}
+				processNAL(buffer[:nextIdx])
+				buffer = buffer[nextIdx:]
 			}
 		}
 		if err != nil {
@@ -127,8 +239,11 @@ func splitH265AnnexB(reader io.Reader, onFrame func([]byte)) {
 				log.Printf("Error reading H265 stream: %v", err)
 			}
 			if len(buffer) > 0 {
-				onFrame(buffer)
+				if startIdx, _, ok := findAnnexBStartCode(buffer, 0); ok {
+					processNAL(buffer[startIdx:])
+				}
 			}
+			emitCurrent()
 			return
 		}
 	}

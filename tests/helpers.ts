@@ -1,3 +1,5 @@
+import { expect, Page } from '@playwright/test';
+
 export async function waitForServerReady(baseUrl: string, timeoutMs = 45000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     let lastStatus = 'server not reachable yet';
@@ -38,4 +40,51 @@ export interface ReadyzPayload {
 export async function fetchReadyz(baseUrl: string): Promise<ReadyzPayload> {
     const response = await fetch(`${baseUrl}/readyz`);
     return await response.json() as ReadyzPayload;
+}
+
+export interface ClientStats {
+    fps: number;
+    totalDecoded: number;
+    bandwidth?: number;
+    bytesReceived?: number;
+    latency?: number;
+}
+
+export async function readClientStats(page: Page): Promise<ClientStats> {
+    return await page.evaluate(() => {
+        if (!(window as any).getStats) {
+            return { fps: -1, totalDecoded: -1 };
+        }
+        return (window as any).getStats();
+    }) as ClientStats;
+}
+
+export async function waitForStreamingFrames(page: Page, message: string, timeoutMs = 45000): Promise<void> {
+    await expect.poll(async () => {
+        const before = await readClientStats(page);
+        await page.waitForTimeout(2000);
+        const after = await readClientStats(page);
+
+        return {
+            beforeDecoded: before.totalDecoded,
+            afterDecoded: after.totalDecoded,
+            deltaDecoded: after.totalDecoded - before.totalDecoded,
+            fps: after.fps,
+        };
+    }, {
+        timeout: timeoutMs,
+        message,
+    }).toMatchObject({
+        fps: expect.any(Number),
+    });
+
+    await expect.poll(async () => {
+        const before = await readClientStats(page);
+        await page.waitForTimeout(2000);
+        const after = await readClientStats(page);
+        return after.totalDecoded > before.totalDecoded && after.totalDecoded > 10 && after.fps > 0;
+    }, {
+        timeout: timeoutMs,
+        message,
+    }).toBe(true);
 }

@@ -131,6 +131,9 @@ func validateCaptureModeConfig() error {
 	if !isHardwareCodec(VideoCodec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, VideoCodec)
 	}
+	if UseIntel && VideoCodec == "h265_qsv" && !H265QSVAvailable {
+		return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
+	}
 	if Chroma != "420" {
 		return fmt.Errorf("direct capture mode currently requires chroma 420, got %s", Chroma)
 	}
@@ -143,6 +146,9 @@ func validateRuntimeDirectMode(codec string, chroma string) error {
 	}
 	if !isHardwareCodec(codec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, codec)
+	}
+	if UseIntel && codec == "h265_qsv" && !H265QSVAvailable {
+		return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
 	}
 	if chroma != "420" {
 		return fmt.Errorf("direct capture mode currently requires chroma 420, got %s", chroma)

@@ -24,7 +24,6 @@ var (
 	videoTrackMutex sync.RWMutex
 	// static buffer size is large, but we limit it dynamically in WriteWebRTCFrame
 	webrtcFrameChan = make(chan WebRTCFrame, 1000)
-	lastSampleTime  time.Time
 	currentStreamID uint32
 )
 
@@ -84,6 +83,7 @@ func initWebRTC() {
 
 	go func() {
 		var lastTrack *webrtc.TrackLocalStaticSample
+		var lastCaptureTime time.Time
 
 		framesWritten := 0
 		lastLogTime := time.Now()
@@ -100,6 +100,7 @@ func initWebRTC() {
 			// If track changed, reset state
 			if vt != lastTrack {
 				lastTrack = vt
+				lastCaptureTime = time.Time{}
 			}
 
 			// Drop frames from a different codec family to prevent decoder freezes across reconfigurations.
@@ -110,13 +111,27 @@ func initWebRTC() {
 			// If stream ID changed (e.g. FFmpeg restart), treat as new stream
 			if frame.StreamID != currentStreamID {
 				currentStreamID = frame.StreamID
+				lastCaptureTime = time.Time{}
 			}
 
-			// If we have a backlog of frames, tell the receiver to play them very fast (1ms pacing) to catch up.
 			duration := time.Second / time.Duration(FPS)
-			if len(webrtcFrameChan) > 0 {
-				duration = 1 * time.Millisecond
+			if !lastCaptureTime.IsZero() {
+				if delta := frame.CaptureTime.Sub(lastCaptureTime); delta > 0 {
+					duration = delta
+				}
 			}
+			if duration < time.Millisecond {
+				duration = time.Millisecond
+			}
+			// Clamp pathological gaps so reconnects or dropped bursts do not cause visible jumps.
+			maxDuration := 2 * time.Second / time.Duration(FPS)
+			if maxDuration < time.Millisecond {
+				maxDuration = time.Millisecond
+			}
+			if duration > maxDuration {
+				duration = maxDuration
+			}
+			lastCaptureTime = frame.CaptureTime
 
 			// Send the current frame immediately
 			err := vt.WriteSample(media.Sample{

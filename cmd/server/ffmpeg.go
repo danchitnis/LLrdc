@@ -97,6 +97,14 @@ func SetVideoCodec(codec string) {
 		log.Printf("Invalid video codec: %s", codec)
 		return
 	}
+	if UseIntel && codec == "h265_qsv" && !H265QSVAvailable {
+		if CaptureMode == CaptureModeDirect {
+			log.Printf("Ignoring codec change to %s: Intel H.265 direct encode is not supported on the current FFmpeg/driver stack", codec)
+			return
+		}
+		log.Printf("Intel H.265 hardware encode is not supported on the current FFmpeg/driver stack; falling back to CPU h265")
+		codec = "h265"
+	}
 	if CaptureMode == CaptureModeDirect && !isHardwareCodec(codec) {
 		log.Printf("Ignoring codec change to %s: direct capture mode requires a hardware codec (NVENC or QSV/VAAPI)", codec)
 		return
@@ -407,8 +415,6 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				format = "ivf"
 			}
 
-
-
 			var cmd *exec.Cmd
 			if TestPattern {
 				setDirectBufferActive(false, "Direct buffer is unavailable in test-pattern mode")
@@ -488,8 +494,8 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				} else if isQSVCodec(codec) {
 					// Intel hardware encoding via VAAPI (mapped from QSV names internally)
 					args = append(args, "-d", getIntelDRMNode())
-					
-					// We do not pass -x nv12 here because wf-recorder automatically 
+
+					// We do not pass -x nv12 here because wf-recorder automatically
 					// adds the necessary hwupload and scale_vaapi=format=nv12 filters.
 
 					args = append(args,
@@ -501,7 +507,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 					if codec == "h264_vaapi" || codec == "hevc_vaapi" {
 						args = append(args, "-p", "aud=1")
 					}
-					
+
 					if codec == "h264_vaapi" {
 						args = append(args, "-p", "profile=77") // main
 					} else if codec == "hevc_vaapi" {
@@ -530,7 +536,9 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 						if targetVBR {
 							// For H264/H265 VBR, use threshold to offset CRF
 							crf := 28 + (targetVBRThreshold / 50)
-							if crf > 51 { crf = 51 }
+							if crf > 51 {
+								crf = 51
+							}
 							args = append(args, "-p", fmt.Sprintf("crf=%d", crf), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
 						} else {
 							args = append(args, "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))

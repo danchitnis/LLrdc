@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
 import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from './helpers';
 
-const PORT = 8250 + Math.floor(Math.random() * 500);
+const PORT = 8900 + Math.floor(Math.random() * 200);
 const SERVER_URL = `http://localhost:${PORT}`;
-const CONTAINER_NAME = `llrdc-wayland-intel-direct-${PORT}`;
+const CONTAINER_NAME = `llrdc-wayland-h265-cpu-${PORT}`;
 
 function killPort(port: number) {
     try {
@@ -12,7 +12,7 @@ function killPort(port: number) {
     } catch (e) {}
 }
 
-test.describe('Wayland Intel Direct Buffer Path', () => {
+test.describe('Wayland CPU H.265', () => {
     test.beforeAll(async () => {
         test.setTimeout(90000);
         killPort(PORT);
@@ -20,14 +20,14 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
         } catch (e) {}
 
-        console.log(`Starting server with --intel --direct-buffer --host-net on port ${PORT}...`);
-        execSync(`./docker-run.sh --intel --direct-buffer --host-net --detach --name ${CONTAINER_NAME}`, {
+        execSync(`./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`, {
             env: {
                 ...process.env,
                 IMAGE_TAG: 'local-test',
                 PORT: PORT.toString(),
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME,
+                VIDEO_CODEC: 'h265',
             },
             stdio: 'inherit',
         });
@@ -42,39 +42,27 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
         } catch (e) {}
     });
 
-    test('should activate direct-buffer mode with Intel QSV and stream frames', async ({ page }) => {
+    test('should stream H.265 on CPU in compat mode', async ({ page }) => {
         test.setTimeout(120000);
 
         await expect.poll(async () => {
             return await fetchReadyz(SERVER_URL);
         }, {
             timeout: 30000,
-            message: 'Wait for direct-buffer mode to be reported as active in /readyz',
+            message: 'Wait for CPU H.265 server readiness in compat mode',
         }).toMatchObject({
             ready: true,
             directBuffer: {
-                requested: true,
-                supported: true,
-                active: true,
-                captureMode: 'direct',
+                captureMode: 'compat',
+                active: false,
             },
-            useIntel: true,
+            useIntel: false,
         });
-
-        await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
-            timeout: 20000,
-            message: 'Wait for direct-buffer probe success log',
-        }).toContain('Direct-buffer probe passed');
-
-        const logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-        expect(logs).toContain('hardware capture is active');
 
         await page.goto(SERVER_URL);
         await page.click('body');
 
-        await expect(page.locator('#direct-buffer-status')).toHaveText(/Active/, { timeout: 30000 });
-        await expect(page.locator('#status')).toContainText(/\[h264 🚀 GPU\]/, { timeout: 45000 });
-
-        await waitForStreamingFrames(page, 'Wait for decoded frames on the direct-buffer H.264 path');
+        await expect(page.locator('#status')).toContainText(/\[h265\]/i, { timeout: 45000 });
+        await waitForStreamingFrames(page, 'Wait for sustained CPU H.265 decoding');
     });
 });

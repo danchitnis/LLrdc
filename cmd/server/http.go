@@ -51,6 +51,7 @@ func configPayload(restarted bool) map[string]interface{} {
 		"h264Nvenc444Available":  H264NVENC444Available,
 		"h265Nvenc444Available":  H265NVENC444Available,
 		"qsvAvailable":           QSVAvailable,
+		"h265QsvAvailable":       H265QSVAvailable,
 		"av1QsvAvailable":        AV1QSVAvailable,
 		"useIntel":               UseIntel,
 		"framerate":              FPS,
@@ -95,7 +96,7 @@ func getIntelGPUUtil() float64 {
 	enhanceMatches := reEnhance.FindAllStringSubmatch(raw, -1)
 
 	var total float64 = 0
-	
+
 	// We take the last valid match for each engine to get the most recent reading
 	if len(videoMatches) > 0 {
 		last := videoMatches[len(videoMatches)-1]
@@ -103,14 +104,14 @@ func getIntelGPUUtil() float64 {
 			total += val
 		}
 	}
-	
+
 	if len(enhanceMatches) > 0 {
 		last := enhanceMatches[len(enhanceMatches)-1]
 		if val, err := strconv.ParseFloat(last[1], 64); err == nil {
 			total += val
 		}
 	}
-	
+
 	return total
 }
 

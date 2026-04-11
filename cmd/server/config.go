@@ -23,6 +23,7 @@ var (
 	H264NVENC444Available   bool
 	H265NVENC444Available   bool
 	QSVAvailable            bool
+	H265QSVAvailable        bool
 	AV1QSVAvailable         bool
 	UseDebugFFmpeg          bool
 	UseDebugInput           bool
@@ -96,7 +97,7 @@ func initConfig() {
 		defaultWebRTCBufferSize = bs
 	}
 
-	defaultActivityPulseHz := 10
+	defaultActivityPulseHz := 30
 	if ap, err := strconv.Atoi(os.Getenv("ACTIVITY_PULSE_HZ")); err == nil {
 		defaultActivityPulseHz = ap
 	}
@@ -233,10 +234,6 @@ func initConfig() {
 
 	flag.Parse()
 	initDirectBufferState()
-	if err := validateCaptureModeConfig(); err != nil {
-		log.Fatalf("Invalid direct-buffer configuration: %v", err)
-	}
-
 	if UseGPU {
 		log.Printf("Checking NVIDIA GPU capabilities...")
 
@@ -274,6 +271,13 @@ func initConfig() {
 		QSVAvailable = strings.TrimSpace(string(outQSV)) == "true"
 		if QSVAvailable {
 			log.Printf("Intel QSV hardware acceleration detected")
+			outH265QSV, _ := exec.Command("bash", "-c", "TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -vf format=nv12,hwupload -vaapi_device /dev/dri/renderD129 -c:v hevc_vaapi -bf 0 -rc_mode CBR -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -aud 1 -f hevc \"$TMP\" >/dev/null 2>&1 && [ \"$(ffprobe -hide_banner -show_frames -select_streams v -print_format compact=nk=1:p=0 \"$TMP\" 2>/dev/null | wc -l)\" -gt 10 ] && echo true || echo false").Output()
+			H265QSVAvailable = strings.TrimSpace(string(outH265QSV)) == "true"
+			if H265QSVAvailable {
+				log.Printf("Intel H.265 hardware encode support detected")
+			} else {
+				log.Printf("Intel H.265 hardware encode support NOT detected; disabling h265_qsv")
+			}
 			outAV1QSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_qsv && echo true || echo false").Output()
 			AV1QSVAvailable = strings.TrimSpace(string(outAV1QSV)) == "true"
 			if AV1QSVAvailable {
@@ -282,6 +286,18 @@ func initConfig() {
 		} else {
 			log.Printf("Intel QSV hardware acceleration NOT detected")
 		}
+	}
+
+	if UseIntel && VideoCodec == "h265_qsv" && !H265QSVAvailable {
+		if CaptureMode == CaptureModeDirect {
+			log.Fatalf("Invalid direct-buffer configuration: Intel H.265 hardware encode is not supported on this FFmpeg/driver stack; use h264_qsv or av1_qsv for direct mode")
+		}
+		log.Printf("Intel H.265 hardware encode is not supported on this FFmpeg/driver stack; falling back to CPU h265")
+		VideoCodec = "h265"
+	}
+
+	if err := validateCaptureModeConfig(); err != nil {
+		log.Fatalf("Invalid direct-buffer configuration: %v", err)
 	}
 
 }
