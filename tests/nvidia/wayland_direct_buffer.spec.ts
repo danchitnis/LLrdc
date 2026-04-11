@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady } from './helpers';
+import { fetchReadyz, waitForServerReady } from '../helpers';
 
 const PORT = 8200 + Math.floor(Math.random() * 500);
 const SERVER_URL = `http://localhost:${PORT}`;
@@ -19,7 +19,7 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
         } catch (e) {}
 
-        execSync(`./docker-run.sh --gpu --capture-mode direct --detach --name ${CONTAINER_NAME}`, {
+        execSync(`./docker-run.sh --nvidia --capture-mode direct --detach --name ${CONTAINER_NAME} --host-net`, {
             env: {
                 ...process.env,
                 PORT: PORT.toString(),
@@ -49,6 +49,7 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
             message: 'Wait for direct-buffer mode to be reported as active in /readyz',
         }).toMatchObject({
             ready: true,
+            acceleratorMode: 'nvidia',
             directBuffer: {
                 requested: true,
                 supported: true,

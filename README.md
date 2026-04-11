@@ -36,18 +36,18 @@ Once built, start the container using the run script:
 ./docker-run.sh
 ```
 
-To enable GPU acceleration (NVENC) on NVIDIA systems, add the `--gpu` flag:
+To enable GPU acceleration (NVENC) on NVIDIA systems, add the `--nvidia` flag:
 
 ```bash
-./docker-run.sh --gpu
+./docker-run.sh --nvidia
 ```
 
 The script will automatically detect and map CUDA/NVCC paths and switch to `h264_nvenc` encoding for high-performance streaming.
 
-To request the new GPU direct-buffer path, use `--capture-mode direct` together with `--gpu`:
+To request the new GPU direct-buffer path, use `--capture-mode direct` together with `--nvidia`:
 
 ```bash
-./docker-run.sh --gpu --capture-mode direct
+./docker-run.sh --nvidia --capture-mode direct
 ```
 
 This mode is fail-closed: startup aborts unless the compositor exposes the required Wayland screencopy and linux-dmabuf capabilities.
@@ -56,7 +56,7 @@ To see verbose debug logs, you can use the following flags:
 - `--debug-ffmpeg`: Shows real-time ffmpeg frame rate and encoder reports.
 - `--debug`: Enables both ffmpeg and input debug logging.
 - `--hdpi [percent]` or `-h [percent]`: Enables High DPI scaling for the XFCE desktop. If no percentage is provided, it defaults to `200` (2x scaling). Example: `--hdpi 150` for 1.5x scaling.
-- `--capture-mode compat|direct`: Selects the Wayland capture path. `direct` requires `--gpu` and only activates when direct-buffer probing succeeds.
+- `--capture-mode compat|direct`: Selects the Wayland capture path. `direct` requires `--nvidia` or `--intel` and only activates when direct-buffer probing succeeds.
 - `--webrtc-buffer [frames]`: Sets the WebRTC frame buffer limit (default: `30`).
 - `--activity-hz [hz]`: Sets the input activity heartbeat frequency (default: `30`).
 - `--activity-timeout [ms]`: Sets how long the heartbeat continues after last input (default: `1500`).
@@ -119,7 +119,7 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 - `--fps`: Target frames per second (default: `30`).
 - `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h265`, `h265_nvenc`, `av1`, or `av1_nvenc`.
 - `--chroma`: Chroma subsampling format, `420` (default) or `444`. See [Chroma 4:4:4](#chroma-444) below.
-- `--use-gpu`: Enable GPU acceleration for NVENC codecs.
+- `--use-nvidia`: Enable NVIDIA acceleration for NVENC codecs.
 - `--capture-mode`: Capture mode, `compat` (default) or `direct`.
 - `--use-debug-ffmpeg`: Enable verbose FFmpeg logging.
 - `--use-debug-x11`: Enable verbose X11/XFCE session logging.
@@ -151,7 +151,7 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `FPS` | Target frames per second | `--fps` |
 | `VIDEO_CODEC` | Encoder selection | `--video-codec` |
 | `CHROMA` | Chroma subsampling (`420` or `444`) | `--chroma` |
-| `USE_GPU` | Enable GPU acceleration | `--use-gpu` |
+| `USE_NVIDIA` | Enable NVIDIA acceleration | `--use-nvidia` |
 | `CAPTURE_MODE` | Capture mode (`compat` or `direct`) | `--capture-mode` |
 | `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
 | `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
@@ -185,7 +185,7 @@ Run one profile:
 ```bash
 npm run test:latency:cpu-1080p30
 npm run test:latency:cpu-1080p60
-npm run test:latency:gpu-4k60
+npm run test:latency:nvidia-4k60
 ```
 
 Run the full profile matrix:

@@ -44,7 +44,7 @@ if [ ${#TEST_FILES[@]} -eq 0 ]; then
             continue
         fi
         TEST_FILES+=("$f")
-    done < <(find tests -maxdepth 1 -name "*.spec.ts" | sort)
+    done < <(find tests -name "*.spec.ts" | sort)
 fi
 
 overall_exit=0

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from './helpers';
+import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const PORT = 8250 + Math.floor(Math.random() * 500);
 const SERVER_URL = `http://localhost:${PORT}`;
@@ -24,7 +24,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
         execSync(`./docker-run.sh --intel --direct-buffer --host-net --detach --name ${CONTAINER_NAME}`, {
             env: {
                 ...process.env,
-                IMAGE_TAG: 'local-test',
+                IMAGE_TAG: 'latest',
                 PORT: PORT.toString(),
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME,
@@ -52,6 +52,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
             message: 'Wait for direct-buffer mode to be reported as active in /readyz',
         }).toMatchObject({
             ready: true,
+            acceleratorMode: 'intel',
             directBuffer: {
                 requested: true,
                 supported: true,

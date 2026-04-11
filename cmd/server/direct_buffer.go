@@ -125,8 +125,8 @@ func validateCaptureModeConfig() error {
 	if CaptureMode != CaptureModeDirect {
 		return nil
 	}
-	if !UseGPU && !UseIntel {
-		return errors.New("direct capture mode requires --use-gpu or --use-intel")
+	if !usingHardwareAcceleration() {
+		return errors.New("direct capture mode requires --use-nvidia or --use-intel")
 	}
 	if !isHardwareCodec(VideoCodec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, VideoCodec)
@@ -161,10 +161,8 @@ func validateRuntimeDirectMode(codec string, chroma string) error {
 }
 
 func detectRenderNode() (string, error) {
-	if UseIntel {
-		if _, err := os.Stat("/dev/dri/renderD129"); err == nil {
-			return "/dev/dri/renderD129", nil
-		}
+	if currentAcceleratorMode() == acceleratorIntel {
+		return resolveIntelRenderNode(), nil
 	}
 
 	nodes, err := filepath.Glob("/dev/dri/renderD*")

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { spawn, ChildProcess, execSync } from 'child_process';
-import { waitForServerReady, waitForStreamingFrames } from './helpers';
+import { waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const PORT = 8100 + Math.floor(Math.random() * 1000);
 
@@ -28,7 +28,7 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
         serverProcess = spawn('./docker-run.sh', ['--intel', '--host-net'], {
             env: { 
                 ...process.env, 
-                IMAGE_TAG: 'local-test',
+                IMAGE_TAG: 'latest',
                 PORT: PORT.toString(), 
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME: CONTAINER_NAME

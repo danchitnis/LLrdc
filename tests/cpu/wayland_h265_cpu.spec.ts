@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from './helpers';
+import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const PORT = 8900 + Math.floor(Math.random() * 200);
 const SERVER_URL = `http://localhost:${PORT}`;
@@ -23,7 +23,7 @@ test.describe('Wayland CPU H.265', () => {
         execSync(`./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`, {
             env: {
                 ...process.env,
-                IMAGE_TAG: 'local-test',
+                IMAGE_TAG: 'latest',
                 PORT: PORT.toString(),
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME,
@@ -52,6 +52,7 @@ test.describe('Wayland CPU H.265', () => {
             message: 'Wait for CPU H.265 server readiness in compat mode',
         }).toMatchObject({
             ready: true,
+            acceleratorMode: 'cpu',
             directBuffer: {
                 captureMode: 'compat',
                 active: false,

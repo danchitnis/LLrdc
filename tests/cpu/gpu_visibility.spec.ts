@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady } from './helpers';
+import { waitForServerReady } from '../helpers';
 
 // Force headed mode for this test file
 test.use({ headless: false });
@@ -8,7 +8,7 @@ test.use({ headless: false });
 const CONTAINER_NAME = 'llrdc-gpu-visibility-test';
 const PORT = '8080';
 
-test.describe('GPU Options Visibility (No --gpu)', () => {
+test.describe('Hardware Options Visibility (CPU Mode)', () => {
   test.setTimeout(120000); // 2 minutes total for everything
 
   test.beforeAll(async () => {
@@ -19,10 +19,10 @@ test.describe('GPU Options Visibility (No --gpu)', () => {
       // ignore
     }
 
-    console.log(`Starting container WITHOUT --gpu on port ${PORT}...`);
+    console.log(`Starting container in CPU mode on port ${PORT}...`);
     // Use the locally built image
-    execSync(`./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`, { 
-        env: { ...process.env, IMAGE_NAME: 'danchitnis/llrdc', IMAGE_TAG: 'local-test', PORT: PORT },
+    execSync(`./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`, {
+        env: { ...process.env, IMAGE_NAME: 'danchitnis/llrdc', IMAGE_TAG: 'latest', PORT: PORT },
         stdio: 'inherit' 
     });
     
@@ -48,20 +48,18 @@ test.describe('GPU Options Visibility (No --gpu)', () => {
     }
   });
 
-  test('should hide GPU options when running without --gpu flag', async ({ page }) => {
+  test('should hide hardware-only options when running without hardware acceleration', async ({ page }) => {
     await page.goto(`http://localhost:${PORT}`);
     
-    // Wait for the initial config to be received and processed
-    // We can check if the status bar shows [WebRTC vp8] or similar
-    await expect(page.locator('#status')).toHaveText(/\[WebRTC/i, { timeout: 20000 });
+    await expect(page.locator('#status')).toContainText(/\[vp8\]/i, { timeout: 20000 });
 
     // Open Config
     await page.click('#config-btn');
     await expect(page.locator('#config-dropdown')).toBeVisible();
 
     // 1. Check Codec Select for hidden GPU options
-    const gpuAvailable = await page.evaluate(() => window.gpuAvailable);
-    console.log(`Browser reports gpuAvailable: ${gpuAvailable}`);
+    const hardwareAvailable = await page.evaluate(() => window.hardwareAccelerationAvailable);
+    console.log(`Browser reports hardwareAccelerationAvailable: ${hardwareAvailable}`);
 
     // Wait a bit for the UI to definitely update
     await page.waitForTimeout(1000);
@@ -77,12 +75,12 @@ test.describe('GPU Options Visibility (No --gpu)', () => {
     }
 
     // 2. Check Direct Buffer status (should be hidden)
-    const directBufferContainer = page.locator('.config-group.gpu-only:has(#direct-buffer-status)');
+    const directBufferContainer = page.locator('.config-group.hardware-only:has(#direct-buffer-status)');
     await expect(directBufferContainer).not.toBeVisible();
 
     // 3. Check Performance tab for NVENC ULL checkbox
     await page.locator('.config-tab-btn[data-tab="tab-performance"]').click();
-    const nvencUllContainer = page.locator('.config-group.gpu-only:has(#nvenc-latency-checkbox)');
+    const nvencUllContainer = page.locator('.config-group.nvidia-only:has(#nvenc-latency-checkbox)');
     await expect(nvencUllContainer).not.toBeVisible();
 
     // 4. Verify "Client Hardware Acceleration" label exists (renamed from GPU Decoding)

@@ -75,7 +75,7 @@ export function log(msg: string) {
 
 export let serverFfmpegCpu = 0;
 export let serverIntelGpuUtil = 0;
-export let useIntel = false;
+export let acceleratorMode: 'cpu' | 'intel' | 'nvidia' = 'cpu';
 
 export function setServerFfmpegCpu(cpu: number) {
     serverFfmpegCpu = cpu;
@@ -85,8 +85,8 @@ export function setServerIntelGpuUtil(util: number) {
     serverIntelGpuUtil = util;
 }
 
-export function setUseIntel(active: boolean) {
-    useIntel = active;
+export function setAcceleratorMode(mode: 'cpu' | 'intel' | 'nvidia') {
+    acceleratorMode = mode;
 }
 
 export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMonitor: number, networkLatency: number, bandwidthMbps: number = 0, width: number = 0, height: number = 0, codec: string = 'vp8') {
@@ -120,7 +120,7 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     const displayRes = (width > 0 && height > 0) ? `${width}x${height} | ` : '';
     let statsText = `[${displayCodec}${gpuTag}] ${displayRes}${fps} FPS | Lat: ${Math.round(latencyMonitor)}ms | Ping: ${Math.round(networkLatency)}ms | BW: ${bandwidthMbps.toFixed(1)}Mb | CPU: ${Math.round(serverFfmpegCpu)}%`;
     
-    if (useIntel) {
+    if (acceleratorMode === 'intel') {
         statsText += ` | Enc: ${Math.round(serverIntelGpuUtil)}%`;
     }
     

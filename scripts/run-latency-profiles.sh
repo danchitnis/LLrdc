@@ -11,4 +11,4 @@ run_profile() {
 
 run_profile "CPU VP8 1080p30" npm run test:latency:cpu-1080p30
 run_profile "CPU VP8 1080p60" npm run test:latency:cpu-1080p60
-run_profile "GPU AV1 NVENC 4K60" npm run test:latency:gpu-4k60
+run_profile "NVIDIA AV1 NVENC 4K60" npm run test:latency:nvidia-4k60

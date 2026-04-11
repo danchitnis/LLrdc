@@ -31,14 +31,14 @@
                         <select id="video-codec-select">
                             <option value="vp8">VP8</option>
                             <option value="h264">H.264 (CPU)</option>
-                            <option value="h264_nvenc" class="codec-opt-gpu">H.264 (GPU - NVENC)</option>
-                            <option value="h264_qsv" class="codec-opt-gpu">H.264 (GPU - Intel QSV)</option>
+                            <option value="h264_nvenc" class="codec-opt-gpu">H.264 (NVIDIA NVENC)</option>
+                            <option value="h264_qsv" class="codec-opt-gpu">H.264 (Intel QSV)</option>
                             <option value="h265">H.265 (CPU)</option>
-                            <option value="h265_nvenc" class="codec-opt-gpu">H.265 (GPU - NVENC)</option>
-                            <option value="h265_qsv" class="codec-opt-gpu">H.265 (GPU - Intel QSV)</option>
+                            <option value="h265_nvenc" class="codec-opt-gpu">H.265 (NVIDIA NVENC)</option>
+                            <option value="h265_qsv" class="codec-opt-gpu">H.265 (Intel QSV)</option>
                             <option value="av1">AV1 (CPU)</option>
-                            <option value="av1_nvenc" class="codec-opt-gpu">AV1 (GPU - NVENC)</option>
-                            <option value="av1_qsv" class="codec-opt-gpu">AV1 (GPU - Intel QSV)</option>
+                            <option value="av1_nvenc" class="codec-opt-gpu">AV1 (NVIDIA NVENC)</option>
+                            <option value="av1_qsv" class="codec-opt-gpu">AV1 (Intel QSV)</option>
                         </select>
                     </div>
                     <div class="config-group">
@@ -74,7 +74,7 @@
                     <div class="config-group">
                         <label><input type="checkbox" id="client-gpu-checkbox"> Enable Client Hardware Acceleration</label>
                     </div>
-                    <div class="config-group gpu-only" style="align-items: flex-start; flex-direction: column; display: none !important;">
+                    <div class="config-group hardware-only" style="align-items: flex-start; flex-direction: column; display: none !important;">
                         <span id="direct-buffer-label">Direct Buffer</span>
                         <div id="direct-buffer-status" aria-labelledby="direct-buffer-label" title="Read-only startup status for DMA-BUF direct capture">Compat mode</div>
                     </div>
@@ -153,7 +153,7 @@
                         <input type="range" id="webrtc-buffer-slider" min="1" max="100" value="30">
                         <span id="webrtc-buffer-value">30</span>
                     </div>
-                    <div class="config-group gpu-only" style="display: none !important;">
+                    <div class="config-group nvidia-only" style="display: none !important;">
                         <label><input type="checkbox" id="nvenc-latency-checkbox" checked> Enable NVENC ULL (Ultra Low Latency)</label>
                     </div>
                     <div class="config-group">

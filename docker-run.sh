@@ -18,7 +18,7 @@ SERVER_RESOLUTION="${RESOLUTION:-0}"
 # Port mappings (override via env vars)
 HOST_PORT="${HOST_PORT:-8080}"
 CONTAINER_PORT="${CONTAINER_PORT:-$SERVER_PORT}"
-USE_GPU="false"
+USE_NVIDIA="false"
 USE_INTEL="false"
 USE_DETACHED="false"
 USE_HOST_NET="false"
@@ -81,8 +81,8 @@ while [[ $# -gt 0 ]]; do
       NVENC_LATENCY_MODE="false"
       shift
       ;;
-    --gpu)
-      USE_GPU="true"
+    --nvidia)
+      USE_NVIDIA="true"
       shift
       ;;
     --capture-mode)
@@ -163,7 +163,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ "$USE_GPU" = "false" ] && [ "$USE_INTEL" = "false" ]; then
+if [ "$USE_NVIDIA" = "false" ] && [ "$USE_INTEL" = "false" ]; then
   SERVER_VIDEO_CODEC="${VIDEO_CODEC:-vp8}"
   echo "  Mode  : Wayland (Minimal ${SERVER_VIDEO_CODEC} CPU)"
 elif [ "$USE_INTEL" = "true" ]; then
@@ -172,8 +172,8 @@ else
   echo "  Mode  : Wayland (NVIDIA GPU)"
 fi
 
-if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ "$USE_GPU" != "true" ] && [ "$USE_INTEL" != "true" ]; then
-  echo "❌ ERROR: --capture-mode direct requires --gpu or --intel."
+if [ "$SERVER_CAPTURE_MODE" = "direct" ] && [ "$USE_NVIDIA" != "true" ] && [ "$USE_INTEL" != "true" ]; then
+  echo "❌ ERROR: --capture-mode direct requires --nvidia or --intel."
   exit 1
 fi
 
@@ -200,7 +200,7 @@ if [ "$USE_INTEL" = "true" ]; then
   fi
 fi
 
-if [ "$USE_GPU" = "true" ]; then
+if [ "$USE_NVIDIA" = "true" ]; then
   # Verify if Docker has NVIDIA runtime/toolkit support
   if ! docker info 2>/dev/null | grep -qi "Runtimes.*nvidia"; then
     if ! docker info 2>/dev/null | grep -qi "nvidia"; then
@@ -208,7 +208,7 @@ if [ "$USE_GPU" = "true" ]; then
       echo "Please install the NVIDIA Container Toolkit and restart Docker."
       echo "  https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html"
       echo ""
-      echo "If you want to run without GPU acceleration, run without the --gpu flag."
+      echo "If you want to run without NVIDIA acceleration, run without the --nvidia flag."
       exit 1
     fi
   fi
@@ -256,7 +256,7 @@ echo "  CPUs  : ${NUM_CPUS} (cores ${CPU_LIST})"
 if [ "${USE_DEBUG:-false}" = "true" ]; then
   echo "  FPS   : ${SERVER_FPS}"
 fi
-if [ "$USE_GPU" = "true" ]; then
+if [ "$USE_NVIDIA" = "true" ]; then
   echo "  GPU   : Enabled (Codec: ${SERVER_VIDEO_CODEC})"
 fi
 echo "  Capture Mode : ${SERVER_CAPTURE_MODE}"
@@ -309,7 +309,7 @@ docker run \
   --env VBR="${SERVER_VBR}" \
   --env DAMAGE_TRACKING="${SERVER_DAMAGE_TRACKING}" \
   --env VIDEO_CODEC="${SERVER_VIDEO_CODEC}" \
-  --env USE_GPU="${USE_GPU}" \
+  --env USE_NVIDIA="${USE_NVIDIA}" \
   --env USE_INTEL="${USE_INTEL}" \
   --env LIBVA_DRIVER_NAME="iHD" \
   --env CAPTURE_MODE="${SERVER_CAPTURE_MODE}" \

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady } from './helpers';
+import { fetchReadyz, waitForServerReady } from '../helpers';
 
 type CaptureMode = 'compat' | 'direct';
 
@@ -53,7 +53,7 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
         execSync(`docker rm -f ${containerName}`, { stdio: 'ignore' });
     } catch (e) {}
 
-    execSync(`./docker-run.sh --gpu --capture-mode ${mode} --detach --name ${containerName} --host-net`, {
+    execSync(`./docker-run.sh --nvidia --capture-mode ${mode} --detach --name ${containerName} --host-net`, {
         env: {
             ...process.env,
             PORT: port.toString(),

@@ -126,11 +126,12 @@ func waitForCommandSuccess(name string, args []string, env []string, timeout, po
 func marshalReadinessStatus() ([]byte, error) {
 	directState := snapshotDirectBufferState()
 	payload := map[string]interface{}{
-		"ready":        readiness.IsReady(),
-		"conditions":   readiness.Snapshot(),
-		"directBuffer": directState,
-		"useIntel":     UseIntel,
-		"useGpu":       UseGPU,
+		"ready":           readiness.IsReady(),
+		"conditions":      readiness.Snapshot(),
+		"directBuffer":    directState,
+		"acceleratorMode": currentAcceleratorMode(),
+		"useIntel":        UseIntel,
+		"useNvidia":       UseNVIDIA,
 	}
 	return json.Marshal(payload)
 }

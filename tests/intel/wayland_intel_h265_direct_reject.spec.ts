@@ -11,7 +11,7 @@ test.describe('Wayland Intel H.265 Direct Rejection', () => {
             const proc = spawn('./docker-run.sh', ['--intel', '--direct-buffer', '--host-net', '--name', `llrdc-wayland-intel-h265-direct-${PORT}`], {
                 env: {
                     ...process.env,
-                    IMAGE_TAG: 'local-test',
+                    IMAGE_TAG: 'latest',
                     PORT: PORT.toString(),
                     HOST_PORT: PORT.toString(),
                     VIDEO_CODEC: 'h265_qsv',

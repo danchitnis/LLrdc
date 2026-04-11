@@ -331,19 +331,6 @@ func SetAudioBitrate(bitrate string) {
 	}
 }
 
-func getIntelDRMNode() string {
-	if CaptureMode == CaptureModeDirect {
-		state := snapshotDirectBufferState()
-		if state.RenderNode != "" {
-			return state.RenderNode
-		}
-	}
-	if _, err := os.Stat("/dev/dri/renderD129"); err == nil {
-		return "/dev/dri/renderD129"
-	}
-	return "/dev/dri/renderD128"
-}
-
 func startStreaming(onFrame func([]byte, uint32, string)) {
 	var lastStreamID uint32
 
@@ -493,7 +480,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 					}
 				} else if isQSVCodec(codec) {
 					// Intel hardware encoding via VAAPI (mapped from QSV names internally)
-					args = append(args, "-d", getIntelDRMNode())
+					args = append(args, "-d", resolveIntelRenderNode())
 
 					// We do not pass -x nv12 here because wf-recorder automatically
 					// adds the necessary hwupload and scale_vaapi=format=nv12 filters.

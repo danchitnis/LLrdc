@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from './helpers';
+import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const PORT = 8925 + Math.floor(Math.random() * 100);
 const SERVER_URL = `http://localhost:${PORT}`;
@@ -23,7 +23,7 @@ test.describe('Wayland Intel H.265 Fallback', () => {
         execSync(`./docker-run.sh --detach --name ${CONTAINER_NAME} --intel --host-net`, {
             env: {
                 ...process.env,
-                IMAGE_TAG: 'local-test',
+                IMAGE_TAG: 'latest',
                 PORT: PORT.toString(),
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME,
@@ -52,6 +52,7 @@ test.describe('Wayland Intel H.265 Fallback', () => {
             message: 'Wait for Intel compat server readiness',
         }).toMatchObject({
             ready: true,
+            acceleratorMode: 'intel',
             directBuffer: {
                 captureMode: 'compat',
                 active: false,

@@ -90,7 +90,7 @@ const TARGET_BANDWIDTH_MBPS = Number.parseInt(process.env.LLRDC_TARGET_BANDWIDTH
 const TARGET_VIEWPORT_WIDTH = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_WIDTH ?? '1280', 10);
 const TARGET_VIEWPORT_HEIGHT = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_HEIGHT ?? '819', 10);
 const TARGET_VIDEO_CODEC = process.env.LLRDC_TARGET_VIDEO_CODEC ?? 'av1_nvenc';
-const TARGET_USE_GPU = (process.env.LLRDC_USE_GPU ?? 'true') === 'true';
+const TARGET_USE_NVIDIA = (process.env.LLRDC_USE_NVIDIA ?? 'true') === 'true';
 const TARGET_CAPTURE_MODES = (process.env.LLRDC_CAPTURE_MODES ?? 'compat,direct')
     .split(',')
     .map(mode => mode.trim())
@@ -112,7 +112,7 @@ async function startContainer(mode: CaptureMode, port: number, containerName: st
         execSync(`docker rm -f ${containerName}`, { stdio: 'ignore' });
     } catch (_error) {}
 
-    const gpuArg = TARGET_USE_GPU ? '--gpu ' : '';
+    const gpuArg = TARGET_USE_NVIDIA ? '--nvidia ' : '';
     const debugArg = process.env.USE_DEBUG_FFMPEG === 'true' ? '--debug-ffmpeg ' : '';
     const resArg = TARGET_MAX_RES > 0 ? `--res ${TARGET_MAX_RES}p ` : '';
     execSync(`./docker-run.sh ${gpuArg}${debugArg}${resArg}--capture-mode ${mode} --detach --name ${containerName} --host-net`, {

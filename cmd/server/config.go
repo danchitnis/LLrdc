@@ -15,7 +15,7 @@ var (
 	FPS         int
 	VideoCodec  string
 	Chroma      string
-	UseGPU      bool
+	UseNVIDIA   bool
 	UseIntel    bool
 	CaptureMode string
 
@@ -72,7 +72,7 @@ func initConfig() {
 		defaultChroma = "420"
 	}
 
-	defaultUseGPU := os.Getenv("USE_GPU") == "true"
+	defaultUseNVIDIA := os.Getenv("USE_NVIDIA") == "true"
 	defaultUseIntel := os.Getenv("USE_INTEL") == "true"
 	defaultCaptureMode := os.Getenv("CAPTURE_MODE")
 	if defaultCaptureMode == "" {
@@ -170,7 +170,7 @@ func initConfig() {
 		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", targetBandwidthMbps)
 		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, av1, av1_nvenc, av1_qsv)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
-		printFlag(os.Stderr, "use-gpu", "Enable GPU acceleration if available", UseGPU)
+		printFlag(os.Stderr, "use-nvidia", "Enable NVIDIA acceleration if available", UseNVIDIA)
 		printFlag(os.Stderr, "use-intel", "Enable Intel QSV acceleration if available", UseIntel)
 		printFlag(os.Stderr, "capture-mode", "Capture mode (compat or direct)", CaptureMode)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
@@ -205,7 +205,7 @@ func initConfig() {
 	flag.IntVar(&targetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
 	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, av1, av1_nvenc, av1_qsv)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
-	flag.BoolVar(&UseGPU, "use-gpu", defaultUseGPU, "Enable GPU acceleration if available")
+	flag.BoolVar(&UseNVIDIA, "use-nvidia", defaultUseNVIDIA, "Enable NVIDIA acceleration if available")
 	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel QSV acceleration if available")
 	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat or direct)")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")
@@ -233,8 +233,11 @@ func initConfig() {
 	flag.IntVar(&targetCpuEffort, "cpu-effort", defaultCpuEffort, "FFmpeg CPU effort/used (default 6)")
 
 	flag.Parse()
+	if UseNVIDIA && UseIntel {
+		log.Fatalf("Invalid accelerator configuration: choose only one of --use-nvidia or --use-intel")
+	}
 	initDirectBufferState()
-	if UseGPU {
+	if UseNVIDIA {
 		log.Printf("Checking NVIDIA GPU capabilities...")
 
 		// Check basic AV1 support via encoders list
@@ -271,7 +274,9 @@ func initConfig() {
 		QSVAvailable = strings.TrimSpace(string(outQSV)) == "true"
 		if QSVAvailable {
 			log.Printf("Intel QSV hardware acceleration detected")
-			outH265QSV, _ := exec.Command("bash", "-c", "TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -vf format=nv12,hwupload -vaapi_device /dev/dri/renderD129 -c:v hevc_vaapi -bf 0 -rc_mode CBR -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -aud 1 -f hevc \"$TMP\" >/dev/null 2>&1 && [ \"$(ffprobe -hide_banner -show_frames -select_streams v -print_format compact=nk=1:p=0 \"$TMP\" 2>/dev/null | wc -l)\" -gt 10 ] && echo true || echo false").Output()
+			renderNode := resolveIntelRenderNode()
+			checkCmd := fmt.Sprintf("TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -vf format=nv12,hwupload -vaapi_device %s -c:v hevc_vaapi -bf 0 -rc_mode CBR -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -aud 1 -f hevc \"$TMP\" >/dev/null 2>&1 && [ \"$(ffprobe -hide_banner -show_frames -select_streams v -print_format compact=nk=1:p=0 \"$TMP\" 2>/dev/null | wc -l)\" -gt 10 ] && echo true || echo false", renderNode)
+			outH265QSV, _ := exec.Command("bash", "-c", checkCmd).Output()
 			H265QSVAvailable = strings.TrimSpace(string(outH265QSV)) == "true"
 			if H265QSVAvailable {
 				log.Printf("Intel H.265 hardware encode support detected")

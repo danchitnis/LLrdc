@@ -35,11 +35,15 @@ var clients = make(map[*websocket.Conn]*Client)
 
 func configPayload(restarted bool) map[string]interface{} {
 	directState := snapshotDirectBufferState()
+	acceleratorMode := currentAcceleratorMode()
 	return map[string]interface{}{
 		"type":                   "config",
 		"videoCodec":             VideoCodec,
 		"chroma":                 Chroma,
-		"gpuAvailable":           UseGPU,
+		"acceleratorMode":        acceleratorMode,
+		"hardwareAvailable":      usingHardwareAcceleration(),
+		"nvidiaAvailable":        UseNVIDIA,
+		"intelAvailable":         UseIntel,
 		"captureMode":            CaptureMode,
 		"directBufferRequested":  directState.Requested,
 		"directBufferSupported":  directState.Supported,
@@ -53,7 +57,6 @@ func configPayload(restarted bool) map[string]interface{} {
 		"qsvAvailable":           QSVAvailable,
 		"h265QsvAvailable":       H265QSVAvailable,
 		"av1QsvAvailable":        AV1QSVAvailable,
-		"useIntel":               UseIntel,
 		"framerate":              FPS,
 		"bandwidth":              targetBandwidthMbps,
 		"quality":                targetQuality,
@@ -79,7 +82,7 @@ func configPayload(restarted bool) map[string]interface{} {
 
 func getIntelGPUUtil() float64 {
 	// Sample for 0.8s with 100ms frequency to get multiple full samples
-	cmd := exec.Command("sudo", "timeout", "0.8", "intel_gpu_top", "-d", "drm:"+getIntelDRMNode(), "-J", "-s", "100")
+	cmd := exec.Command("sudo", "timeout", "0.8", "intel_gpu_top", "-d", "drm:"+resolveIntelRenderNode(), "-J", "-s", "100")
 	out, _ := cmd.Output()
 	raw := string(out)
 
@@ -142,7 +145,7 @@ func startHTTPServer() {
 			}
 
 			var intelGpuUtil float64 = 0
-			if UseIntel {
+			if currentAcceleratorMode() == acceleratorIntel {
 				intelGpuUtil = getIntelGPUUtil()
 			}
 

@@ -17,7 +17,7 @@ $ServerVideoCodec = if ($env:VIDEO_CODEC) { $env:VIDEO_CODEC } else { "h264" }
 $HostPort = if ($env:HOST_PORT) { $env:HOST_PORT } else { "8080" }
 $ContainerPort = if ($env:CONTAINER_PORT) { $env:CONTAINER_PORT } else { $ServerPort }
 
-$UseGpu = if ($env:USE_GPU) { $env:USE_GPU } else { "false" }
+$UseNvidia = if ($env:USE_NVIDIA) { $env:USE_NVIDIA } else { "false" }
 $UseDebugX11 = "false"
 $UseDebugFfmpeg = "false"
 $WebrtcInterfaces = if ($env:WEBRTC_INTERFACES) { $env:WEBRTC_INTERFACES } else { "" }
@@ -26,8 +26,8 @@ $WebrtcExcludeInterfaces = if ($env:WEBRTC_EXCLUDE_INTERFACES) { $env:WEBRTC_EXC
 $i = 0
 while ($i -lt $args.Length) {
     switch ($args[$i]) {
-        "--gpu" {
-            $UseGpu = "true"
+        "--nvidia" {
+            $UseNvidia = "true"
         }
         "--debug-ffmpeg" {
             $UseDebugFfmpeg = "true"
@@ -59,7 +59,7 @@ while ($i -lt $args.Length) {
 }
 
 $GpuArgs = @()
-if ($UseGpu -eq "true") {
+if ($UseNvidia -eq "true") {
     $ServerVideoCodec = "h264_nvenc"
     $GpuArgs = @("--gpus", "all", "-e", "NVIDIA_DRIVER_CAPABILITIES=all")
 }
@@ -77,7 +77,7 @@ Write-Host "  CPUs  : $NumCpus (cores $CpuList)"
 if ($env:USE_DEBUG -eq "true" -or $UseDebugX11 -eq "true" -or $UseDebugFfmpeg -eq "true") {
     Write-Host "  FPS   : $ServerFps"
 }
-if ($UseGpu -eq "true") {
+if ($UseNvidia -eq "true") {
     Write-Host "  GPU   : Enabled (Codec: $ServerVideoCodec)"
 }
 
@@ -132,7 +132,7 @@ $DockerArgs += @(
     "--env", "PORT=$ServerPort",
     "--env", "FPS=$ServerFps",
     "--env", "VIDEO_CODEC=$ServerVideoCodec",
-    "--env", "USE_GPU=$UseGpu",
+    "--env", "USE_NVIDIA=$UseNvidia",
     "--env", "TEST_PATTERN=$($env:TEST_PATTERN)",
     "--env", "WEBRTC_PUBLIC_IP=$WebrtcPublicIp",
     "--env", "WEBRTC_INTERFACES=$WebrtcInterfaces",
@@ -145,8 +145,3 @@ $DockerArgs += @(
 # Execute Docker
 & docker $DockerArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-ODE -ne 0) { exit $LASTEXITCODE }
-EXITCODE }
-$LASTEXITCODE }
-ODE -ne 0) { exit $LASTEXITCODE }
-EXITCODE }

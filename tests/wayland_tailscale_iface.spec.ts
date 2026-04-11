@@ -21,7 +21,7 @@ test.describe('Wayland WebRTC with Tailscale Interface Selection', () => {
     execSync('ip link show tailscale0 >/dev/null 2>&1');
 
     execSync(
-      `PORT=${PORT} HOST_PORT=${PORT} ./docker-run.sh --wayland -d -i tailscale0 --name ${CONTAINER_NAME}`,
+      `PORT=${PORT} HOST_PORT=${PORT} ./docker-run.sh --wayland -d --host-net -i tailscale0 --name ${CONTAINER_NAME}`,
       { stdio: 'inherit' }
     );
 

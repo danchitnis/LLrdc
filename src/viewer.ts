@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setUseIntel, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -11,7 +11,7 @@ declare global {
         getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; bytesReceived: number; };
         hasReceivedKeyFrame: boolean;
         rtcPeer: RTCPeerConnection | null;
-        gpuAvailable: boolean;
+        hardwareAccelerationAvailable: boolean;
         serverFfmpegFps?: number;
         webrtcManager: WebRTCManager;
         webcodecsManager: WebCodecsManager;
@@ -111,7 +111,7 @@ function updateDirectBufferUi(msg: Record<string, unknown>) {
         } else if (directActive) {
             directBufferStatusEl.textContent = 'Active';
         } else if (directSupported) {
-            directBufferStatusEl.textContent = 'Supported, waiting for NVENC capture';
+            directBufferStatusEl.textContent = 'Supported, waiting for hardware capture';
         } else {
             directBufferStatusEl.textContent = 'Unavailable';
         }
@@ -709,17 +709,16 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         }
 
         if (msg.videoCodec && typeof msg.videoCodec === 'string') {
-            if (msg.useIntel !== undefined && typeof msg.useIntel === 'boolean') {
-                setUseIntel(msg.useIntel);
+            if (typeof msg.acceleratorMode === 'string' && (msg.acceleratorMode === 'cpu' || msg.acceleratorMode === 'intel' || msg.acceleratorMode === 'nvidia')) {
+                setAcceleratorMode(msg.acceleratorMode);
             }
 
-            if (msg.gpuAvailable !== undefined || msg.qsvAvailable !== undefined) {
-                const anyGpuAvailable = (msg.gpuAvailable as boolean) || (msg.qsvAvailable as boolean);
-                window.gpuAvailable = anyGpuAvailable;
+            if (msg.hardwareAvailable !== undefined || msg.qsvAvailable !== undefined || msg.nvidiaAvailable !== undefined) {
+                const anyGpuAvailable = (msg.hardwareAvailable as boolean) || (msg.qsvAvailable as boolean) || (msg.nvidiaAvailable as boolean);
+                window.hardwareAccelerationAvailable = anyGpuAvailable;
                 
-                // Toggle visibility for all GPU-only elements
-                const gpuOnlyElements = document.querySelectorAll('.gpu-only') as NodeListOf<HTMLElement>;
-                gpuOnlyElements.forEach(el => {
+                const hardwareOnlyElements = document.querySelectorAll('.hardware-only') as NodeListOf<HTMLElement>;
+                hardwareOnlyElements.forEach(el => {
                     if (anyGpuAvailable) {
                         el.style.removeProperty('display');
                     } else {
@@ -727,8 +726,18 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                     }
                 });
 
+                const nvidiaOnlyElements = document.querySelectorAll('.nvidia-only') as NodeListOf<HTMLElement>;
+                const nvidiaAvailable = msg.nvidiaAvailable === true;
+                nvidiaOnlyElements.forEach(el => {
+                    if (nvidiaAvailable) {
+                        el.style.removeProperty('display');
+                    } else {
+                        el.style.setProperty('display', 'none', 'important');
+                    }
+                });
+
                 if (videoCodecSelect && gpuOptionsList.length > 0) {
-                    const nvencAvailable = msg.gpuAvailable as boolean;
+                    const nvencAvailable = msg.nvidiaAvailable as boolean;
                     const av1NvencAvailable = msg.av1NvencAvailable as boolean;
                     const qsvAvailable = msg.qsvAvailable as boolean;
                     const h265QsvAvailable = msg.h265QsvAvailable !== false;

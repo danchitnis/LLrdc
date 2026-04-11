@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { waitForServerReady } from './helpers';
+import { waitForServerReady } from '../helpers';
 
 const PORT = 8000 + Math.floor(Math.random() * 1000);
 
@@ -25,9 +25,9 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
         try {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
         } catch (e) {}
-        console.log(`Starting server with --wayland and --gpu on port ${PORT}...`);
+        console.log(`Starting server with --wayland and --nvidia on port ${PORT}...`);
         
-        serverProcess = spawn('./docker-run.sh', ['--wayland', '--gpu'], {
+        serverProcess = spawn('./docker-run.sh', ['--wayland', '--nvidia', '--host-net'], {
             env: { 
                 ...process.env, 
                 PORT: PORT.toString(), 
