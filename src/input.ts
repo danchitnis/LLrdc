@@ -1,11 +1,22 @@
-import { overlayEl, videoEl, displayEl } from './ui';
+import { overlayEl, displayContainerEl, displayEl } from './ui';
 
 export function setupInput(sendMsg: (data: string) => void) {
     if (!overlayEl) return;
 
+    const focusOverlay = () => {
+        if (document.activeElement !== overlayEl) {
+            overlayEl.focus({ preventScroll: true });
+        }
+    };
+
     let pointerOverCanvas = false;
-    overlayEl.addEventListener('mouseenter', () => { pointerOverCanvas = true; });
-    overlayEl.addEventListener('mouseleave', () => { pointerOverCanvas = false; });
+    let pressedButton: number | null = null;
+
+    const isWithinDisplayContainer = (e: MouseEvent): boolean => {
+        if (!displayContainerEl) return false;
+        const rect = displayContainerEl.getBoundingClientRect();
+        return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+    };
 
     const getNormalizedPos = (e: MouseEvent): { x: number, y: number } | null => {
         if (!displayEl) return null;
@@ -50,18 +61,41 @@ export function setupInput(sendMsg: (data: string) => void) {
         };
     };
 
-    overlayEl.addEventListener('mousemove', (e: MouseEvent) => {
+    const forwardMouseMove = (e: MouseEvent) => {
+        const withinDisplay = isWithinDisplayContainer(e);
+        pointerOverCanvas = withinDisplay;
+
+        if (!withinDisplay && pressedButton === null) {
+            return;
+        }
+
+        if (withinDisplay) {
+            focusOverlay();
+        }
+
         const pos = getNormalizedPos(e);
         if (!pos) return;
 
         sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
+    };
+
+    overlayEl.addEventListener('mouseenter', () => {
+        pointerOverCanvas = true;
+        focusOverlay();
     });
+    overlayEl.addEventListener('mouseleave', () => {
+        pointerOverCanvas = false;
+    });
+    window.addEventListener('mousemove', forwardMouseMove, true);
 
     overlayEl.tabIndex = 0;
     overlayEl.style.outline = 'none';
+    overlayEl.setAttribute('aria-label', 'Remote desktop input overlay');
 
     overlayEl.addEventListener('mousedown', (e: MouseEvent) => {
-        overlayEl.focus();
+        pressedButton = e.button;
+        pointerOverCanvas = true;
+        focusOverlay();
         const pos = getNormalizedPos(e);
         if (pos) {
             sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
@@ -70,10 +104,20 @@ export function setupInput(sendMsg: (data: string) => void) {
         e.preventDefault();
     });
 
-    overlayEl.addEventListener('mouseup', (e: MouseEvent) => {
+    window.addEventListener('mouseup', (e: MouseEvent) => {
+        if (pressedButton === null && !isWithinDisplayContainer(e)) {
+            return;
+        }
+        pressedButton = null;
+        if (isWithinDisplayContainer(e)) {
+            const pos = getNormalizedPos(e);
+            if (pos) {
+                sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
+            }
+        }
         sendMsg(JSON.stringify({ type: 'mousebtn', button: e.button, action: 'mouseup' }));
         e.preventDefault();
-    });
+    }, true);
 
     overlayEl.addEventListener('keydown', (e: KeyboardEvent) => {
         sendMsg(JSON.stringify({ type: 'keydown', key: e.code }));
@@ -93,5 +137,11 @@ export function setupInput(sendMsg: (data: string) => void) {
     overlayEl.addEventListener('contextmenu', (e: MouseEvent) => {
         e.preventDefault();
         return false;
+    });
+
+    window.addEventListener('mousedown', (e: MouseEvent) => {
+        if (displayContainerEl?.contains(e.target as Node)) {
+            focusOverlay();
+        }
     });
 }

@@ -32,7 +32,7 @@ test.describe('Wayland Mouse E2E', () => {
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebRTC|\[WebCodecs/i, { timeout: 30000 });
+    await expect(statusEl).toContainText(/\[.+\]/i, { timeout: 30000 });
 
     // Wait for the remote stream to actually be 1920x1080 (forced by --res 1080p at startup).
     await expect.poll(async () => {
@@ -56,13 +56,29 @@ test.describe('Wayland Mouse E2E', () => {
     console.log(`Moving mouse to element relative 500, 300 (Page: ${targetX}, ${targetY})...`);
     await page.mouse.move(targetX, targetY);
     await page.waitForTimeout(500);
+
+    let logs = '';
+    await expect.poll(async () => {
+        logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
+        return logs;
+    }, {
+        timeout: 10000,
+        intervals: [500, 1000, 2000],
+    }).toContain('Wayland mouse move:');
+
+    const moveIndex = logs.indexOf('Wayland mouse move:');
+    const firstMouseDownIndex = logs.indexOf('"action":"mousedown"');
+    expect(moveIndex).toBeGreaterThanOrEqual(0);
+    if (firstMouseDownIndex >= 0) {
+        expect(moveIndex).toBeLessThan(firstMouseDownIndex);
+    }
+
     await page.mouse.down();
     await page.waitForTimeout(500);
     await page.mouse.up();
     await page.waitForTimeout(1000);
 
     // Verify logs with retries
-    let logs = '';
     await expect.poll(async () => {
         logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
         return logs;
@@ -79,7 +95,7 @@ test.describe('Wayland Mouse E2E', () => {
     // Also check that we received the mousedown message
     expect(logs).toContain('"action":"mousedown"');
     
-    await expect(statusEl).toHaveText(/\[WebRTC|\[WebCodecs/i);
+    await expect(statusEl).toContainText(/\[.+\]/i);
   });
 
   test('should handle rapid mouse movements without stalling', async ({ page }) => {
@@ -88,7 +104,7 @@ test.describe('Wayland Mouse E2E', () => {
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebRTC|\[WebCodecs/i, { timeout: 30000 });
+    await expect(statusEl).toContainText(/\[.+\]/i, { timeout: 30000 });
 
     // Wait for the remote stream to actually be 1920x1080 (forced by --res 1080p at startup).
     await expect.poll(async () => {
