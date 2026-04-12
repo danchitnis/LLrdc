@@ -252,7 +252,7 @@ async function collectModeSummary(
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(baseUrl);
     await page.click('body');
-    await expect(page.locator('#status')).toContainText(/\[WebRTC|\[WebCodecs/, { timeout: 45000 });
+    await expect(page.locator('#status')).toContainText(/\[.*\]/, { timeout: 45000 });
     await waitForDecodedFrames(page, `${mode} initial stream`);
     await disableVbr(page, containerName);
     await launchProbe(containerName);

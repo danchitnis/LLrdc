@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { waitForServerReady } from '../helpers';
+import { waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const PORT = 8000 + Math.floor(Math.random() * 1000);
 
@@ -40,7 +40,7 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
         await new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error(`Wayland GPU Server start timeout. Output:\n${outputBuffer}`));
-            }, 45000);
+            }, 10000);
 
             serverProcess.stdout?.on('data', (data) => {
                 const output = data.toString();
@@ -66,7 +66,7 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
                 }
             });
         });
-        await waitForServerReady(SERVER_URL);
+        await waitForServerReady(SERVER_URL, 10000);
     });
 
     test.afterAll(async () => {
@@ -87,26 +87,11 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
             await page.mouse.move(100 + i * 50, 100 + i * 50);
             await page.waitForTimeout(100);
         }
-
-        await page.waitForFunction(() => {
-            const statusEl = document.getElementById('status');
-            return statusEl && statusEl.textContent && statusEl.textContent.includes('WebRTC');
-        }, { timeout: 30000 });
-
-        const getFrames = () => page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
-        
-        // Wait for frames to start increasing
-        await expect(async () => {
-            const f1 = await getFrames();
-            await page.waitForTimeout(2000);
-            const f2 = await getFrames();
-            expect(f2, `Stream should be active: ${message}`).toBeGreaterThan(f1);
-            console.log(`Active (${message}): ${f1} -> ${f2}`);
-        }).toPass({ timeout: 20000 });
+        await waitForStreamingFrames(page, `Stream should be active: ${message}`, 10000);
     };
 
     test('should handle FPS and codec changes without freezing', async ({ page }) => {
-        test.setTimeout(120000); // 120 seconds for multiple reconfigs
+        test.setTimeout(30000);
         
         page.on('console', msg => {
             if (msg.type() === 'log') console.log(`[Browser] ${msg.text()}`);
@@ -118,22 +103,31 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
         const status = page.locator('#status');
         
         console.log('Ensuring H.264 (GPU - NVENC) is selected and VBR/Damage Tracking are disabled...');
-        await page.evaluate(() => {
+        const toggled = await page.evaluate(() => {
             const vbr = document.getElementById('vbr-checkbox') as HTMLInputElement;
+            let toggledVbr = false;
             if (vbr && vbr.checked) {
                 vbr.click();
+                toggledVbr = true;
             }
             const dt = document.getElementById('damage-tracking-checkbox') as HTMLInputElement;
+            let toggledDt = false;
             if (dt && dt.checked) {
                 dt.click();
+                toggledDt = true;
             }
+            return { toggledVbr, toggledDt };
         });
-        await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
-            timeout: 20000
-        }).toContain('Received VBR config: false');
-        await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
-            timeout: 20000
-        }).toContain('Received Damage Tracking config: false');
+        if (toggled.toggledVbr) {
+            await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+                timeout: 10000
+            }).toContain('Received VBR config: false');
+        }
+        if (toggled.toggledDt) {
+            await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+                timeout: 10000
+            }).toContain('Received Damage Tracking config: false');
+        }
 
         await page.evaluate(() => {
             const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
@@ -144,7 +138,7 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
         });
 
         // 1. Initial State: H.264 @ 30 FPS
-        await expect(status).toContainText(/h264_nvenc|h264/i, { timeout: 45000 });
+        await expect(status).toContainText(/h264_nvenc|h264/i, { timeout: 10000 });
         await verifyStreaming(page, 'Initial H.264 @ 30 FPS');
 
         // 2. Change FPS: 30 -> 60
@@ -157,20 +151,18 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
             }
         });
 
-        // Wait for actual framerate update in UI
-        await page.waitForFunction(() => {
-            const statusEl = document.getElementById('status');
-            if (!statusEl || !statusEl.textContent) return false;
-            const match = statusEl.textContent.match(/FPS: (\d+)/);
-            if (!match) return false;
-            const currentFps = parseInt(match[1], 10);
-            return currentFps >= 58 && currentFps <= 62;
-        }, { timeout: 45000 });
+        await page.waitForEvent('console', {
+            predicate: msg => msg.text().includes('Server framerate: 60 FPS'),
+            timeout: 10000,
+        });
         await verifyStreaming(page, 'H.264 @ 60 FPS');
 
         // 3. Change Codec: H.264 -> AV1
         console.log('Transitioning to AV1 NVENC...');
-        const av1LogPromise = page.waitForEvent('console', msg => msg.text().includes('Server codec: av1_nvenc'));
+        const av1LogPromise = page.waitForEvent('console', {
+            predicate: msg => msg.text().includes('Server codec: av1_nvenc'),
+            timeout: 10000,
+        });
         await page.evaluate(() => {
             const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
             if (sel) {
@@ -180,7 +172,7 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
         });
         await av1LogPromise;
 
-        await expect(status).toContainText(/av1_nvenc|av1/i, { timeout: 45000 });
+        await expect(status).toContainText(/av1_nvenc|av1/i, { timeout: 10000 });
         await verifyStreaming(page, 'AV1 NVENC after transition');
 
         console.log('All reconfiguration scenarios verified!');

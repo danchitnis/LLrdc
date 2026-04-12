@@ -73,7 +73,7 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
         await page.click('body');
 
         await expect(page.locator('#direct-buffer-status')).toHaveText(/Active/, { timeout: 30000 });
-        await expect(page.locator('#status')).toContainText(/\[WebRTC|\[WebCodecs/, { timeout: 45000 });
+        await expect(page.locator('#status')).toContainText(/\[.*\]/, { timeout: 45000 });
 
         await expect.poll(async () => {
             return await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);

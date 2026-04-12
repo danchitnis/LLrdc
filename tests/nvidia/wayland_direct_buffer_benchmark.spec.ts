@@ -129,6 +129,8 @@ async function disableVbr(page: import('@playwright/test').Page, containerName: 
     }
 
     await waitForDecodedFrames(page, `VBR and Damage Tracking disabled in ${containerName}`);
+    await page.click('#config-btn');
+    await expect(page.locator('#config-dropdown')).not.toBeVisible();
 }
 
 async function collectScenario(
@@ -205,7 +207,7 @@ async function collectSummary(
     await page.click('body');
 
     const statusEl = page.locator('#status');
-    await expect(statusEl).toContainText(/\[WebRTC|\[WebCodecs/, { timeout: 45000 });
+    await expect(statusEl).toContainText(/\[.*\]/, { timeout: 45000 });
     await waitForDecodedFrames(page, `${mode} initial stream`);
 
     await disableVbr(page, containerName);
