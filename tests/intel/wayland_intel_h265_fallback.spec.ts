@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from '../helpers';
+import { fetchReadyz, getContainerImage, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const PORT = 8925 + Math.floor(Math.random() * 100);
 const SERVER_URL = `http://localhost:${PORT}`;
@@ -15,6 +15,7 @@ function killPort(port: number) {
 test.describe('Wayland Intel H.265 Fallback', () => {
     test.beforeAll(async () => {
         test.setTimeout(90000);
+        const containerImage = getContainerImage('intel');
         killPort(PORT);
         try {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
@@ -23,7 +24,8 @@ test.describe('Wayland Intel H.265 Fallback', () => {
         execSync(`./docker-run.sh --detach --name ${CONTAINER_NAME} --intel --host-net`, {
             env: {
                 ...process.env,
-                IMAGE_TAG: 'latest',
+                IMAGE_NAME: containerImage.name,
+                IMAGE_TAG: containerImage.tag,
                 PORT: PORT.toString(),
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME,

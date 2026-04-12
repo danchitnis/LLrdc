@@ -26,7 +26,15 @@ To build the Docker image, run the included build script from the repository's r
 ./docker-build.sh
 ```
 
-This will automatically create a Docker image tagged `danchitnis/llrdc:latest`. The build process compiles the Go backend and configures the X11/XFCE environment.
+This builds the CPU-only image tagged `danchitnis/llrdc:latest`.
+
+If you want Intel QSV support, build the Intel variant explicitly:
+
+```bash
+./docker-build.sh --intel
+```
+
+This creates `danchitnis/llrdc:intel`, which includes the Intel media drivers, QSV tooling, and related FFmpeg acceleration stack.
 
 ### 2. Run the Container
 
@@ -43,6 +51,15 @@ To enable GPU acceleration (NVENC) on NVIDIA systems, add the `--nvidia` flag:
 ```
 
 The script will automatically detect and map CUDA/NVCC paths and switch to `h264_nvenc` encoding for high-performance streaming.
+
+To enable Intel QSV acceleration, build the Intel image first and then run with `--intel`:
+
+```bash
+./docker-build.sh --intel
+./docker-run.sh --intel
+```
+
+When `--intel` is passed, `docker-run.sh` automatically targets the `:intel` image tag unless `IMAGE_TAG` is explicitly set. If you force `IMAGE_TAG=latest`, the script will fail fast because `:latest` is now the CPU-only image.
 
 To request the new GPU direct-buffer path, use `--capture-mode direct` together with `--nvidia`:
 
@@ -117,9 +134,10 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 #### User Flags
 - `--port`: Port for both HTTP and WebRTC UDP (default: `8080`).
 - `--fps`: Target frames per second (default: `30`).
-- `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h265`, `h265_nvenc`, `av1`, or `av1_nvenc`.
+- `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h264_qsv`, `h265`, `h265_nvenc`, `h265_qsv`, `av1`, `av1_nvenc`, or `av1_qsv`.
 - `--chroma`: Chroma subsampling format, `420` (default) or `444`. See [Chroma 4:4:4](#chroma-444) below.
 - `--use-nvidia`: Enable NVIDIA acceleration for NVENC codecs.
+- `--use-intel`: Enable Intel acceleration for QSV codecs.
 - `--capture-mode`: Capture mode, `compat` (default) or `direct`.
 - `--use-debug-ffmpeg`: Enable verbose FFmpeg logging.
 - `--use-debug-x11`: Enable verbose X11/XFCE session logging.
@@ -152,6 +170,7 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `VIDEO_CODEC` | Encoder selection | `--video-codec` |
 | `CHROMA` | Chroma subsampling (`420` or `444`) | `--chroma` |
 | `USE_NVIDIA` | Enable NVIDIA acceleration | `--use-nvidia` |
+| `USE_INTEL` | Enable Intel acceleration | `--use-intel` |
 | `CAPTURE_MODE` | Capture mode (`compat` or `direct`) | `--capture-mode` |
 | `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
 | `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
@@ -178,6 +197,7 @@ Build first:
 
 ```bash
 ./docker-build.sh
+./docker-build.sh --intel
 ```
 
 Run one profile:

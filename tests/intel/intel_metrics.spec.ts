@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync, spawn } from 'child_process';
-import { waitForServerReady } from '../helpers';
+import { getContainerImage, waitForServerReady } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-intel-test';
 const PORT = '8082';
@@ -15,9 +15,9 @@ test.describe('Intel GPU Metrics Verification', () => {
         }
 
         console.log('Starting container with --intel...');
-        const containerImage = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';
+        const containerImage = getContainerImage('intel');
         // We use --intel and --debug to verify the metric
-        execSync(`IMAGE_NAME=${containerImage.split(':')[0]} IMAGE_TAG=${containerImage.split(':')[1] || 'latest'} PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --intel --host-net --debug`, { stdio: 'inherit' });
+        execSync(`IMAGE_NAME=${containerImage.name} IMAGE_TAG=${containerImage.tag} PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --intel --host-net --debug`, { stdio: 'inherit' });
         
         spawn('docker', ['logs', '-f', CONTAINER_NAME], { stdio: 'inherit' });
         

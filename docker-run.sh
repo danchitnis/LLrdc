@@ -2,6 +2,12 @@
 # docker-run.sh — Run the llrdc Docker container.
 set -euo pipefail
 
+IMAGE_TAG_EXPLICIT="false"
+
+if [[ -v IMAGE_TAG ]]; then
+  IMAGE_TAG_EXPLICIT="true"
+fi
+
 IMAGE_NAME="${IMAGE_NAME:-danchitnis/llrdc}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-llrdc}"
@@ -35,6 +41,32 @@ WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}"
 ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}"
 ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}"
 NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}"
+
+detect_image_variant() {
+  local image_ref="$1"
+  local variant
+  variant=$(docker image inspect --format '{{ index .Config.Labels "com.danchitnis.llrdc.build-variant" }}' "$image_ref" 2>/dev/null || true)
+  if [ "$variant" = "<no value>" ]; then
+    variant=""
+  fi
+  printf '%s' "$variant"
+}
+
+ensure_image_exists() {
+  local image_ref="$1"
+  local intel_requested="$2"
+  if docker image inspect "$image_ref" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "❌ ERROR: Docker image ${image_ref} is not available locally."
+  if [ "$intel_requested" = "true" ]; then
+    echo "Build it with: ./docker-build.sh --intel"
+  else
+    echo "Build it with: ./docker-build.sh"
+  fi
+  exit 1
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -163,6 +195,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [ "$USE_INTEL" = "true" ] && [ "$IMAGE_TAG_EXPLICIT" = "false" ]; then
+  IMAGE_TAG="intel"
+fi
+
+IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
+ensure_image_exists "${IMAGE_REF}" "${USE_INTEL}"
+IMAGE_VARIANT="$(detect_image_variant "${IMAGE_REF}")"
+
+if [ "$USE_INTEL" = "true" ]; then
+  case "${IMAGE_VARIANT}" in
+    intel)
+      ;;
+    cpu)
+      echo "❌ ERROR: Docker image ${IMAGE_REF} is a CPU-only build."
+      echo "Use ./docker-build.sh --intel to build the Intel image, or run without --intel."
+      exit 1
+      ;;
+    "")
+      echo "Warning: Docker image ${IMAGE_REF} does not expose an LLrdc build-variant label."
+      echo "Assuming it is a legacy Intel-capable image."
+      ;;
+    *)
+      echo "Warning: Docker image ${IMAGE_REF} reports unknown build variant '${IMAGE_VARIANT}'."
+      ;;
+  esac
+fi
+
 if [ "$USE_NVIDIA" = "false" ] && [ "$USE_INTEL" = "false" ]; then
   SERVER_VIDEO_CODEC="${VIDEO_CODEC:-vp8}"
   echo "  Mode  : Wayland (Minimal ${SERVER_VIDEO_CODEC} CPU)"
@@ -241,7 +300,7 @@ CPU_LIST="0-$((NUM_CPUS - 1))"
 
 
 echo "▶ Starting container: ${CONTAINER_NAME}"
-echo "  Image : ${IMAGE_NAME}:${IMAGE_TAG}"
+echo "  Image : ${IMAGE_REF}"
 
 NETWORK_ARGS=""
 if [ "$USE_HOST_NET" = "true" ]; then
@@ -331,4 +390,4 @@ docker run \
   --env RENDER_GID="${HOST_RENDER_GID}" \
   --env VIDEO_GID="${HOST_VIDEO_GID}" \
   --env HOST_UID=$(id -u) \
-  "${IMAGE_NAME}:${IMAGE_TAG}"
+  "${IMAGE_REF}"

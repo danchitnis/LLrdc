@@ -14,12 +14,14 @@ COPY . .
 RUN npm run build
 
 FROM ubuntu:25.04
+ARG ENABLE_INTEL=false
+ARG BUILD_VARIANT=cpu
+LABEL com.danchitnis.llrdc.build-variant="${BUILD_VARIANT}"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV USE_WAYLAND=true
+ENV LLRDC_BUILD_VARIANT="${BUILD_VARIANT}"
 
-RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
-  && add-apt-repository -y ppa:kobuk-team/intel-graphics \
-  && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
   labwc \
   xwayland \
   wlr-randr \
@@ -30,15 +32,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
   wf-recorder \
   swaybg \
   ffmpeg \
-  intel-gpu-tools \
-  intel-media-va-driver-non-free \
-  libvpl2 \
-  libvpl-tools \
-  libmfx-gen1.2 \
-  va-driver-all \
-  libva-drm2 \
-  libva2 \
-  vainfo \
   xfce4 \
   xfce4-goodies \
   xfce4-pulseaudio-plugin \
@@ -70,6 +63,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
   pkg-config \
   && rm -rf /var/lib/apt/lists/*
 
+RUN if [ "${ENABLE_INTEL}" = "true" ]; then \
+    apt-get update \
+    && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y ppa:kobuk-team/intel-graphics \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+      intel-gpu-tools \
+      intel-media-va-driver-non-free \
+      libvpl2 \
+      libvpl-tools \
+      libmfx-gen1.2 \
+      va-driver-all \
+      libva-drm2 \
+      libva2 \
+      vainfo \
+    && apt-get purge -y --auto-remove software-properties-common \
+    && rm -rf /var/lib/apt/lists/*; \
+  else \
+    rm -rf /var/lib/apt/lists/*; \
+  fi
+
 # ── Browser Repositories (Firefox via Official Mozilla APT) ──────────────────
 # Allow users to install Firefox via apt without snap.
 # Snap does not work in unprivileged Docker containers.
@@ -87,8 +101,10 @@ ARG UID=1000
 RUN userdel -r ubuntu || true \
   && useradd -m -s /bin/bash -u ${UID} remote \
   && echo 'remote ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/remote \
-  && echo 'remote ALL=(ALL) NOPASSWD: /usr/bin/intel_gpu_top' >> /etc/sudoers.d/remote \
+  && if [ "${ENABLE_INTEL}" = "true" ]; then echo 'remote ALL=(ALL) NOPASSWD: /usr/bin/intel_gpu_top' >> /etc/sudoers.d/remote; fi \
   && chmod 0440 /etc/sudoers.d/remote
+
+RUN printf '%s\n' "${BUILD_VARIANT}" > /etc/llrdc-build-variant
 
 WORKDIR /app
 COPY --from=node-builder /app/public/ ./public/

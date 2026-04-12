@@ -1,17 +1,20 @@
 import { test, expect } from '@playwright/test';
 import { spawn } from 'child_process';
+import { getContainerImage } from '../helpers';
 
 const PORT = 8960 + Math.floor(Math.random() * 100);
 
 test.describe('Wayland Intel H.265 Direct Rejection', () => {
     test('should reject Intel h265_qsv in direct-buffer mode instead of starting a dead stream', async () => {
         test.setTimeout(90000);
+        const containerImage = getContainerImage('intel');
 
         const output = await new Promise<string>((resolve, reject) => {
             const proc = spawn('./docker-run.sh', ['--intel', '--direct-buffer', '--host-net', '--name', `llrdc-wayland-intel-h265-direct-${PORT}`], {
                 env: {
                     ...process.env,
-                    IMAGE_TAG: 'latest',
+                    IMAGE_NAME: containerImage.name,
+                    IMAGE_TAG: containerImage.tag,
                     PORT: PORT.toString(),
                     HOST_PORT: PORT.toString(),
                     VIDEO_CODEC: 'h265_qsv',

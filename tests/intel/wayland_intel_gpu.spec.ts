@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { spawn, ChildProcess, execSync } from 'child_process';
-import { waitForServerReady, waitForStreamingFrames } from '../helpers';
+import { getContainerImage, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const PORT = 8100 + Math.floor(Math.random() * 1000);
 
@@ -19,6 +19,7 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
     const CONTAINER_NAME = `llrdc-test-wayland-intel-${PORT}`;
 
     test.beforeAll(async () => {
+        const containerImage = getContainerImage('intel');
         killPort(PORT);
         try {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
@@ -28,7 +29,8 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
         serverProcess = spawn('./docker-run.sh', ['--intel', '--host-net'], {
             env: { 
                 ...process.env, 
-                IMAGE_TAG: 'latest',
+                IMAGE_NAME: containerImage.name,
+                IMAGE_TAG: containerImage.tag,
                 PORT: PORT.toString(), 
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME: CONTAINER_NAME
