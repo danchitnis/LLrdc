@@ -2,10 +2,19 @@
 
 set -euo pipefail
 
+LOCK_FILE="${TMPDIR:-/tmp}/llrdc-playwright.lock"
 TEST_IMAGE_NAME="${IMAGE_NAME:-danchitnis/llrdc}"
 
 if [ -n "${CONTAINER_IMAGE:-}" ]; then
     TEST_IMAGE_NAME="${CONTAINER_IMAGE%:*}"
+fi
+
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"${LOCK_FILE}"
+    if ! flock -n 9; then
+        echo "Another llrdc Playwright run is active; waiting for ${LOCK_FILE}..."
+        flock 9
+    fi
 fi
 
 cleanup_containers() {
