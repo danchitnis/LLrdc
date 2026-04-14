@@ -15,6 +15,8 @@ type latencyProbeStateFile struct {
 	Color         string  `json:"color"`
 	RequestedAtMs float64 `json:"requestedAtMs"`
 	DrawnAtMs     float64 `json:"drawnAtMs"`
+	FirstMoveAtMs float64 `json:"firstMoveAtMs"`
+	IsMoving      bool    `json:"isMoving"`
 	PID           int     `json:"pid"`
 }
 
@@ -23,7 +25,9 @@ type latencyTraceRecord struct {
 	Color                   string  `json:"color"`
 	RequestedAtMs           float64 `json:"requestedAtMs"`
 	DrawnAtMs               float64 `json:"drawnAtMs"`
+	FirstMoveAtMs           float64 `json:"firstMoveAtMs"`
 	FirstFrameBroadcastAtMs float64 `json:"firstFrameBroadcastAtMs"`
+	ServerTimeMs            float64 `json:"serverTimeMs"`
 }
 
 var (
@@ -55,6 +59,7 @@ func recordLatencyProbeFrame(frameTime time.Time) {
 	record.Color = state.Color
 	record.RequestedAtMs = state.RequestedAtMs
 	record.DrawnAtMs = state.DrawnAtMs
+	record.FirstMoveAtMs = state.FirstMoveAtMs
 	if record.FirstFrameBroadcastAtMs == 0 && frameAtMs >= state.DrawnAtMs {
 		record.FirstFrameBroadcastAtMs = frameAtMs
 	}
@@ -75,26 +80,28 @@ func snapshotLatencyTrace(markerStr string) (latencyTraceRecord, bool) {
 	latencyTraceMu.RLock()
 	defer latencyTraceMu.RUnlock()
 
+	var record latencyTraceRecord
+	var ok bool
+
 	if markerStr != "" {
 		marker, err := strconv.Atoi(markerStr)
 		if err != nil {
 			return latencyTraceRecord{}, false
 		}
-		record, ok := latencyTraceRecords[marker]
-		return record, ok
-	}
-
-	var (
-		bestMarker int
-		bestRecord latencyTraceRecord
-		found      bool
-	)
-	for marker, record := range latencyTraceRecords {
-		if !found || marker > bestMarker {
-			bestMarker = marker
-			bestRecord = record
-			found = true
+		record, ok = latencyTraceRecords[marker]
+	} else {
+		var bestMarker int
+		for marker, r := range latencyTraceRecords {
+			if !ok || marker > bestMarker {
+				bestMarker = marker
+				record = r
+				ok = true
+			}
 		}
 	}
-	return bestRecord, found
+
+	if ok {
+		record.ServerTimeMs = float64(time.Now().UnixNano()) / float64(time.Millisecond)
+	}
+	return record, ok
 }

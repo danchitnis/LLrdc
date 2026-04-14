@@ -113,9 +113,10 @@ type SessionState struct {
 	LastVideoPacketAt       time.Time         `json:"lastVideoPacketAt,omitempty"`
 	LastVideoFrameAt        time.Time         `json:"lastVideoFrameAt,omitempty"`
 	LastPresentAt           time.Time         `json:"lastPresentAt,omitempty"`
-	FirstFramePresentedAt   time.Time         `json:"firstFramePresentedAt,omitempty"`
-	LastLatencySample       map[string]any    `json:"lastLatencySample,omitempty"`
-	CurrentTrackCodecs      map[string]string `json:"currentTrackCodecs,omitempty"`
+	FirstFramePresentedAt   time.Time            `json:"firstFramePresentedAt,omitempty"`
+	LastLatencySample       map[string]any       `json:"lastLatencySample,omitempty"`
+	RecentLatencySamples    []LatencyBreakdown   `json:"recentLatencySamples,omitempty"`
+	CurrentTrackCodecs      map[string]string    `json:"currentTrackCodecs,omitempty"`
 }
 
 type SessionStats struct {
@@ -174,6 +175,10 @@ func (s *Session) State() SessionState {
 	copyState.LastConfig = cloneMap(s.state.LastConfig)
 	copyState.LastStats = cloneMap(s.state.LastStats)
 	copyState.LastLatencySample = cloneMap(s.state.LastLatencySample)
+	if s.state.RecentLatencySamples != nil {
+		copyState.RecentLatencySamples = make([]LatencyBreakdown, len(s.state.RecentLatencySamples))
+		copy(copyState.RecentLatencySamples, s.state.RecentLatencySamples)
+	}
 	copyState.CurrentTrackCodecs = cloneMapString(s.state.CurrentTrackCodecs)
 	return copyState
 }
@@ -477,12 +482,26 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 	if s.state.FirstFramePresentedAt.IsZero() {
 		s.state.FirstFramePresentedAt = now
 	}
+
+	sample := LatencyBreakdown{
+		PacketTimestamp: event.PacketTimestamp,
+		Brightness:      event.Brightness,
+		ReceiveAt:       event.ReceiveAt.UnixMilli(),
+		DecodeReadyAt:   event.DecodeReadyAt.UnixMilli(),
+		PresentationAt:  event.PresentationAt.UnixMilli(),
+	}
+	s.state.RecentLatencySamples = append(s.state.RecentLatencySamples, sample)
+	if len(s.state.RecentLatencySamples) > 300 {
+		s.state.RecentLatencySamples = s.state.RecentLatencySamples[1:]
+	}
+
 	s.mu.Unlock()
 	s.emit(EventFrame, map[string]any{
 		"presented":       true,
 		"width":           event.Width,
 		"height":          event.Height,
 		"packetTimestamp": event.PacketTimestamp,
+		"brightness":      event.Brightness,
 	})
 }
 

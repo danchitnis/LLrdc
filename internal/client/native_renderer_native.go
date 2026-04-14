@@ -70,10 +70,12 @@ import (
 )
 
 type NativeRenderer struct {
-	title     string
-	width     int
-	height    int
-	autoStart bool
+	title        string
+	width        int
+	height       int
+	autoStart    bool
+	probeLatency bool
+	debugCursor  bool
 
 	mu                      sync.RWMutex
 	runStarted              bool
@@ -85,17 +87,23 @@ type NativeRenderer struct {
 	streamResets            chan string
 	stopCh                  chan struct{}
 	doneCh                  chan struct{}
+
+	mouseX int32
+	mouseY int32
 }
 
 type nativeVideoSample struct {
 	codec           string
 	data            []byte
 	packetTimestamp uint32
+	receiveAt       time.Time
 }
 
 type nativeDecodedSample struct {
 	frame           decodedFrame
 	packetTimestamp uint32
+	receiveAt       time.Time
+	decodeReadyAt   time.Time
 }
 
 type vp8Decoder struct {
@@ -120,8 +128,10 @@ func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
 		width:                   width,
 		height:                  height,
 		autoStart:               opts.AutoStart,
+		probeLatency:            opts.ProbeLatency,
+		debugCursor:             opts.DebugCursor,
 		decoderAwaitingKeyframe: true,
-		samples:                 make(chan nativeVideoSample, 1),
+		samples:                 make(chan nativeVideoSample, 8),
 		streamResets:            make(chan string, 1),
 		stopCh:                  make(chan struct{}),
 		doneCh:                  make(chan struct{}),
@@ -175,6 +185,7 @@ func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTime
 		codec:           codec,
 		data:            append([]byte(nil), frame...),
 		packetTimestamp: packetTimestamp,
+		receiveAt:       time.Now(),
 	}
 	select {
 	case r.samples <- sample:
@@ -399,6 +410,7 @@ func (r *NativeRenderer) Run() error {
 					r.emitLifecycle(NativeWindowLifecycle{DecoderStateChanged: true, DecoderAwaitingKeyframe: false})
 				}
 				frame, err := decoder.Decode(sample.data)
+				decodeReadyAt := time.Now()
 				if err != nil {
 					r.mu.Lock()
 					r.decoderAwaitingKeyframe = true
@@ -412,7 +424,12 @@ func (r *NativeRenderer) Run() error {
 				}
 				if frame.width > 0 && frame.height > 0 {
 					select {
-					case decodedFrames <- nativeDecodedSample{frame: frame, packetTimestamp: sample.packetTimestamp}:
+					case decodedFrames <- nativeDecodedSample{
+						frame:           frame,
+						packetTimestamp: sample.packetTimestamp,
+						receiveAt:       sample.receiveAt,
+						decodeReadyAt:   decodeReadyAt,
+					}:
 					default:
 					}
 				}
@@ -442,6 +459,8 @@ func (r *NativeRenderer) Run() error {
 			case *sdl.MouseMotionEvent:
 				r.mu.Lock()
 				w, h := r.width, r.height
+				r.mouseX = e.X
+				r.mouseY = e.Y
 				r.mu.Unlock()
 				if w > 0 && h > 0 {
 					r.sendInput(map[string]any{
@@ -516,13 +535,51 @@ func (r *NativeRenderer) Run() error {
 			}
 			_ = texture.UpdateYUV(nil, frame.yPlane, int(frame.yStride), frame.uPlane, int(frame.uStride), frame.vPlane, int(frame.vStride))
 			_ = renderer.Clear()
+			brightness := -1
+			if r.probeLatency {
+				// Compute center pixel brightness (Y channel)
+				cx := int(decoded.frame.width / 2)
+				cy := int(decoded.frame.height / 2)
+				offset := cy*int(decoded.frame.yStride) + cx
+				if offset >= 0 && offset < len(decoded.frame.yPlane) {
+					brightness = int(decoded.frame.yPlane[offset])
+				}
+			}
+
+			// Ensure the renderer's logical size matches the window size so drawing coordinates match mouse coordinates
+			r.mu.RLock()
+			ww, wh := r.width, r.height
+			r.mu.RUnlock()
+
+			if ww > 0 && wh > 0 {
+				lw, lh := renderer.GetLogicalSize()
+				if lw != int32(ww) || lh != int32(wh) {
+					_ = renderer.SetLogicalSize(int32(ww), int32(wh))
+				}
+			}
+
 			_ = renderer.Copy(texture, nil, nil)
+
+			if r.debugCursor {
+				r.mu.RLock()
+				mx, my := r.mouseX, r.mouseY
+				r.mu.RUnlock()
+
+				_ = renderer.SetDrawColor(255, 0, 0, 255)
+				_ = renderer.FillRect(&sdl.Rect{X: mx - 5, Y: my - 5, W: 10, H: 10})
+			}
+
 			renderer.Present()
 			r.emitPresent(NativeFramePresented{
-				Width:           int(frame.width),
-				Height:          int(frame.height),
+				Width:           int(decoded.frame.width),
+				Height:          int(decoded.frame.height),
 				PacketTimestamp: decoded.packetTimestamp,
+				Brightness:      brightness,
+				ReceiveAt:       decoded.receiveAt,
+				DecodeReadyAt:   decoded.decodeReadyAt,
+				PresentationAt:  time.Now(),
 			})
+
 		case <-time.After(10 * time.Millisecond):
 		case <-r.stopCh:
 			return nil
@@ -640,6 +697,13 @@ func windowEventName(event uint8) string {
 	default:
 		return fmt.Sprintf("event_%d", event)
 	}
+}
+
+func (r *NativeRenderer) UpdateMouse(x, y float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.mouseX = int32(x * float64(r.width))
+	r.mouseY = int32(y * float64(r.height))
 }
 
 func (r *NativeRenderer) sendInput(msg map[string]any) {

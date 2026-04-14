@@ -25,6 +25,8 @@ func main() {
 	windowHeight := flag.Int("height", 720, "Initial native client window height")
 	headless := flag.Bool("headless", false, "Run without creating a native window")
 	autoStart := flag.Bool("auto-start", false, "Start streaming automatically without waiting for click")
+	latencyProbe := flag.Bool("latency-probe", false, "Enable internal latency probe (checks center pixel brightness)")
+	debugCursor := flag.Bool("debug-cursor", false, "Render a red dot at the local mouse position to visualize input latency")
 	exitAfter := flag.Duration("exit-after", 0, "Exit automatically after the given duration (e.g. 5s)")
 	flag.Parse()
 
@@ -32,11 +34,13 @@ func main() {
 	var windowRenderer client.WindowRenderer
 	var err error
 	if !*headless {
-	        windowRenderer, err = client.NewNativeRenderer(client.NativeRendererOptions{
-	                Title:     *windowTitle,
-	                Width:     *windowWidth,
-	                Height:    *windowHeight,
-			AutoStart: *autoStart,
+		windowRenderer, err = client.NewNativeRenderer(client.NativeRendererOptions{
+			Title:        *windowTitle,
+			Width:        *windowWidth,
+			Height:       *windowHeight,
+			AutoStart:    *autoStart,
+			ProbeLatency: *latencyProbe,
+			DebugCursor:  *debugCursor,
 		})
 		if err != nil {
 			log.Fatalf("native renderer unavailable: %v", err)
@@ -186,6 +190,15 @@ func main() {
 
 	if windowRenderer != nil {
 		var firstPresentLogged atomic.Bool
+		session.Hooks().On(client.EventInputSent, func(payload client.EventPayload) {
+			if msgType, ok := payload.Data["type"].(string); ok && msgType == "mousemove" {
+				if x, ok1 := payload.Data["x"].(float64); ok1 {
+					if y, ok2 := payload.Data["y"].(float64); ok2 {
+						windowRenderer.UpdateMouse(x, y)
+					}
+				}
+			}
+		})
 		windowRenderer.SetInputSink(func(msg map[string]any) error {
 			if msgType, _ := msg["type"].(string); msgType == "resize" {
 				width, _ := msg["width"].(int)
