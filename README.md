@@ -7,6 +7,7 @@ LLrdc (Low Latency remote desktop) is an entirely web-based, low-latency remote 
 - **XFCE4 Desktop in Docker**: Runs a full Ubuntu 24.04 and XFCE4 desktop environment inside a reproducible Docker container.
 - **Web-Based Client**: Access your desktop entirely via a modern web browser—no client software required.
 - **High-Performance Streaming**: Leverages WebRTC for ultra-low latency video streaming, with fallback to WebCodecs/WebSockets. Uses variable bitrate (bitrate drops on static screens) with an optional peak bandwidth cap.
+- **Native Go Client**: Includes a Docker-built Linux native client using Go, SDL2, and libvpx with no Chromium, WebView, or WebKit dependency.
 
 
 
@@ -100,6 +101,103 @@ http://localhost:8080
 ```
 
 You should see your XFCE4 desktop session running and ready for interaction.
+
+## Native Client
+
+The repo also includes a native Linux client in [cmd/client/main.go](/home/danial/code/LLrdc/cmd/client/main.go). It is built and tested inside Docker from [Dockerfile.client](/home/danial/code/LLrdc/Dockerfile.client), but runs as a real SDL windowed client rather than embedding Chromium, WebView, or WebKit.
+
+### Build the Native Client Image
+
+```bash
+npm run client:build
+```
+
+### Package the Native Host Client
+
+The intended delivery model is: build and package in Docker, then run the produced binary directly on the Linux host.
+
+```bash
+npm run client:package
+```
+
+That creates:
+
+```text
+dist/llrdc-client-linux-amd64/
+dist/llrdc-client-linux-amd64.tar.gz
+```
+
+The package includes:
+- `bin/llrdc-client`: host launcher
+- `bin/llrdc-client.bin`: packaged client binary
+- `lib/`: bundled runtime shared libraries
+
+### Run the Native Client on the Host
+
+Run the packaged client directly from the host filesystem:
+
+```bash
+./dist/llrdc-client-linux-amd64/bin/llrdc-client \
+  --server http://127.0.0.1:8080 \
+  --control-addr 127.0.0.1:18080
+```
+
+Or use the wrapper script, which packages in Docker first if the host bundle is missing:
+
+```bash
+./scripts/run-native-client.sh
+```
+
+Force a rebuild/package before launch:
+
+```bash
+./scripts/run-native-client.sh --rebuild
+```
+
+Important flags:
+- `--server`: Existing LLrdc server URL. The server protocol is unchanged.
+- `--control-addr`: Loopback/API bind address for health checks, hooks, and automation.
+- `--width`, `--height`, `--title`: Initial native window sizing.
+- `--exit-after`: Auto-exit for smoke tests.
+- `--headless`: Disables the window; intended only for debugging, not normal native-client use.
+
+Display backend behavior:
+- X11/Xwayland is preferred automatically on Wayland desktop sessions when `DISPLAY` is available.
+- Native Wayland remains available with `SDL_VIDEODRIVER=wayland`.
+- X11 is selected automatically when `DISPLAY` is present and no explicit backend override is set.
+- No Chromium, WebView, or WebKit is used in any path.
+
+### Verify the Packaged Host Runtime
+
+This runs the packaged client directly on the host in `--headless` mode to verify the exported binary and bundled libraries work outside Docker:
+
+```bash
+npm run client:verify-package
+```
+
+### Docker Runtime Smoke Mode
+
+### Test the Native Client
+
+The native client has Dockerized unit tests plus a windowed smoke test:
+
+```bash
+npm run client:test
+```
+
+That command:
+- runs `go test -tags native ./internal/client ./cmd/client` in the Docker `test` stage
+- builds the runtime image
+- launches the windowed client against an in-container Xvfb display
+- verifies the control API comes up on `/statez`, `/readyz`, and `/latencyz/latest`
+
+There is also an end-to-end Docker test against the unchanged LLrdc server:
+
+```bash
+npm run client:test:e2e
+```
+
+That test starts the existing server container in `--test-pattern` mode, connects the native client to it over WebRTC on a private Docker network, and waits for `/statez` and `/statsz` to show an active stream with decoded video frames.
 
 ## Clipboard
 

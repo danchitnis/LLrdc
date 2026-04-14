@@ -222,36 +222,32 @@ async function waitForStreamResolution(page: Page, minWidth: number, minHeight: 
 
 async function initPresentedFrameTracker(page: Page) {
     await page.evaluate(() => {
-        const win = window as Window & {
-            __llrdcLatencyTrackerInstalled?: boolean;
-            __llrdcLatestFrameMeta?: Omit<FrameMetadataSample, 'brightness' | 'callbackAtMs'> & { callbackAtMs: number };
-        };
-        if (win.__llrdcLatencyTrackerInstalled) {
-            return;
-        }
-
-        const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
-        if (!video || typeof video.requestVideoFrameCallback !== 'function') {
-            throw new Error('requestVideoFrameCallback is unavailable');
-        }
-
-        const toEpoch = (value: number | undefined) => typeof value === 'number' ? performance.timeOrigin + value : null;
-
-        const update = (now: number, metadata: VideoFrameCallbackMetadata) => {
-            win.__llrdcLatestFrameMeta = {
-                callbackAtMs: performance.timeOrigin + now,
-                expectedDisplayAtMs: toEpoch(metadata.expectedDisplayTime),
-                presentationAtMs: toEpoch(metadata.presentationTime),
-                captureAtMs: toEpoch((metadata as VideoFrameCallbackMetadata & { captureTime?: number }).captureTime),
-                receiveAtMs: toEpoch((metadata as VideoFrameCallbackMetadata & { receiveTime?: number }).receiveTime),
-                processingDurationMs: typeof metadata.processingDuration === 'number' ? metadata.processingDuration * 1000 : null,
-                presentedFrames: typeof metadata.presentedFrames === 'number' ? metadata.presentedFrames : null,
+        const client = (window as Window & {
+            __llrdcClient?: {
+                getPresentedFrames?: () => FrameMetadataSample[];
+                clearPresentedFrames?: () => void;
             };
-            video.requestVideoFrameCallback(update);
-        };
+        }).__llrdcClient;
+        if (!client?.getPresentedFrames) {
+            throw new Error('Presented frame hook is unavailable');
+        }
+        client.clearPresentedFrames?.();
+    });
+}
 
-        win.__llrdcLatencyTrackerInstalled = true;
-        video.requestVideoFrameCallback(update);
+async function readPresentedFrameCursor(page: Page): Promise<{ callbackAtMs: number; presentedFrames: number }> {
+    return await page.evaluate(() => {
+        const client = (window as Window & {
+            __llrdcClient?: {
+                getPresentedFrames?: () => Array<{ callbackAtMs: number; presentedFrames: number | null }>;
+            };
+        }).__llrdcClient;
+        const frames = client?.getPresentedFrames?.() ?? [];
+        const last = frames[frames.length - 1];
+        return {
+            callbackAtMs: typeof last?.callbackAtMs === 'number' ? last.callbackAtMs : 0,
+            presentedFrames: typeof last?.presentedFrames === 'number' ? last.presentedFrames : 0,
+        };
     });
 }
 
@@ -338,8 +334,8 @@ async function sweepUntilProbeToggles(
     throw new Error(`Probe marker did not advance in ${containerName}; last marker=${readProbeState(containerName).marker}`);
 }
 
-async function waitForPresentedFrameColor(page: Page, expectedColor: 'black' | 'white'): Promise<PresentedFrameSample> {
-    return await page.evaluate(({ expected }) => {
+async function waitForPresentedFrameColor(page: Page, expectedColor: 'black' | 'white', earliestCallbackAtMs: number, minPresentedFrames: number): Promise<PresentedFrameSample> {
+    return await page.evaluate(({ expected, earliestCallbackAtMs: earliest, minPresentedFrames: minFrames }) => {
         return new Promise<PresentedFrameSample>((resolve, reject) => {
             const canvas = document.getElementById('display') as HTMLCanvasElement | null;
             const ctx = canvas?.getContext('2d', { willReadFrequently: true });
@@ -350,13 +346,26 @@ async function waitForPresentedFrameColor(page: Page, expectedColor: 'black' | '
 
             const deadline = performance.now() + 10000;
             const win = window as Window & {
-                __llrdcLatestFrameMeta?: Omit<FrameMetadataSample, 'brightness' | 'callbackAtMs'> & { callbackAtMs: number };
+                __llrdcClient?: {
+                    getPresentedFrames?: () => Array<Omit<FrameMetadataSample, 'brightness'> & { callbackAtMs: number }>;
+                };
             };
 
             const sample = () => {
                 if (!canvas || canvas.width <= 0 || canvas.height <= 0) {
                     if (performance.now() > deadline) {
                         reject(new Error(`Timed out waiting for display dimensions for ${expected}`));
+                        return;
+                    }
+                    requestAnimationFrame(sample);
+                    return;
+                }
+
+                const frames = win.__llrdcClient?.getPresentedFrames?.() ?? [];
+                const latest = frames[frames.length - 1];
+                if (!latest || latest.callbackAtMs < earliest || (typeof latest.presentedFrames === 'number' && latest.presentedFrames <= minFrames)) {
+                    if (performance.now() > deadline) {
+                        reject(new Error(`Timed out waiting for a presented frame after ${earliest}`));
                         return;
                     }
                     requestAnimationFrame(sample);
@@ -378,13 +387,11 @@ async function waitForPresentedFrameColor(page: Page, expectedColor: 'black' | '
                 const matches = expected === 'white' ? brightness >= 200 : brightness <= 55;
 
                 if (matches) {
-                    const nowEpoch = performance.timeOrigin + performance.now();
-                    const latest = win.__llrdcLatestFrameMeta;
                     resolve({
                         matches,
                         brightness,
-                        callbackAtMs: nowEpoch,
-                        expectedDisplayAtMs: latest?.expectedDisplayAtMs ?? nowEpoch,
+                        callbackAtMs: latest.callbackAtMs,
+                        expectedDisplayAtMs: latest?.expectedDisplayAtMs ?? latest.callbackAtMs,
                         presentationAtMs: latest?.presentationAtMs ?? null,
                         captureAtMs: latest?.captureAtMs ?? null,
                         receiveAtMs: latest?.receiveAtMs ?? null,
@@ -404,7 +411,7 @@ async function waitForPresentedFrameColor(page: Page, expectedColor: 'black' | '
 
             requestAnimationFrame(sample);
         });
-    }, { expected: expectedColor });
+    }, { expected: expectedColor, earliestCallbackAtMs, minPresentedFrames });
 }
 
 function average(values: Array<number | null>): number | null {
@@ -496,7 +503,8 @@ async function collectModeSummary(
         const direction = i % 2 === 0 ? 'left-to-right' : 'right-to-left';
         const toggle = await sweepUntilProbeToggles(page, containerName, state.marker, direction);
         state = toggle.state;
-        await waitForPresentedFrameColor(page, state.color);
+        const cursor = await readPresentedFrameCursor(page);
+        await waitForPresentedFrameColor(page, state.color, toggle.inputSentAtMs, cursor.presentedFrames);
         await page.waitForTimeout(150);
     }
 
@@ -505,16 +513,14 @@ async function collectModeSummary(
     for (let trial = 1; trial <= 10; trial++) {
         const expectedColor = state.color === 'black' ? 'white' : 'black';
         const direction = trial % 2 === 0 ? 'left-to-right' : 'right-to-left';
-        
-        // Start waiting for the color BEFORE the sweep blocks the event loop
-        const framePromise = waitForPresentedFrameColor(page, expectedColor);
+        const cursor = await readPresentedFrameCursor(page);
         
         const toggle = await sweepUntilProbeToggles(page, containerName, state.marker, direction);
         state = toggle.state;
         
         const [serverTrace, frame] = await Promise.all([
             waitForServerLatencyTrace(baseUrl, state.marker),
-            framePromise,
+            waitForPresentedFrameColor(page, expectedColor, toggle.inputSentAtMs, cursor.presentedFrames),
         ]);
         const stagesMs = buildStageBreakdown(toggle.inputSentAtMs, state, serverTrace, frame);
 

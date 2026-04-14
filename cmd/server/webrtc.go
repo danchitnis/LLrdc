@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
@@ -317,9 +318,26 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 
 	if vt != nil {
 		log.Printf("Adding video track to PeerConnection: %s", vt.ID())
-		if _, err = pc.AddTrack(vt); err != nil {
+		rtpSender, err := pc.AddTrack(vt)
+		if err != nil {
 			return nil, err
 		}
+		// Read RTCP packets to handle PLIs (Picture Loss Indication)
+		go func() {
+			for {
+				packets, _, rtcpErr := rtpSender.ReadRTCP()
+				if rtcpErr != nil {
+					return
+				}
+				for _, pk := range packets {
+					if _, ok := pk.(*rtcp.PictureLossIndication); ok {
+						log.Printf("Received PLI on video track, triggering keyframe...")
+						TriggerPing()
+						PrimeFrameGeneration(0, 5, 50*time.Millisecond)
+					}
+				}
+			}
+		}()
 	}
 
 	if at != nil {

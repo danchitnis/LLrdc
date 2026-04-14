@@ -3,6 +3,8 @@ import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
 import { setupInput } from './input';
+import { BrowserClientSession } from './client/session';
+import type { ConfigMessage } from './client/types';
 
 export { };
 
@@ -21,76 +23,22 @@ declare global {
 
 let triggerResizeUpdate: () => void = () => { };
 
-// eslint-disable-next-line prefer-const
-let webrtc: WebRTCManager;
+const session = new BrowserClientSession();
+const network = session.network;
+const webcodecs = session.webcodecs;
+const webrtc = session.webrtc;
 
-const network = new NetworkManager(
-    handleBinaryMessage,
-    handleJsonMessage,
-    () => {
-        if (webrtc) webrtc.initWebRTC();
-        triggerResizeUpdate();
-    }
-);
-window.networkManager = network;
-
-const webcodecs: WebCodecsManager = new WebCodecsManager(
-    () => webrtc ? webrtc.isWebRtcActive : false,
-    () => network.networkLatency,
-    () => network.wsBandwidthMbps
-);
-window.webcodecsManager = webcodecs;
-
-webrtc = new WebRTCManager(
-    (data) => network.sendMsg(data),
-    () => network.networkLatency,
-    () => webcodecs.latencyMonitor
-);
-window.webrtcManager = webrtc;
-
-setupInput((data) => {
-    if (webrtc.inputChannel && webrtc.inputChannel.readyState === 'open') {
-        webrtc.inputChannel.send(data);
-    } else {
-        network.sendMsg(data);
-    }
+session.events.on('connected', () => {
+    triggerResizeUpdate();
 });
 
-interface ConfigMessage {
-    type: 'config';
-    bandwidth?: number;
-    quality?: number;
-    max_res?: number;
-    framerate?: number;
-    vbr?: boolean;
-    vbr_threshold?: number;
-    damageTracking?: boolean;
-    mpdecimate?: boolean;
-    keyframe_interval?: number;
-    cpu_effort?: number;
-    cpu_threads?: number;
-    enable_desktop_mouse?: boolean;
-    videoCodec?: string;
-    video_codec?: string;
-    chroma?: string;
-    hdpi?: number;
-    enable_hybrid?: boolean;
-    settle_time?: number;
-    tile_size?: number;
-    enable_audio?: boolean;
-    audio_bitrate?: string;
-    webrtc_buffer?: number;
-    nvenc_latency?: boolean;
-    webrtc_low_latency?: boolean;
-    activity_hz?: number;
-    activity_timeout?: number;
-    restarted?: boolean;
-    captureMode?: string;
-    directBufferRequested?: boolean;
-    directBufferSupported?: boolean;
-    directBufferActive?: boolean;
-    directBufferReason?: string;
-}
+session.events.on('serverMessage', (msg) => {
+    handleJsonMessage(msg);
+});
+
+setupInput((data) => {
+    session.sendInput(data);
+});
 
 let configDebounceTimer: number | null = null;
 let currentHdpi = 100;
@@ -247,7 +195,7 @@ function sendConfig() {
             config.activity_timeout = parseInt(activityTimeoutSlider.value, 10);
         }
 
-        network.sendMsg(JSON.stringify(config));
+        session.sendConfig(config);
         configDebounceTimer = null;
     }, 100);
 }
@@ -509,7 +457,7 @@ function sendResize() {
     lastResizeWidth = width;
     lastResizeHeight = height;
     console.log(`Sending resize: ${width}x${height}`);
-    network.sendMsg(JSON.stringify({ type: 'resize', width, height }));
+    session.sendResize(width, height);
 }
 
 function scheduleResize() {
@@ -541,78 +489,6 @@ window.addEventListener('load', () => {
     window.addEventListener('mousedown', unmuteVideo, { once: true });
     window.addEventListener('keydown', unmuteVideo, { once: true });
 });
-
-function handleBinaryMessage(buffer: ArrayBuffer) {
-    const dv = new DataView(buffer);
-    const type = dv.getUint8(0);
-
-    if (type === 1) { // Video
-        const timestamp = dv.getFloat64(1, false);
-        const chunkData = new Uint8Array(buffer, 9);
-
-        const now = Date.now();
-        webcodecs.latencyMonitor = Math.round(Math.abs(now - timestamp));
-
-        let isKey = false;
-        if (webcodecs.videoCodec.startsWith('h264')) {
-            // H.264 Annex B keyframe detection
-            // Look for NAL unit type 5 (IDR) or 7 (SPS)
-            for (let i = 0; i < chunkData.length - 4; i++) {
-                if (chunkData[i] === 0 && chunkData[i + 1] === 0 && chunkData[i + 2] === 0 && chunkData[i + 3] === 1) {
-                    const nalType = chunkData[i + 4] & 0x1F;
-                    if (nalType === 5 || nalType === 7) {
-                        isKey = true;
-                        break;
-                    }
-                }
-            }
-        } else if (webcodecs.videoCodec.startsWith('h265')) {
-            // H.265 Annex B keyframe detection
-            // Look for VPS (32), SPS (33), PPS (34) or IDR (19, 20) or CRA (21)
-            for (let i = 0; i < chunkData.length - 4; i++) {
-                if (chunkData[i] === 0 && chunkData[i + 1] === 0 && chunkData[i + 2] === 0 && chunkData[i + 3] === 1) {
-                    const nalType = (chunkData[i + 4] & 0x7E) >> 1;
-                    if (nalType === 19 || nalType === 20 || nalType === 21 || nalType === 32 || nalType === 33 || nalType === 34) {
-                        isKey = true;
-                        break;
-                    }
-                }
-            }
-        } else if (webcodecs.videoCodec.startsWith('av1')) {
-            // AV1 keyframe detection
-            // An AV1 keyframe (IDR) must contain a Sequence Header OBU (Type 1).
-            // It often starts with a Temporal Delimiter OBU (Type 2).
-            let pos = 0;
-            while (pos < chunkData.length && pos < 100) { // Check first 100 bytes
-                const obuType = (chunkData[pos] >> 3) & 0x0F;
-                if (obuType === 1) { // Sequence Header
-                    isKey = true;
-                    break;
-                }
-                // Skip OBU header (1 byte) + extension header (optional 1 byte) + size (leb128)
-                // This is complex to do fully, so we just check if the first or second OBU is Seq Header.
-                // Most encoders put Temporal Delimiter (2 bytes usually: 0x12 0x00) then Seq Header.
-                if (obuType === 2) { // Temporal Delimiter
-                   pos += 2; // Usually 2 bytes
-                   continue;
-                }
-                break;
-            }
-        } else {
-            // VP8 keyframe detection
-            isKey = (chunkData[0] & 0x01) === 0;
-        }
-
-        if (isKey) {
-            window.hasReceivedKeyFrame = true;
-        }
-
-        if (!window.hasReceivedKeyFrame) return;
-        if (webrtc && webrtc.isWebRtcActive) return;
-
-        webcodecs.decodeChunk(isKey, timestamp, chunkData);
-    }
-}
 
 export function clearLosslessCanvas(x?: number, y?: number, w?: number, h?: number) {
     if (sharpnessCtx && sharpnessLayerEl) {
@@ -967,18 +843,4 @@ function handleJsonMessage(msg: Record<string, unknown>) {
     }
 }
 
-window.getStats = () => {
-    const webrtcTotal = (webrtc && webrtc.lastTotalDecoded >= 0) ? webrtc.lastTotalDecoded : 0;
-    const webcodecsTotal = (webcodecs && webcodecs.totalDecoded >= 0) ? webcodecs.totalDecoded : 0;
-    
-    // If WebRTC is active, prefer its stats. Otherwise use WebCodecs.
-    const useWebRtc = webrtc && webrtc.isWebRtcActive;
-    
-    return {
-        fps: useWebRtc ? webrtc.fps : webcodecs.fps,
-        latency: webcodecs.latencyMonitor,
-        totalDecoded: useWebRtc ? webrtcTotal : webcodecsTotal,
-        webrtcFps: webrtc ? webrtc.fps : 0,
-        bytesReceived: useWebRtc ? webrtc.lastBytesReceived : network.totalBytesReceived
-    };
-};
+window.getStats = () => session.getStats();

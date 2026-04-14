@@ -34,6 +34,10 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 
 		(*pc).OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 			log.Printf("WebRTC PeerConnection state changed: %s", s.String())
+			if s == webrtc.PeerConnectionStateConnected {
+				PrimeFrameGeneration(0, 5, 100*time.Millisecond)
+				TriggerPing()
+			}
 		})
 
 		(*pc).OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
@@ -91,24 +95,22 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			restarted := false
 			ffmpegMutex.Lock()
 			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-				// Avoid redundant restarts if a codec change was already in progress.
-				sinceLastRestart := time.Since(getLastFFmpegRestartTime())
-				if sinceLastRestart > 15*time.Second {
-					log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
-					killFFmpegWithTimestamp()
-					restarted = true
-				} else {
-					log.Printf("New WebRTC peer connected, but skipping restart as it was recently restarted (%.2fs ago) for a codec switch.", sinceLastRestart.Seconds())
-				}
+				log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
+				forceKillProcess(ffmpegCmd.Process); restarted = true
+				restarted = true
 			}
 			ffmpegMutex.Unlock()
 
 			if restarted {
+				PrimeFrameGeneration(0, 5, 100*time.Millisecond)
 				if err := waitForStreamReadyAfter(previousStreamID, 5*time.Second); err != nil {
 					log.Printf("Stream did not become ready after WebRTC reconnect: %v", err)
 					PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 				}
+				return
 			}
+			PrimeFrameGeneration(0, 5, 100*time.Millisecond)
+			TriggerPing()
 		}(getCurrentFFmpegStreamID())
 	} else {
 		log.Println("webrtc_offer missing 'sdp' map")

@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1.7
+FROM golang:1.24-bookworm AS builder
+WORKDIR /app
+ARG GO_BUILD_TAGS=native
+ARG CLIENT_BUILD_ID=dev
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libsdl2-dev \
+    libvpx-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    go mod download
+
+COPY internal ./internal
+COPY cmd ./cmd
+
+FROM builder AS test
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=1 go test -tags "${GO_BUILD_TAGS}" ./internal/client ./cmd/client
+
+FROM builder AS build
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=1 go build -tags "${GO_BUILD_TAGS}" -buildvcs=false \
+    -ldflags "-X main.clientBuildID=${CLIENT_BUILD_ID}" \
+    -o /out/llrdc-client ./cmd/client
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    xauth \
+    xvfb \
+    libsdl2-2.0-0 \
+    libvpx7 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/llrdc-client /usr/local/bin/llrdc-client
+
+EXPOSE 18080
+ENTRYPOINT ["/usr/local/bin/llrdc-client"]

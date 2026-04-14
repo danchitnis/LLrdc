@@ -1,4 +1,5 @@
 import { log, statusEl, videoEl, displayEl, sharpnessLayerEl, ctx, updateStatusText, applySmoothingSettings } from './ui';
+import type { PresentedFrameMeta } from './client/types';
 
 export class WebRTCManager {
     public rtcPeer: RTCPeerConnection | null = null;
@@ -17,17 +18,19 @@ export class WebRTCManager {
     private lastFPSUpdate = Date.now();
     private lastCanvasFrameTime = 0;
     private getLatencyMonitor: () => number;
+    private onPresentedFrame?: (frame: PresentedFrameMeta) => void;
     private bandwidthMbps = 0;
     private webrtcLatency = 0;
     private hasSentWebrtcReady = false;
     private statsInterval: ReturnType<typeof setInterval> | null = null;
     private iceCandidatesBuffer: RTCIceCandidateInit[] = [];
 
-    constructor(sendWs: (data: string) => void, getNetworkLatencyVal: () => number, getLatencyMonitor: () => number) {
+    constructor(sendWs: (data: string) => void, getNetworkLatencyVal: () => number, getLatencyMonitor: () => number, onPresentedFrame?: (frame: PresentedFrameMeta) => void) {
         console.log('[WebRTCManager] Constructor called');
         this.sendWs = sendWs;
         this.getNetworkLatencyVal = getNetworkLatencyVal;
         this.getLatencyMonitor = getLatencyMonitor;
+        this.onPresentedFrame = onPresentedFrame;
 
         // Unmute video element upon user interaction
         const unmuteHandler = () => {
@@ -189,18 +192,21 @@ export class WebRTCManager {
         if (!this.isWebRtcActive) return;
         if (ctx && videoEl.videoWidth > 0) {
             this.lastCanvasFrameTime = Date.now();
+            let frameMeta: PresentedFrameMeta | null = null;
             if (metadata) {
                 this.frameCount++;
                 
                 // Expose high-precision latency metadata for benchmarks
-                (window as any).__llrdcLatestFrameMeta = {
+                frameMeta = {
                     callbackAtMs: performance.timeOrigin + now,
                     presentationAtMs: performance.timeOrigin + metadata.presentationTime,
                     expectedDisplayAtMs: performance.timeOrigin + metadata.expectedDisplayTime,
-                    receiveAtMs: performance.timeOrigin + (metadata.receiveTime || metadata.presentationTime), // Fallback if receiveTime is missing
+                    captureAtMs: performance.timeOrigin + ((metadata as VideoFrameCallbackMetadata & { captureTime?: number }).captureTime || 0),
+                    receiveAtMs: performance.timeOrigin + ((metadata as VideoFrameCallbackMetadata & { receiveTime?: number }).receiveTime || metadata.presentationTime),
                     processingDurationMs: (metadata.processingDuration || 0) * 1000,
                     presentedFrames: metadata.presentedFrames
                 };
+                (window as any).__llrdcLatestFrameMeta = frameMeta;
             } else {
                 if (videoEl.currentTime !== this.lastVideoFrameTime) {
                     this.lastVideoFrameTime = videoEl.currentTime;
@@ -218,6 +224,9 @@ export class WebRTCManager {
                 applySmoothingSettings();
             }
             ctx.drawImage(videoEl, 0, 0, displayEl.width, displayEl.height);
+            if (frameMeta) {
+                this.onPresentedFrame?.(frameMeta);
+            }
             this.updateStats();
         }
 
@@ -357,5 +366,9 @@ export class WebRTCManager {
                 this.iceCandidatesBuffer.push(candidate);
             }
         }
+    }
+
+    public getCurrentLatency() {
+        return this.webrtcLatency;
     }
 }

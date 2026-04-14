@@ -332,6 +332,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		conn:     conn,
 		sendChan: make(chan []byte, 300),
 	}
+	writerDone := make(chan struct{})
 
 	clientsMutex.Lock()
 	clients[conn] = client
@@ -341,14 +342,21 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		clientsMutex.Lock()
 		delete(clients, conn)
 		clientsMutex.Unlock()
+		close(client.sendChan)
+		<-writerDone
 	}()
 
 	// Background worker for non-blocking websocket writes
 	go func() {
+		defer close(writerDone)
 		for packet := range client.sendChan {
 			client.mu.Lock()
-			_ = client.conn.WriteMessage(websocket.BinaryMessage, packet)
+			err := client.conn.WriteMessage(websocket.BinaryMessage, packet)
 			client.mu.Unlock()
+			if err != nil {
+				log.Printf("WebSocket binary write failed: %v", err)
+				return
+			}
 		}
 	}()
 
@@ -366,7 +374,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		if pc != nil {
-			pc.Close()
+			log.Println("Closing PeerConnection for disconnected websocket client")
+			_ = pc.Close()
 		}
 	}()
 
@@ -600,12 +609,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		case "webrtc_ready":
-			log.Printf("Client WebRTC ready, stopping fallback websocket video transmission")
+			log.Printf("Client WebRTC ready, stopping fallback websocket video transmission and forcing keyframe")
 			clientsMutex.Lock()
 			if c, ok := clients[conn]; ok {
 				c.webrtcReady = true
 			}
 			clientsMutex.Unlock()
+			// Force a fresh keyframe and wake up compositor
+			TriggerPing()
+			PrimeFrameGeneration(0, 10, 50*time.Millisecond)
 			// Trigger a ping to push the first frame in damage tracking mode
 			TriggerPing()
 		case "ping":
