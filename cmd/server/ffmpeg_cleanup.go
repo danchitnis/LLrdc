@@ -1,6 +1,5 @@
 package main
 import (
-	"log"
 	"os"
 	"time"
 )
