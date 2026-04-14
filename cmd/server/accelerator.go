@@ -5,11 +5,11 @@ import "os"
 type acceleratorMode string
 
 const (
-	acceleratorCPU     acceleratorMode = "cpu"
-	acceleratorNVIDIA  acceleratorMode = "nvidia"
-	acceleratorIntel   acceleratorMode = "intel"
-	defaultIntelRender                 = "/dev/dri/renderD129"
-	fallbackIntelRender                = "/dev/dri/renderD128"
+	acceleratorCPU      acceleratorMode = "cpu"
+	acceleratorNVIDIA   acceleratorMode = "nvidia"
+	acceleratorIntel    acceleratorMode = "intel"
+	defaultIntelRender                  = "/dev/dri/renderD129"
+	fallbackIntelRender                 = "/dev/dri/renderD128"
 )
 
 func currentAcceleratorMode() acceleratorMode {

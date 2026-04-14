@@ -96,7 +96,8 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			ffmpegMutex.Lock()
 			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
 				log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
-				forceKillProcess(ffmpegCmd.Process); restarted = true
+				forceKillProcess(ffmpegCmd.Process)
+				restarted = true
 				restarted = true
 			}
 			ffmpegMutex.Unlock()

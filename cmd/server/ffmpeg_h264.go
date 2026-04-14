@@ -40,7 +40,9 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 				)
 			} else {
 				crf := 28 + (vbrThreshold / 50)
-				if crf > 51 { crf = 51 }
+				if crf > 51 {
+					crf = 51
+				}
 				outputArgs = append(outputArgs,
 					"-crf", fmt.Sprintf("%d", crf),
 					"-maxrate", bitrateStr,
@@ -61,7 +63,9 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 		val := 51 - (quality-10)*33/90 // Map 10-100 to 51-18
 		if vbr {
 			val += (vbrThreshold / 50)
-			if val > 51 { val = 51 }
+			if val > 51 {
+				val = 51
+			}
 		}
 		if VideoCodec == "h264_nvenc" {
 			outputArgs = append(outputArgs, "-rc", "vbr", "-cq", fmt.Sprintf("%d", val))

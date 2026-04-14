@@ -56,7 +56,9 @@ func buildAV1Args(mode string, bw int, quality int, fps int, vbr bool, vbrThresh
 		val := 63 - (quality-10)*50/90 // Map 10-100 to 63-13 (CRF/CQ range)
 		if vbr {
 			val += (vbrThreshold / 20)
-			if val > 63 { val = 63 }
+			if val > 63 {
+				val = 63
+			}
 		}
 		if VideoCodec == "av1_nvenc" {
 			outputArgs = append(outputArgs, "-rc", "vbr", "-cq", fmt.Sprintf("%d", val))
