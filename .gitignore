@@ -4,8 +4,8 @@ bin/
 playwright-report/
 test-results/
 public/
-llrdc
-client
+/llrdc
+/client
 plan/
 tmp_broken_wayland/
 dist/
