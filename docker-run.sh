@@ -38,6 +38,7 @@ HOST_RENDER_GID="${RENDER_GID:-}"
 HOST_VIDEO_GID="${VIDEO_GID:-}"
 
 WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}"
+WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}"
 ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}"
 ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}"
 NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}"
@@ -90,6 +91,10 @@ while [[ $# -gt 0 ]]; do
         echo "Error: --webrtc-buffer requires an argument."
         exit 1
       fi
+      ;;
+    --webrtc-low-latency)
+      WEBRTC_LOW_LATENCY="true"
+      shift
       ;;
     --activity-hz)
       if [ -n "${2:-}" ]; then
@@ -377,6 +382,7 @@ docker run \
   --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES_ENV}" \
   --env WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}" \
   --env WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}" \
+  --env WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}" \
   --env ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}" \
   --env ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}" \
   --env CPU_EFFORT="${CPU_EFFORT:-}" \

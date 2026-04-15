@@ -293,7 +293,18 @@ func (s *Session) Connect(serverURL string) error {
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
 
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+	m := &webrtc.MediaEngine{}
+	if err := m.RegisterDefaultCodecs(); err != nil {
+		return fmt.Errorf("register default codecs: %w", err)
+	}
+
+	se := webrtc.SettingEngine{}
+	se.DisableSRTPReplayProtection(true)
+	se.DisableSRTCPReplayProtection(true)
+
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se))
+
+	pc, err := api.NewPeerConnection(webrtc.Configuration{
 		BundlePolicy: webrtc.BundlePolicyMaxBundle,
 	})
 	if err != nil {

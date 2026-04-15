@@ -26,7 +26,88 @@ var (
 	// static buffer size is large, but we limit it dynamically in WriteWebRTCFrame
 	webrtcFrameChan = make(chan WebRTCFrame, 1000)
 	currentStreamID uint32
+
+	lastTrackMutex  sync.Mutex
+	lastTrack       *webrtc.TrackLocalStaticSample
+	lastCaptureTime time.Time
+	framesWritten   int
+	lastLogTime     time.Time
 )
+
+func writeFrameToTrack(frame WebRTCFrame) {
+	videoTrackMutex.RLock()
+	vt := videoTrack
+	videoTrackMutex.RUnlock()
+
+	if vt == nil {
+		return
+	}
+
+	lastTrackMutex.Lock()
+	defer lastTrackMutex.Unlock()
+
+	if lastLogTime.IsZero() {
+		lastLogTime = time.Now()
+	}
+
+	// If track changed, reset state
+	if vt != lastTrack {
+		lastTrack = vt
+		lastCaptureTime = time.Time{}
+	}
+
+	// Drop frames from a different codec family to prevent decoder freezes across reconfigurations.
+	if normalizeCodecFamily(frame.Codec) != normalizeCodecFamily(VideoCodec) {
+		return
+	}
+
+	// If stream ID changed (e.g. FFmpeg restart), treat as new stream
+	if frame.StreamID != currentStreamID {
+		currentStreamID = frame.StreamID
+		lastCaptureTime = time.Time{}
+	}
+
+	duration := time.Second / time.Duration(FPS)
+	if !lastCaptureTime.IsZero() {
+		if delta := frame.CaptureTime.Sub(lastCaptureTime); delta > 0 {
+			duration = delta
+		}
+	}
+	if duration < time.Millisecond {
+		duration = time.Millisecond
+	}
+	// Clamp pathological gaps so reconnects or dropped bursts do not cause visible jumps.
+	maxDuration := 2 * time.Second / time.Duration(FPS)
+	if maxDuration < time.Millisecond {
+		maxDuration = time.Millisecond
+	}
+	if duration > maxDuration {
+		duration = maxDuration
+	}
+	lastCaptureTime = frame.CaptureTime
+
+	// Send the current frame immediately
+	err := vt.WriteSample(media.Sample{
+		Data:     frame.Data,
+		Duration: duration,
+	})
+	if err == nil {
+		framesWritten++
+	} else {
+		errMsg := err.Error()
+		if errMsg != "io: read/write on closed pipe" && errMsg != "Track not bound" {
+			log.Printf("WebRTC WriteSample error: %v", err)
+		}
+	}
+
+	if time.Since(lastLogTime) >= time.Second {
+		if UseDebugFFmpeg {
+			log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
+		}
+		framesWritten = 0
+		lastLogTime = time.Now()
+	}
+}
 
 func normalizeCodecFamily(codec string) string {
 	switch codec {
@@ -83,85 +164,21 @@ func initWebRTC() {
 	initWebRTCTrack()
 
 	go func() {
-		var lastTrack *webrtc.TrackLocalStaticSample
-		var lastCaptureTime time.Time
-
-		framesWritten := 0
-		lastLogTime := time.Now()
-
 		for frame := range webrtcFrameChan {
-			videoTrackMutex.RLock()
-			vt := videoTrack
-			videoTrackMutex.RUnlock()
-
-			if vt == nil {
-				continue
-			}
-
-			// If track changed, reset state
-			if vt != lastTrack {
-				lastTrack = vt
-				lastCaptureTime = time.Time{}
-			}
-
-			// Drop frames from a different codec family to prevent decoder freezes across reconfigurations.
-			if normalizeCodecFamily(frame.Codec) != normalizeCodecFamily(VideoCodec) {
-				continue
-			}
-
-			// If stream ID changed (e.g. FFmpeg restart), treat as new stream
-			if frame.StreamID != currentStreamID {
-				currentStreamID = frame.StreamID
-				lastCaptureTime = time.Time{}
-			}
-
-			duration := time.Second / time.Duration(FPS)
-			if !lastCaptureTime.IsZero() {
-				if delta := frame.CaptureTime.Sub(lastCaptureTime); delta > 0 {
-					duration = delta
-				}
-			}
-			if duration < time.Millisecond {
-				duration = time.Millisecond
-			}
-			// Clamp pathological gaps so reconnects or dropped bursts do not cause visible jumps.
-			maxDuration := 2 * time.Second / time.Duration(FPS)
-			if maxDuration < time.Millisecond {
-				maxDuration = time.Millisecond
-			}
-			if duration > maxDuration {
-				duration = maxDuration
-			}
-			lastCaptureTime = frame.CaptureTime
-
-			// Send the current frame immediately
-			err := vt.WriteSample(media.Sample{
-				Data:     frame.Data,
-				Duration: duration,
-			})
-			if err == nil {
-				framesWritten++
-			} else {
-				errMsg := err.Error()
-				if errMsg != "io: read/write on closed pipe" && errMsg != "Track not bound" {
-					log.Printf("WebRTC WriteSample error: %v", err)
-				}
-			}
-
-			if time.Since(lastLogTime) >= time.Second {
-				if UseDebugFFmpeg {
-					log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
-				}
-				framesWritten = 0
-				lastLogTime = time.Now()
-			}
+			writeFrameToTrack(frame)
 		}
 	}()
 }
 
 func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string) {
-	// If the channel is already fuller than our configured limit, flush it.
 	limit := WebRTCBufferSize
+
+	// If zero buffering is requested and we are in low-latency mode, write directly.
+	if limit <= 0 && WebRTCLowLatency {
+		writeFrameToTrack(WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec})
+		return
+	}
+
 	if limit < 1 {
 		limit = 1
 	}
@@ -243,6 +260,7 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 		s.DisableSRTPReplayProtection(true)
 		s.DisableSRTCPReplayProtection(true)
 		s.SetLite(true)
+		s.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
 	}
 
 	// Prefer an explicit WEBRTC_PUBLIC_IP; otherwise derive from the browser request host.
@@ -296,6 +314,16 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	}
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
+	if WebRTCLowLatency {
+		m := &webrtc.MediaEngine{}
+		if err := m.RegisterDefaultCodecs(); err == nil {
+			// Register custom API with empty interceptor registry to bypass NACK/jitter buffers.
+			api = webrtc.NewAPI(
+				webrtc.WithSettingEngine(s),
+				webrtc.WithMediaEngine(m),
+			)
+		}
+	}
 
 	var iceServers []webrtc.ICEServer
 	if !strings.HasPrefix(publicIP, "127.") && publicIP != "::1" && publicIP != "" {

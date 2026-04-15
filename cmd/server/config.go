@@ -92,7 +92,7 @@ func initConfig() {
 	defaultWebRTCInterfaces := os.Getenv("WEBRTC_INTERFACES")
 	defaultWebRTCExcludeInterfaces := os.Getenv("WEBRTC_EXCLUDE_INTERFACES")
 
-	defaultWebRTCBufferSize := 2
+	defaultWebRTCBufferSize := 1
 	if bs, err := strconv.Atoi(os.Getenv("WEBRTC_BUFFER_SIZE")); err == nil {
 		defaultWebRTCBufferSize = bs
 	}
