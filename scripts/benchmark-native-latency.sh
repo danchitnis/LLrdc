@@ -17,6 +17,7 @@ SERVER_PORT=$(get_free_port)
 CONTROL_PORT=$(get_free_port)
 CONTAINER_NAME="llrdc-native-latency-$SERVER_PORT"
 VIDEO_CODEC="vp8"
+FPS=60
 
 echo "▶ Using Server Port: $SERVER_PORT, Control Port: $CONTROL_PORT"
 
@@ -60,6 +61,7 @@ docker run -d --name "$CONTAINER_NAME" \
     -e VIDEO_CODEC="$VIDEO_CODEC" \
     -e VBR=false \
     -e PORT="$SERVER_PORT" \
+    -e FPS="$FPS" \
     -e WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}" \
     -e WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}" \
     danchitnis/llrdc:latest \

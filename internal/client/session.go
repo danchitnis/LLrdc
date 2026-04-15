@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/ice/v4"
+	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -301,23 +301,34 @@ func (s *Session) Connect(serverURL string) error {
 		return fmt.Errorf("register default codecs: %w", err)
 	}
 
+	i := &interceptor.Registry{}
+	if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
+		return fmt.Errorf("register default interceptors: %w", err)
+	}
+
 	se := webrtc.SettingEngine{}
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
 
-	// Create a UDP socket with large buffers to prevent packet loss during bursts
-	if udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0}); err == nil {
-		_ = udpConn.SetReadBuffer(4 * 1024 * 1024) // 4MB
-		mux := ice.NewUDPMuxDefault(ice.UDPMuxDefaultConfig{
-			UDPConn: udpConn,
-		})
-		se.SetICEUDPMux(mux)
-		s.mu.Lock()
-		s.udpConn = udpConn
-		s.mu.Unlock()
-	}
+	/*
+		// Create a UDP socket with large buffers to prevent packet loss during bursts
+		if udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0}); err == nil {
+			_ = udpConn.SetReadBuffer(4 * 1024 * 1024) // 4MB
+			mux := ice.NewUDPMuxDefault(ice.UDPMuxParams{
+				UDPConn: udpConn,
+			})
+			se.SetICEUDPMux(mux)
+			s.mu.Lock()
+			s.udpConn = udpConn
+			s.mu.Unlock()
+		}
+	*/
 
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se))
+	api := webrtc.NewAPI(
+		webrtc.WithMediaEngine(m),
+		webrtc.WithSettingEngine(se),
+		webrtc.WithInterceptorRegistry(i),
+	)
 
 	pc, err := api.NewPeerConnection(webrtc.Configuration{
 		BundlePolicy: webrtc.BundlePolicyMaxBundle,

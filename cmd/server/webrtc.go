@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pion/ice/v4"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -21,95 +20,13 @@ type WebRTCFrame struct {
 }
 
 var (
-	webrtcUDPMux    ice.UDPMux
 	videoTrack      *webrtc.TrackLocalStaticSample
 	audioTrack      *webrtc.TrackLocalStaticSample
 	videoTrackMutex sync.RWMutex
 	// static buffer size is large, but we limit it dynamically in WriteWebRTCFrame
 	webrtcFrameChan = make(chan WebRTCFrame, 1000)
 	currentStreamID uint32
-
-	lastTrackMutex  sync.Mutex
-	lastTrack       *webrtc.TrackLocalStaticSample
-	lastCaptureTime time.Time
-	framesWritten   int
-	lastLogTime     time.Time
 )
-
-func writeFrameToTrack(frame WebRTCFrame) {
-	videoTrackMutex.RLock()
-	vt := videoTrack
-	videoTrackMutex.RUnlock()
-
-	if vt == nil {
-		return
-	}
-
-	lastTrackMutex.Lock()
-	defer lastTrackMutex.Unlock()
-
-	if lastLogTime.IsZero() {
-		lastLogTime = time.Now()
-	}
-
-	// If track changed, reset state
-	if vt != lastTrack {
-		lastTrack = vt
-		lastCaptureTime = time.Time{}
-	}
-
-	// Drop frames from a different codec family to prevent decoder freezes across reconfigurations.
-	if normalizeCodecFamily(frame.Codec) != normalizeCodecFamily(VideoCodec) {
-		return
-	}
-
-	// If stream ID changed (e.g. FFmpeg restart), treat as new stream
-	if frame.StreamID != currentStreamID {
-		currentStreamID = frame.StreamID
-		lastCaptureTime = time.Time{}
-	}
-
-	duration := time.Second / time.Duration(FPS)
-	if !lastCaptureTime.IsZero() {
-		if delta := frame.CaptureTime.Sub(lastCaptureTime); delta > 0 {
-			duration = delta
-		}
-	}
-	if duration < time.Millisecond {
-		duration = time.Millisecond
-	}
-	// Clamp pathological gaps so reconnects or dropped bursts do not cause visible jumps.
-	maxDuration := 2 * time.Second / time.Duration(FPS)
-	if maxDuration < time.Millisecond {
-		maxDuration = time.Millisecond
-	}
-	if duration > maxDuration {
-		duration = maxDuration
-	}
-	lastCaptureTime = frame.CaptureTime
-
-	// Send the current frame immediately
-	err := vt.WriteSample(media.Sample{
-		Data:     frame.Data,
-		Duration: duration,
-	})
-	if err == nil {
-		framesWritten++
-	} else {
-		errMsg := err.Error()
-		if errMsg != "io: read/write on closed pipe" && errMsg != "Track not bound" {
-			log.Printf("WebRTC WriteSample error: %v", err)
-		}
-	}
-
-	if time.Since(lastLogTime) >= time.Second {
-		if UseDebugFFmpeg {
-			log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
-		}
-		framesWritten = 0
-		lastLogTime = time.Now()
-	}
-}
 
 func normalizeCodecFamily(codec string) string {
 	switch codec {
@@ -162,38 +79,93 @@ func initWebRTCTrack() {
 	}
 }
 
-func initWebRTCMux() {
-	if !WebRTCLowLatency {
+var (
+	lastTrackMutex  sync.Mutex
+	lastTrack       *webrtc.TrackLocalStaticSample
+	lastCaptureTime time.Time
+	framesWritten   int
+	lastLogTime     time.Time
+)
+
+func writeFrameToTrack(frame WebRTCFrame) {
+	videoTrackMutex.RLock()
+	vt := videoTrack
+	videoTrackMutex.RUnlock()
+
+	if vt == nil {
 		return
 	}
 
-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: Port})
-	if err != nil {
-		log.Printf("Warning: Failed to bind WebRTC UDP Mux to port %d: %v. Falling back to ephemeral ports.", Port, err)
+	lastTrackMutex.Lock()
+	defer lastTrackMutex.Unlock()
+
+	if lastLogTime.IsZero() {
+		lastLogTime = time.Now()
+	}
+
+	// If track changed, reset state
+	if vt != lastTrack {
+		lastTrack = vt
+		lastCaptureTime = time.Time{}
+	}
+
+	// Drop frames from a different codec family to prevent decoder freezes across reconfigurations.
+	if normalizeCodecFamily(frame.Codec) != normalizeCodecFamily(VideoCodec) {
 		return
 	}
 
-	// Increase socket buffers to handle large video bursts
-	const bufferSize = 4 * 1024 * 1024 // 4MB
-	if err := udpConn.SetReadBuffer(bufferSize); err != nil {
-		log.Printf("Warning: Failed to set UDP read buffer: %v", err)
-	}
-	if err := udpConn.SetWriteBuffer(bufferSize); err != nil {
-		log.Printf("Warning: Failed to set UDP write buffer: %v", err)
+	sid := frame.StreamID
+
+	// If stream ID changed (e.g. FFmpeg restart), treat as new stream
+	if sid != currentStreamID {
+		currentStreamID = sid
+		lastCaptureTime = time.Time{}
 	}
 
-	mux := ice.NewUDPMuxDefault(ice.UDPMuxDefaultConfig{
-		UDPConn: udpConn,
+	duration := time.Second / time.Duration(FPS)
+	if !lastCaptureTime.IsZero() {
+		if delta := frame.CaptureTime.Sub(lastCaptureTime); delta > 0 {
+			duration = delta
+		}
+	}
+	if duration < time.Millisecond {
+		duration = time.Millisecond
+	}
+	// Clamp pathological gaps so reconnects or dropped bursts do not cause visible jumps.
+	maxDuration := 2 * time.Second / time.Duration(FPS)
+	if maxDuration < time.Millisecond {
+		maxDuration = time.Millisecond
+	}
+	if duration > maxDuration {
+		duration = maxDuration
+	}
+	lastCaptureTime = frame.CaptureTime
+
+	// Send the current frame immediately
+	err := vt.WriteSample(media.Sample{
+		Data:     frame.Data,
+		Duration: duration,
 	})
+	if err == nil {
+		framesWritten++
+	} else {
+		errMsg := err.Error()
+		if errMsg != "io: read/write on closed pipe" && errMsg != "Track not bound" {
+			log.Printf("WebRTC WriteSample error: %v", err)
+		}
+	}
 
-	webrtcUDPMux = mux
-	log.Printf("WebRTC UDP Mux initialized on port %d with 4MB buffers", Port)
+	if time.Since(lastLogTime) >= time.Second {
+		if UseDebugFFmpeg {
+			log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
+		}
+		framesWritten = 0
+		lastLogTime = time.Now()
+	}
 }
 
 func initWebRTC() {
-	initWebRTCMux()
 	initWebRTCTrack()
-...
 
 	go func() {
 		for frame := range webrtcFrameChan {
@@ -215,6 +187,7 @@ func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, code
 		limit = 1
 	}
 
+	// If the channel is already fuller than our configured limit, flush it.
 	for len(webrtcFrameChan) >= limit {
 		select {
 		case <-webrtcFrameChan:
@@ -286,12 +259,7 @@ func resolveAdvertisedIP(requestHost string) string {
 
 func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
-
-	if webrtcUDPMux != nil {
-		s.SetICEUDPMux(webrtcUDPMux)
-	} else {
-		s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
-	}
+	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
 
 	if WebRTCLowLatency {
 		s.DisableSRTPReplayProtection(true)
@@ -351,16 +319,6 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	}
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
-	if WebRTCLowLatency {
-		m := &webrtc.MediaEngine{}
-		if err := m.RegisterDefaultCodecs(); err == nil {
-			// Register custom API with empty interceptor registry to bypass NACK/jitter buffers.
-			api = webrtc.NewAPI(
-				webrtc.WithSettingEngine(s),
-				webrtc.WithMediaEngine(m),
-			)
-		}
-	}
 
 	var iceServers []webrtc.ICEServer
 	if !strings.HasPrefix(publicIP, "127.") && publicIP != "::1" && publicIP != "" {
