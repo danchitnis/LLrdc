@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/ice/v4"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -20,6 +21,7 @@ type WebRTCFrame struct {
 }
 
 var (
+	webrtcUDPMux    ice.UDPMux
 	videoTrack      *webrtc.TrackLocalStaticSample
 	audioTrack      *webrtc.TrackLocalStaticSample
 	videoTrackMutex sync.RWMutex
@@ -160,8 +162,38 @@ func initWebRTCTrack() {
 	}
 }
 
+func initWebRTCMux() {
+	if !WebRTCLowLatency {
+		return
+	}
+
+	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: Port})
+	if err != nil {
+		log.Printf("Warning: Failed to bind WebRTC UDP Mux to port %d: %v. Falling back to ephemeral ports.", Port, err)
+		return
+	}
+
+	// Increase socket buffers to handle large video bursts
+	const bufferSize = 4 * 1024 * 1024 // 4MB
+	if err := udpConn.SetReadBuffer(bufferSize); err != nil {
+		log.Printf("Warning: Failed to set UDP read buffer: %v", err)
+	}
+	if err := udpConn.SetWriteBuffer(bufferSize); err != nil {
+		log.Printf("Warning: Failed to set UDP write buffer: %v", err)
+	}
+
+	mux := ice.NewUDPMuxDefault(ice.UDPMuxDefaultConfig{
+		UDPConn: udpConn,
+	})
+
+	webrtcUDPMux = mux
+	log.Printf("WebRTC UDP Mux initialized on port %d with 4MB buffers", Port)
+}
+
 func initWebRTC() {
+	initWebRTCMux()
 	initWebRTCTrack()
+...
 
 	go func() {
 		for frame := range webrtcFrameChan {
@@ -254,7 +286,12 @@ func resolveAdvertisedIP(requestHost string) string {
 
 func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
-	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
+
+	if webrtcUDPMux != nil {
+		s.SetICEUDPMux(webrtcUDPMux)
+	} else {
+		s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
+	}
 
 	if WebRTCLowLatency {
 		s.DisableSRTPReplayProtection(true)

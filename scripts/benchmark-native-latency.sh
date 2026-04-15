@@ -60,6 +60,8 @@ docker run -d --name "$CONTAINER_NAME" \
     -e VIDEO_CODEC="$VIDEO_CODEC" \
     -e VBR=false \
     -e PORT="$SERVER_PORT" \
+    -e WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}" \
+    -e WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}" \
     danchitnis/llrdc:latest \
     /app/llrdc --port "$SERVER_PORT" >/dev/null
 

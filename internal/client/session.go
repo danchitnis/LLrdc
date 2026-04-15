@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pion/ice/v4"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -141,6 +143,7 @@ type Session struct {
 	conn   *websocket.Conn
 	pc     *webrtc.PeerConnection
 	input  *webrtc.DataChannel
+	udpConn *net.UDPConn
 	state  SessionState
 	stats  SessionStats
 	closed chan struct{}
@@ -302,6 +305,18 @@ func (s *Session) Connect(serverURL string) error {
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
 
+	// Create a UDP socket with large buffers to prevent packet loss during bursts
+	if udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0}); err == nil {
+		_ = udpConn.SetReadBuffer(4 * 1024 * 1024) // 4MB
+		mux := ice.NewUDPMuxDefault(ice.UDPMuxDefaultConfig{
+			UDPConn: udpConn,
+		})
+		se.SetICEUDPMux(mux)
+		s.mu.Lock()
+		s.udpConn = udpConn
+		s.mu.Unlock()
+	}
+
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se))
 
 	pc, err := api.NewPeerConnection(webrtc.Configuration{
@@ -451,9 +466,11 @@ func (s *Session) Disconnect() error {
 	conn := s.conn
 	pc := s.pc
 	input := s.input
+	udpConn := s.udpConn
 	s.conn = nil
 	s.pc = nil
 	s.input = nil
+	s.udpConn = nil
 	s.state.Connected = false
 	s.state.WebRTCConnected = false
 	s.state.InputChannelOpen = false
@@ -465,6 +482,9 @@ func (s *Session) Disconnect() error {
 	}
 	if input != nil {
 		_ = input.Close()
+	}
+	if udpConn != nil {
+		_ = udpConn.Close()
 	}
 	if pc != nil {
 		done := make(chan struct{})
