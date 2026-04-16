@@ -3,6 +3,7 @@ import { WebCodecsManager } from '../webcodecs';
 import { WebRTCManager } from '../webrtc';
 import { ClientEventEmitter } from './hooks';
 import { detectKeyFrame, parseBinaryVideoPacket } from './protocol';
+import { updateStatusText, videoEl, displayEl } from '../ui';
 import type { BrowserClientState, ConfigMessage, PresentedFrameMeta } from './types';
 
 export interface BrowserClientEvents {
@@ -47,6 +48,7 @@ export class BrowserClientSession {
     public readonly webrtc: WebRTCManager;
 
     private presentedFrames: PresentedFrameMeta[] = [];
+    private masterPollInterval: ReturnType<typeof setInterval>;
 
     constructor() {
         this.webcodecs = new WebCodecsManager(
@@ -76,6 +78,45 @@ export class BrowserClientSession {
         window.webrtcManager = this.webrtc;
 
         this.installWindowApi();
+
+        this.masterPollInterval = setInterval(() => this.masterPollStats(), 1000);
+    }
+
+    private async masterPollStats() {
+        // Poll managers for updated smoothed stats
+        await this.webrtc.pollStats();
+        this.webcodecs.pollStats();
+
+        const webrtcActive = this.webrtc.isWebRtcActive;
+        const iceConnected = this.webrtc.rtcPeer?.iceConnectionState === 'connected' || this.webrtc.rtcPeer?.iceConnectionState === 'completed';
+        
+        // We consider WebRTC "really" active only if it's flagged active AND ICE is connected
+        const showWebRtc = webrtcActive && iceConnected;
+
+        const fps = showWebRtc ? this.webrtc.fps : this.webcodecs.fps;
+        const bw = showWebRtc ? this.webrtc.bandwidthMbps : this.network.wsBandwidthMbps;
+        const codec = showWebRtc ? this.webrtc.videoCodec : this.webcodecs.videoCodec;
+        
+        // Final fallback for resolution if WebRTC video element is ready
+        const width = showWebRtc && videoEl.videoWidth > 0 ? videoEl.videoWidth : displayEl.width;
+        const height = showWebRtc && videoEl.videoHeight > 0 ? videoEl.videoHeight : displayEl.height;
+
+        const networkLatency = this.network.networkLatency;
+        const displayLatency = showWebRtc && this.webrtc.getCurrentLatency() > 0 
+            ? this.webrtc.getCurrentLatency() 
+            : this.webcodecs.latencyMonitor;
+
+        // SINGLE POINT OF TRUTH for UI status bar
+        updateStatusText(
+            showWebRtc,
+            fps,
+            displayLatency,
+            networkLatency,
+            bw,
+            width,
+            height,
+            codec
+        );
     }
 
     public sendInput(data: string) {

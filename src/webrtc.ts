@@ -19,7 +19,7 @@ export class WebRTCManager {
     private lastCanvasFrameTime = 0;
     private getLatencyMonitor: () => number;
     private onPresentedFrame?: (frame: PresentedFrameMeta) => void;
-    private bandwidthMbps = 0;
+    public bandwidthMbps = 0;
     private smoothedBandwidth = 0;
     private smoothedFps = 0;
     private webrtcLatency = 0;
@@ -85,8 +85,6 @@ export class WebRTCManager {
 
         this.inputChannel.onopen = () => log('Input DataChannel Opened');
         this.inputChannel.onclose = () => log('Input DataChannel Closed');
-
-        this.statsInterval = setInterval(() => this.pollStats(), 1000);
 
         (window as any).getStats = () => {
             return {
@@ -240,11 +238,11 @@ export class WebRTCManager {
         }
     }
 
-    private pollStats() {
+    public pollStats() {
         if (!this.rtcPeer) {
             return;
         }
-        this.rtcPeer.getStats(null).then(stats => {
+        return this.rtcPeer.getStats(null).then(stats => {
             const now = Date.now();
             const deltaMs = this.lastStatsTime === 0 ? 1000 : now - this.lastStatsTime;
             this.lastStatsTime = now;
@@ -276,7 +274,7 @@ export class WebRTCManager {
                 bytesReceived: audioBytes
             };
 
-            // Bandwidth with smoothing
+            // Bandwidth Calculation
             if (bytesReceived === 0) {
                 stats.forEach(report => {
                     if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number' && report.bytesReceived > 0) {
@@ -285,45 +283,59 @@ export class WebRTCManager {
                 });
             }
 
-            if (this.lastBytesReceived > 0 && bytesReceived > this.lastBytesReceived) {
+            if (this.lastBytesReceived > 0 && bytesReceived >= this.lastBytesReceived) {
                 const deltaBytes = bytesReceived - this.lastBytesReceived;
                 const bits = deltaBytes * 8;
                 const currentBw = bits / (deltaMs / 1000) / 1000000;
-                this.smoothedBandwidth = (this.smoothedBandwidth * 0.8) + (currentBw * 0.2);
-            } else if (bytesReceived > 0 && bytesReceived === this.lastBytesReceived) {
+                
+                if (deltaBytes > 0) {
+                    this.smoothedBandwidth = (this.smoothedBandwidth * 0.8) + (currentBw * 0.2);
+                } else {
+                    this.smoothedBandwidth *= 0.8;
+                }
+            } else if (bytesReceived === 0 && this.lastBytesReceived > 0) {
                 this.smoothedBandwidth *= 0.5;
             }
             this.bandwidthMbps = this.smoothedBandwidth;
             this.lastBytesReceived = bytesReceived;
 
-            // FPS with smoothing
+            // FPS Calculation
             const isCanvasActive = (Date.now() - this.lastCanvasFrameTime) < 2000;
             let currentFps = 0;
-
-            if (isCanvasActive) {
-                currentFps = (this.frameCount * 1000) / (now - this.lastFPSUpdate);
-                this.frameCount = 0;
-                this.lastFPSUpdate = now;
-            } else if (framesDecoded !== -1 && this.lastTotalDecoded !== -1) {
-                const decodedDelta = framesDecoded - this.lastTotalDecoded;
-                currentFps = (decodedDelta * 1000) / deltaMs;
-            }
             
+            let decodedFps = 0;
+            if (framesDecoded !== -1 && this.lastTotalDecoded !== -1) {
+                const decodedDelta = framesDecoded - this.lastTotalDecoded;
+                decodedFps = (decodedDelta * 1000) / deltaMs;
+            }
             if (framesDecoded !== -1) {
                 this.lastTotalDecoded = framesDecoded;
             }
 
-            if (this.smoothedFps === 0) this.smoothedFps = currentFps;
-            this.smoothedFps = (this.smoothedFps * 0.7) + (currentFps * 0.3);
+            if (isCanvasActive) {
+                const timeSinceLastFPS = now - this.lastFPSUpdate;
+                currentFps = (this.frameCount * 1000) / timeSinceLastFPS;
+                this.frameCount = 0;
+                this.lastFPSUpdate = now;
+
+                if (currentFps < 5 && decodedFps > 5) {
+                    currentFps = decodedFps;
+                }
+            } else {
+                currentFps = decodedFps;
+            }
+
+            if (this.smoothedFps === 0 && currentFps > 0) {
+                this.smoothedFps = currentFps;
+            } else {
+                this.smoothedFps = (this.smoothedFps * 0.7) + (currentFps * 0.3);
+            }
             this.fps = Math.round(this.smoothedFps);
 
             if (this.fps > 5 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
                 this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
                 this.hasSentWebrtcReady = true;
             }
-
-            const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
-            updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
         }).catch(() => { });
     }
 

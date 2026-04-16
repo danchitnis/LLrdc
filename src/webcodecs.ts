@@ -23,7 +23,6 @@ export class WebCodecsManager {
         this.getNetworkLatency = getNetworkLatency;
         this.getWsBandwidthMbps = getWsBandwidthMbps;
         this.initDecoder();
-        this.statsInterval = setInterval(() => this.pollStats(), 1000);
     }
 
     public pollStats() {
@@ -33,10 +32,6 @@ export class WebCodecsManager {
             this.fps = Math.round((this.frameCount * 1000) / deltaMs);
             this.frameCount = 0;
             this.lastFPSUpdate = now;
-            // Only update UI if WebRTC is NOT active (WebRTCManager handles its own updates)
-            if (!this.getIsWebRtcActive()) {
-                updateStatusText(false, this.fps, this.latencyMonitor, this.getNetworkLatency(), this.getWsBandwidthMbps(), displayEl.width, displayEl.height, this.videoCodec);
-            }
         }
     }
 
