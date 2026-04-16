@@ -32,7 +32,6 @@ type Client struct {
 
 var clientsMutex sync.Mutex
 var clients = make(map[*websocket.Conn]*Client)
-
 func configPayload(restarted bool) map[string]interface{} {
 	directState := snapshotDirectBufferState()
 	acceleratorMode := currentAcceleratorMode()
@@ -608,13 +607,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-		case "webrtc_ready":
-			log.Printf("Client WebRTC ready, stopping fallback websocket video transmission and forcing keyframe")
-			clientsMutex.Lock()
-			if c, ok := clients[conn]; ok {
-				c.webrtcReady = true
-			}
-			clientsMutex.Unlock()
+	case "webrtc_ready":
+		log.Printf("Client WebRTC ready, stopping fallback websocket video transmission and forcing keyframe")
+		clientsMutex.Lock()
+		if c, ok := clients[conn]; ok {
+			c.webrtcReady = true
+		}
+		clientsMutex.Unlock()
 			// Force a fresh keyframe and wake up compositor
 			TriggerPing()
 			PrimeFrameGeneration(0, 10, 50*time.Millisecond)

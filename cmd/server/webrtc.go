@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pion/ice/v4"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -20,6 +21,7 @@ type WebRTCFrame struct {
 }
 
 var (
+	webrtcUDPMux    ice.UDPMux
 	videoTrack      *webrtc.TrackLocalStaticSample
 	audioTrack      *webrtc.TrackLocalStaticSample
 	videoTrackMutex sync.RWMutex
@@ -123,21 +125,8 @@ func writeFrameToTrack(frame WebRTCFrame) {
 	}
 
 	duration := time.Second / time.Duration(FPS)
-	if !lastCaptureTime.IsZero() {
-		if delta := frame.CaptureTime.Sub(lastCaptureTime); delta > 0 {
-			duration = delta
-		}
-	}
 	if duration < time.Millisecond {
 		duration = time.Millisecond
-	}
-	// Clamp pathological gaps so reconnects or dropped bursts do not cause visible jumps.
-	maxDuration := 2 * time.Second / time.Duration(FPS)
-	if maxDuration < time.Millisecond {
-		maxDuration = time.Millisecond
-	}
-	if duration > maxDuration {
-		duration = maxDuration
 	}
 	lastCaptureTime = frame.CaptureTime
 
@@ -156,15 +145,37 @@ func writeFrameToTrack(frame WebRTCFrame) {
 	}
 
 	if time.Since(lastLogTime) >= time.Second {
-		if UseDebugFFmpeg {
-			log.Printf("WebRTC wrote %d frames to track in the last second", framesWritten)
-		}
 		framesWritten = 0
 		lastLogTime = time.Now()
 	}
 }
 
+func initWebRTCMux() {
+	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: Port})
+	if err != nil {
+		log.Printf("Warning: Failed to bind WebRTC UDP Mux to port %d: %v. Falling back to ephemeral ports.", Port, err)
+		return
+	}
+
+	// Increase socket buffers to handle large video bursts
+	const bufferSize = 4 * 1024 * 1024 // 4MB
+	if err := udpConn.SetReadBuffer(bufferSize); err != nil {
+		log.Printf("Warning: Failed to set UDP read buffer: %v", err)
+	}
+	if err := udpConn.SetWriteBuffer(bufferSize); err != nil {
+		log.Printf("Warning: Failed to set UDP write buffer: %v", err)
+	}
+
+	mux := ice.NewUDPMuxDefault(ice.UDPMuxParams{
+		UDPConn: udpConn,
+	})
+
+	webrtcUDPMux = mux
+	log.Printf("WebRTC UDP Mux initialized on port %d with 4MB buffers", Port)
+}
+
 func initWebRTC() {
+	initWebRTCMux()
 	initWebRTCTrack()
 
 	go func() {
@@ -176,6 +187,9 @@ func initWebRTC() {
 
 func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string) {
 	limit := WebRTCBufferSize
+	if limit < 1 {
+		limit = 1
+	}
 
 	// If zero buffering is requested and we are in low-latency mode, write directly.
 	if limit <= 0 && WebRTCLowLatency {
@@ -183,24 +197,41 @@ func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, code
 		return
 	}
 
-	if limit < 1 {
-		limit = 1
+	newFrame := WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}
+
+	// Try to send without blocking
+	select {
+	case webrtcFrameChan <- newFrame:
+		return
+	default:
 	}
 
-	// If the channel is already fuller than our configured limit, flush it.
-	for len(webrtcFrameChan) >= limit {
+	// If we are here, the channel is full.
+	// We drop the oldest frame and try again to ensure the NEWEST frame is always delivered.
+	dropped := 0
+	for {
 		select {
 		case <-webrtcFrameChan:
-			continue
+			dropped++
+			select {
+			case webrtcFrameChan <- newFrame:
+				return
+			default:
+				// still full, keep dropping
+				continue
+			}
 		default:
+			// Channel became empty but we failed to write? (race)
+			// Try one last time to write.
+			select {
+			case webrtcFrameChan <- newFrame:
+				return
+			default:
+				// Hard fail - should not happen with cap=1000
+				log.Printf("Warning: WriteWebRTCFrame failed to queue frame even after flushing channel")
+				return
+			}
 		}
-		break
-	}
-
-	select {
-	case webrtcFrameChan <- WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}:
-	default:
-		// If still full (unlikely), just drop.
 	}
 }
 
@@ -259,13 +290,19 @@ func resolveAdvertisedIP(requestHost string) string {
 
 func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
-	s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
+
+	if webrtcUDPMux != nil {
+		s.SetICEUDPMux(webrtcUDPMux)
+	} else {
+		s.SetEphemeralUDPPortRange(uint16(Port), uint16(Port))
+	}
 
 	if WebRTCLowLatency {
+		log.Printf("WebRTC creating peer connection in low-latency mode")
 		s.DisableSRTPReplayProtection(true)
 		s.DisableSRTCPReplayProtection(true)
 		s.SetLite(true)
-		s.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+		s.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
 	}
 
 	// Prefer an explicit WEBRTC_PUBLIC_IP; otherwise derive from the browser request host.

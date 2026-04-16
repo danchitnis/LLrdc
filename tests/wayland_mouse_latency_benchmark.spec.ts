@@ -298,9 +298,9 @@ async function sweepUntilProbeToggles(
     const midX = box.x + box.width * 0.5;
     const midY = box.y + box.height * 0.5;
     
-    // Fast hop across the center (±50 pixels)
-    const leftX = midX - 50;
-    const rightX = midX + 50;
+    // Use wider bounds to ensure we cross the midpoint even if the probe window is slightly offset
+    const leftX = box.x + box.width * 0.2;
+    const rightX = box.x + box.width * 0.8;
 
     for (let attempt = 1; attempt <= 3; attempt++) {
         const startX = sweepDirection === 'left-to-right' ? leftX : rightX;
@@ -501,10 +501,12 @@ async function collectModeSummary(
     // warmup
     for (let i = 0; i < 2; i++) {
         const direction = i % 2 === 0 ? 'left-to-right' : 'right-to-left';
-        const toggle = await sweepUntilProbeToggles(page, containerName, state.marker, direction);
-        state = toggle.state;
+        // Use keyboard press for warmup as it's more reliable for initial toggle
+        await page.keyboard.press('a');
+        await page.waitForTimeout(100);
+        state = readProbeState(containerName);
         const cursor = await readPresentedFrameCursor(page);
-        await waitForPresentedFrameColor(page, state.color, toggle.inputSentAtMs, cursor.presentedFrames);
+        await waitForPresentedFrameColor(page, state.color, Date.now(), cursor.presentedFrames);
         await page.waitForTimeout(150);
     }
 

@@ -666,7 +666,9 @@ func (s *Session) readLoop(conn *websocket.Conn, pc *webrtc.PeerConnection) {
 func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.TrackRemote) {
 	codecName := strings.ToLower(track.Codec().MimeType)
 	var builder *samplebuilder.SampleBuilder
+
 	if strings.Contains(codecName, "vp8") {
+		// Default samplebuilder for VP8
 		builder = samplebuilder.New(256, &codecs.VP8Packet{}, 90000)
 	}
 	stopKeyframeRequests := make(chan struct{})

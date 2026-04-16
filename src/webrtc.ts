@@ -20,6 +20,8 @@ export class WebRTCManager {
     private getLatencyMonitor: () => number;
     private onPresentedFrame?: (frame: PresentedFrameMeta) => void;
     private bandwidthMbps = 0;
+    private smoothedBandwidth = 0;
+    private smoothedFps = 0;
     private webrtcLatency = 0;
     private hasSentWebrtcReady = false;
     private statsInterval: ReturnType<typeof setInterval> | null = null;
@@ -192,6 +194,7 @@ export class WebRTCManager {
         if (!this.isWebRtcActive) return;
         if (ctx && videoEl.videoWidth > 0) {
             this.lastCanvasFrameTime = Date.now();
+
             let frameMeta: PresentedFrameMeta | null = null;
             if (metadata) {
                 this.frameCount++;
@@ -257,8 +260,6 @@ export class WebRTCManager {
                         bytesReceived = report.bytesReceived || 0;
                         if (report.framesDecoded !== undefined) {
                             framesDecoded = report.framesDecoded;
-                        } else {
-                            console.log('[pollStats] inbound-rtp video found but framesDecoded is undefined');
                         }
                     } else if (kind === 'audio') {
                         hasAudioTrack = true;
@@ -270,18 +271,12 @@ export class WebRTCManager {
                 }
             });
 
-            if (framesDecoded === -1) {
-                // Periodically log that we haven't found frames yet if bytes are flowing
-                if (bytesReceived > 0 && Math.random() < 0.1) {
-                    console.log('[pollStats] video bytes flowing but no framesDecoded found in stats');
-                }
-            }
-
             (window as any).audioStats = {
                 hasAudioTrack: hasAudioTrack,
                 bytesReceived: audioBytes
             };
 
+            // Bandwidth with smoothing
             if (bytesReceived === 0) {
                 stats.forEach(report => {
                     if (report.type === 'inbound-rtp' && typeof report.bytesReceived === 'number' && report.bytesReceived > 0) {
@@ -293,50 +288,49 @@ export class WebRTCManager {
             if (this.lastBytesReceived > 0 && bytesReceived > this.lastBytesReceived) {
                 const deltaBytes = bytesReceived - this.lastBytesReceived;
                 const bits = deltaBytes * 8;
-                this.bandwidthMbps = bits / (deltaMs / 1000) / 1000000;
-            } else if (this.lastBytesReceived > 0 && bytesReceived === this.lastBytesReceived) {
-                this.bandwidthMbps = 0;
-            } else if (bytesReceived > 0 && this.lastBytesReceived === 0) {
-                this.bandwidthMbps = 0;
+                const currentBw = bits / (deltaMs / 1000) / 1000000;
+                this.smoothedBandwidth = (this.smoothedBandwidth * 0.8) + (currentBw * 0.2);
+            } else if (bytesReceived > 0 && bytesReceived === this.lastBytesReceived) {
+                this.smoothedBandwidth *= 0.5;
             }
+            this.bandwidthMbps = this.smoothedBandwidth;
             this.lastBytesReceived = bytesReceived;
 
+            // FPS with smoothing
             const isCanvasActive = (Date.now() - this.lastCanvasFrameTime) < 2000;
+            let currentFps = 0;
 
+            if (isCanvasActive) {
+                currentFps = (this.frameCount * 1000) / (now - this.lastFPSUpdate);
+                this.frameCount = 0;
+                this.lastFPSUpdate = now;
+            } else if (framesDecoded !== -1 && this.lastTotalDecoded !== -1) {
+                const decodedDelta = framesDecoded - this.lastTotalDecoded;
+                currentFps = (decodedDelta * 1000) / deltaMs;
+            }
+            
             if (framesDecoded !== -1) {
-                if (this.lastTotalDecoded !== -1) {
-                    const decodedDelta = framesDecoded - this.lastTotalDecoded;
-                    this.fps = Math.round((decodedDelta * 1000) / deltaMs);
-                }
                 this.lastTotalDecoded = framesDecoded;
             }
 
-            // Only update UI from pollStats if the canvas loop is NOT active (e.g. background tab)
-            if (!isCanvasActive) {
-                const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
-                updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
-            }
-        }).catch(() => { });
-    }
+            if (this.smoothedFps === 0) this.smoothedFps = currentFps;
+            this.smoothedFps = (this.smoothedFps * 0.7) + (currentFps * 0.3);
+            this.fps = Math.round(this.smoothedFps);
 
-    private updateStats() {
-        const now = Date.now();
-        const deltaMs = now - this.lastFPSUpdate;
-        if (deltaMs >= 1000) {
-            // We now rely on pollStats to calculate WebRTC FPS based on framesDecoded
-
-            if (this.fps > 0 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
+            if (this.fps > 5 && !this.hasSentWebrtcReady && this.rtcPeer?.iceConnectionState === 'connected') {
                 this.sendWs(JSON.stringify({ type: 'webrtc_ready' }));
                 this.hasSentWebrtcReady = true;
             }
 
-            this.frameCount = 0;
-            this.lastFPSUpdate = now;
-
             const displayLatency = this.isWebRtcActive && this.webrtcLatency > 0 ? this.webrtcLatency : this.getLatencyMonitor();
             updateStatusText(this.isWebRtcActive, this.fps, displayLatency, this.getNetworkLatencyVal(), this.bandwidthMbps, videoEl.videoWidth, videoEl.videoHeight, this.videoCodec);
-        }
+        }).catch(() => { });
     }
+
+    private updateStats() {
+        // UI updates unified in pollStats()
+    }
+
 
     public handleAnswer(sdp: RTCSessionDescriptionInit) {
         if (this.rtcPeer) {
