@@ -241,7 +241,7 @@ func (r *NativeRenderer) drawClickToStart(renderer *sdl.Renderer) {
 	} else {
 		w, h = int32(r.width), int32(r.height)
 	}
-	
+
 	_ = renderer.SetDrawColor(24, 24, 28, 255)
 	_ = renderer.Clear()
 
@@ -259,10 +259,10 @@ func (r *NativeRenderer) drawClickToStart(renderer *sdl.Renderer) {
 	_ = renderer.SetDrawColor(255, 255, 255, 255)
 	side := int32(40)
 	tx := w/2 - side/3
-	ty := h/2
+	ty := h / 2
 	for i := int32(0); i < side; i++ {
 		halfH := (side - i) / 2
-		_ = renderer.DrawLine(tx + i, ty - halfH, tx + i, ty + halfH)
+		_ = renderer.DrawLine(tx+i, ty-halfH, tx+i, ty+halfH)
 	}
 
 	renderer.Present()

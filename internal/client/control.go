@@ -52,6 +52,8 @@ func (s *ControlServer) handleReady(w http.ResponseWriter, _ *http.Request) {
 		"ready":                   state.Connected,
 		"connected":               state.Connected,
 		"webrtcConnected":         state.WebRTCConnected,
+		"peerConnectionState":     state.PeerConnectionState,
+		"iceConnectionState":      state.ICEConnectionState,
 		"inputChannelOpen":        state.InputChannelOpen,
 		"renderLoopStarted":       state.RenderLoopStarted,
 		"shutdownRequested":       state.ShutdownRequested,

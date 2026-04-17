@@ -1,4 +1,4 @@
-//go:build !native || !linux || !cgo
+//go:build !native || !cgo || (!linux && !darwin)
 
 package client
 

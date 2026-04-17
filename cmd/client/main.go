@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,15 +17,23 @@ import (
 
 var clientBuildID = "dev"
 
+func init() {
+	if runtime.GOOS == "darwin" {
+		// AppKit must run on the main OS thread.
+		runtime.LockOSThread()
+	}
+}
+
 func main() {
-        log.Println("DEBUG: Client starting")
-        serverURL := flag.String("server", "", "LLrdc server URL (e.g. http://localhost:8080)")
-        controlAddr := flag.String("control-addr", "127.0.0.1:18080", "Loopback control API listen address")
+	log.Println("DEBUG: Client starting")
+	serverURL := flag.String("server", "", "LLrdc server URL (e.g. http://localhost:8080)")
+	controlAddr := flag.String("control-addr", "127.0.0.1:18080", "Loopback control API listen address")
 	windowTitle := flag.String("title", "LLrdc Native Client", "Native client window title")
 	windowWidth := flag.Int("width", 1280, "Initial native client window width")
 	windowHeight := flag.Int("height", 720, "Initial native client window height")
 	headless := flag.Bool("headless", false, "Run without creating a native window")
-	autoStart := flag.Bool("auto-start", false, "Start streaming automatically without waiting for click")
+	defaultAutoStart := runtime.GOOS == "darwin"
+	autoStart := flag.Bool("auto-start", defaultAutoStart, "Start streaming automatically without waiting for click")
 	latencyProbe := flag.Bool("latency-probe", false, "Enable internal latency probe (checks center pixel brightness)")
 	debugCursor := flag.Bool("debug-cursor", false, "Render a red dot at the local mouse position to visualize input latency")
 	exitAfter := flag.Duration("exit-after", 0, "Exit automatically after the given duration (e.g. 5s)")

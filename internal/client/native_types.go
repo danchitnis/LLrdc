@@ -1,6 +1,7 @@
 package client
 
 import "time"
+
 type WindowRenderer interface {
 	Renderer
 	Run() error
@@ -14,6 +15,10 @@ type WindowRenderer interface {
 
 type VideoStreamResetter interface {
 	ResetVideoStream(codec string)
+}
+
+type WebSocketVideoFallbackProvider interface {
+	SupportsWebSocketVideoFallback() bool
 }
 
 type NativeRendererOptions struct {

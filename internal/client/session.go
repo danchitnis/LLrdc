@@ -1,9 +1,11 @@
 package client
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,10 +27,14 @@ type Renderer interface {
 	Close() error
 }
 
+type PreferredVideoCodecProvider interface {
+	PreferredVideoCodec() string
+}
+
 type NullRenderer struct{}
 
 func (NullRenderer) HandleVideoFrame(_ string, _ []byte, _ uint32) error { return nil }
-func (NullRenderer) RequestKeyframe()                                   {}
+func (NullRenderer) RequestKeyframe()                                    {}
 func (NullRenderer) Close() error                                        { return nil }
 
 type Event string
@@ -86,39 +92,41 @@ func (b *HookBus) Emit(event Event, payload EventPayload) {
 }
 
 type SessionState struct {
-	ServerURL               string            `json:"serverUrl"`
-	BuildID                 string            `json:"buildId,omitempty"`
-	Connected               bool              `json:"connected"`
-	WebRTCConnected         bool              `json:"webrtcConnected"`
-	InputChannelOpen        bool              `json:"inputChannelOpen"`
-	RenderLoopStarted       bool              `json:"renderLoopStarted"`
-	ShutdownRequested       bool              `json:"shutdownRequested"`
-	ShutdownReason          string            `json:"shutdownReason,omitempty"`
-	WindowBackend           string            `json:"windowBackend,omitempty"`
-	WindowID                uint64            `json:"windowId,omitempty"`
-	WindowCreated           bool              `json:"windowCreated"`
-	WindowShown             bool              `json:"windowShown"`
-	WindowMapped            bool              `json:"windowMapped"`
-	WindowVisible           bool              `json:"windowVisible"`
-	WindowEvent             string            `json:"windowEvent,omitempty"`
-	WindowFlags             uint32            `json:"windowFlags,omitempty"`
-	WindowHasFocus          bool              `json:"windowHasFocus"`
-	WindowHasSurface        bool              `json:"windowHasSurface"`
-	WindowDesktop           int               `json:"windowDesktop"`
-	Presenting              bool              `json:"presenting"`
-	DecoderAwaitingKeyframe bool              `json:"decoderAwaitingKeyframe"`
-	VideoCodec              string            `json:"videoCodec"`
-	LastConfig              map[string]any    `json:"lastConfig,omitempty"`
-	LastStats               map[string]any    `json:"lastStats,omitempty"`
-	LastError               string            `json:"lastError,omitempty"`
-	LastMessageAt           time.Time         `json:"lastMessageAt,omitempty"`
-	LastVideoPacketAt       time.Time         `json:"lastVideoPacketAt,omitempty"`
-	LastVideoFrameAt        time.Time         `json:"lastVideoFrameAt,omitempty"`
-	LastPresentAt           time.Time         `json:"lastPresentAt,omitempty"`
-	FirstFramePresentedAt   time.Time            `json:"firstFramePresentedAt,omitempty"`
-	LastLatencySample       map[string]any       `json:"lastLatencySample,omitempty"`
-	RecentLatencySamples    []LatencyBreakdown   `json:"recentLatencySamples,omitempty"`
-	CurrentTrackCodecs      map[string]string    `json:"currentTrackCodecs,omitempty"`
+	ServerURL               string             `json:"serverUrl"`
+	BuildID                 string             `json:"buildId,omitempty"`
+	Connected               bool               `json:"connected"`
+	WebRTCConnected         bool               `json:"webrtcConnected"`
+	PeerConnectionState     string             `json:"peerConnectionState,omitempty"`
+	ICEConnectionState      string             `json:"iceConnectionState,omitempty"`
+	InputChannelOpen        bool               `json:"inputChannelOpen"`
+	RenderLoopStarted       bool               `json:"renderLoopStarted"`
+	ShutdownRequested       bool               `json:"shutdownRequested"`
+	ShutdownReason          string             `json:"shutdownReason,omitempty"`
+	WindowBackend           string             `json:"windowBackend,omitempty"`
+	WindowID                uint64             `json:"windowId,omitempty"`
+	WindowCreated           bool               `json:"windowCreated"`
+	WindowShown             bool               `json:"windowShown"`
+	WindowMapped            bool               `json:"windowMapped"`
+	WindowVisible           bool               `json:"windowVisible"`
+	WindowEvent             string             `json:"windowEvent,omitempty"`
+	WindowFlags             uint32             `json:"windowFlags,omitempty"`
+	WindowHasFocus          bool               `json:"windowHasFocus"`
+	WindowHasSurface        bool               `json:"windowHasSurface"`
+	WindowDesktop           int                `json:"windowDesktop"`
+	Presenting              bool               `json:"presenting"`
+	DecoderAwaitingKeyframe bool               `json:"decoderAwaitingKeyframe"`
+	VideoCodec              string             `json:"videoCodec"`
+	LastConfig              map[string]any     `json:"lastConfig,omitempty"`
+	LastStats               map[string]any     `json:"lastStats,omitempty"`
+	LastError               string             `json:"lastError,omitempty"`
+	LastMessageAt           time.Time          `json:"lastMessageAt,omitempty"`
+	LastVideoPacketAt       time.Time          `json:"lastVideoPacketAt,omitempty"`
+	LastVideoFrameAt        time.Time          `json:"lastVideoFrameAt,omitempty"`
+	LastPresentAt           time.Time          `json:"lastPresentAt,omitempty"`
+	FirstFramePresentedAt   time.Time          `json:"firstFramePresentedAt,omitempty"`
+	LastLatencySample       map[string]any     `json:"lastLatencySample,omitempty"`
+	RecentLatencySamples    []LatencyBreakdown `json:"recentLatencySamples,omitempty"`
+	CurrentTrackCodecs      map[string]string  `json:"currentTrackCodecs,omitempty"`
 }
 
 type SessionStats struct {
@@ -138,15 +146,16 @@ type Session struct {
 	renderer Renderer
 	hooks    *HookBus
 
-	mu     sync.RWMutex
-	wsMu   sync.Mutex
-	conn   *websocket.Conn
-	pc     *webrtc.PeerConnection
-	input  *webrtc.DataChannel
-	udpConn *net.UDPConn
-	state  SessionState
-	stats  SessionStats
-	closed chan struct{}
+	mu        sync.RWMutex
+	wsMu      sync.Mutex
+	connectMu sync.Mutex
+	conn      *websocket.Conn
+	pc        *webrtc.PeerConnection
+	input     *webrtc.DataChannel
+	udpConn   *net.UDPConn
+	state     SessionState
+	stats     SessionStats
+	closed    chan struct{}
 
 	keyframeRequests chan struct{}
 }
@@ -275,11 +284,14 @@ func (s *Session) ClearShutdown() {
 }
 
 func (s *Session) Connect(serverURL string) error {
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+
 	if strings.TrimSpace(serverURL) == "" {
 		return errors.New("server URL is required")
 	}
 
-	if err := s.Disconnect(); err != nil {
+	if err := s.disconnectLocked(); err != nil {
 		return err
 	}
 
@@ -368,6 +380,8 @@ func (s *Session) Connect(serverURL string) error {
 	s.state.ServerURL = serverURL
 	s.state.Connected = true
 	s.state.WebRTCConnected = false
+	s.state.PeerConnectionState = webrtc.PeerConnectionStateNew.String()
+	s.state.ICEConnectionState = webrtc.ICEConnectionStateNew.String()
 	s.state.InputChannelOpen = false
 	s.state.VideoCodec = ""
 	s.state.LastConfig = nil
@@ -403,6 +417,7 @@ func (s *Session) Connect(serverURL string) error {
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		s.mu.Lock()
 		s.state.WebRTCConnected = state == webrtc.PeerConnectionStateConnected
+		s.state.PeerConnectionState = state.String()
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected || state == webrtc.PeerConnectionStateClosed {
 			s.state.InputChannelOpen = false
 		}
@@ -412,6 +427,15 @@ func (s *Session) Connect(serverURL string) error {
 		}
 		s.emit(EventStateChanged, map[string]any{
 			"peerConnectionState": state.String(),
+		})
+	})
+
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		s.mu.Lock()
+		s.state.ICEConnectionState = state.String()
+		s.mu.Unlock()
+		s.emit(EventStateChanged, map[string]any{
+			"iceConnectionState": state.String(),
 		})
 	})
 
@@ -451,6 +475,12 @@ func (s *Session) Connect(serverURL string) error {
 		})
 	})
 
+	if provider, ok := s.renderer.(PreferredVideoCodecProvider); ok {
+		if preferred := strings.TrimSpace(provider.PreferredVideoCodec()); preferred != "" {
+			_ = s.SendConfig(map[string]any{"videoCodec": preferred})
+		}
+	}
+
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
 		_ = s.Disconnect()
@@ -473,6 +503,12 @@ func (s *Session) Connect(serverURL string) error {
 }
 
 func (s *Session) Disconnect() error {
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+	return s.disconnectLocked()
+}
+
+func (s *Session) disconnectLocked() error {
 	s.mu.Lock()
 	conn := s.conn
 	pc := s.pc
@@ -484,6 +520,8 @@ func (s *Session) Disconnect() error {
 	s.udpConn = nil
 	s.state.Connected = false
 	s.state.WebRTCConnected = false
+	s.state.PeerConnectionState = ""
+	s.state.ICEConnectionState = ""
 	s.state.InputChannelOpen = false
 	s.state.Presenting = false
 	s.mu.Unlock()
@@ -607,6 +645,10 @@ func (s *Session) readLoop(conn *websocket.Conn, pc *webrtc.PeerConnection) {
 			_ = s.Disconnect()
 			return
 		}
+		if messageType == websocket.BinaryMessage {
+			s.consumeBinaryVideoMessage(raw)
+			continue
+		}
 		if messageType != websocket.TextMessage {
 			continue
 		}
@@ -663,6 +705,44 @@ func (s *Session) readLoop(conn *websocket.Conn, pc *webrtc.PeerConnection) {
 	}
 }
 
+func (s *Session) consumeBinaryVideoMessage(raw []byte) {
+	if provider, ok := s.renderer.(WebSocketVideoFallbackProvider); !ok || !provider.SupportsWebSocketVideoFallback() {
+		return
+	}
+
+	packet, ok := parseBinaryVideoPacket(raw)
+	if !ok {
+		return
+	}
+
+	s.mu.RLock()
+	codec := s.state.VideoCodec
+	s.mu.RUnlock()
+	if strings.TrimSpace(codec) == "" {
+		codec = "video/VP8"
+	}
+
+	s.mu.Lock()
+	s.stats.VideoPackets++
+	s.stats.VideoFrames++
+	s.stats.VideoBytes += uint64(len(packet.chunkData))
+	s.state.LastVideoPacketAt = time.Now()
+	s.state.LastVideoFrameAt = s.state.LastVideoPacketAt
+	s.mu.Unlock()
+
+	if err := s.renderer.HandleVideoFrame(codec, packet.chunkData, packet.packetTimestamp); err != nil {
+		s.setError(err)
+		return
+	}
+
+	s.emit(EventFrame, map[string]any{
+		"codec":           codec,
+		"packetTimestamp": packet.packetTimestamp,
+		"size":            len(packet.chunkData),
+		"transport":       "websocket",
+	})
+}
+
 func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.TrackRemote) {
 	codecName := strings.ToLower(track.Codec().MimeType)
 	var builder *samplebuilder.SampleBuilder
@@ -670,6 +750,8 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 	if strings.Contains(codecName, "vp8") {
 		// Default samplebuilder for VP8
 		builder = samplebuilder.New(256, &codecs.VP8Packet{}, 90000)
+	} else if strings.Contains(codecName, "h264") {
+		builder = samplebuilder.New(256, &codecs.H264Packet{}, 90000)
 	}
 	stopKeyframeRequests := make(chan struct{})
 	var stopKeyframeOnce sync.Once
@@ -750,6 +832,8 @@ func shouldStopInitialKeyframeRequests(codec string, frame []byte) bool {
 	codec = strings.ToLower(strings.TrimSpace(codec))
 	if strings.Contains(codec, "vp8") {
 		return isVP8KeyframePayload(frame)
+	} else if strings.Contains(codec, "h264") {
+		return isH264KeyframePayload(frame)
 	}
 	return len(frame) > 0
 }
@@ -759,6 +843,23 @@ func isVP8KeyframePayload(data []byte) bool {
 		return false
 	}
 	return data[0]&0x01 == 0
+}
+
+func isH264KeyframePayload(data []byte) bool {
+	for _, nalu := range splitH264NALUs(data) {
+		if len(nalu) == 0 {
+			continue
+		}
+		naluType := nalu[0] & 0x1F
+		if naluType == 7 || naluType == 8 || naluType == 5 || naluType == 24 {
+			return true
+		}
+	}
+	if len(data) < 1 {
+		return false
+	}
+	naluType := data[0] & 0x1F
+	return naluType == 7 || naluType == 8 || naluType == 5 || naluType == 24
 }
 
 func requestInitialKeyframes(pc *webrtc.PeerConnection, mediaSSRC uint32, stop <-chan struct{}) {
@@ -792,6 +893,24 @@ func requestInitialKeyframes(pc *webrtc.PeerConnection, mediaSSRC uint32, stop <
 			}
 		}
 	}
+}
+
+type binaryVideoPacket struct {
+	packetTimestamp uint32
+	chunkData       []byte
+}
+
+func parseBinaryVideoPacket(raw []byte) (binaryVideoPacket, bool) {
+	if len(raw) < 9 || raw[0] != 1 {
+		return binaryVideoPacket{}, false
+	}
+
+	timestampMs := math.Float64frombits(binary.BigEndian.Uint64(raw[1:9]))
+	packetTimestamp := uint32(timestampMs * 90)
+	return binaryVideoPacket{
+		packetTimestamp: packetTimestamp,
+		chunkData:       append([]byte(nil), raw[9:]...),
+	}, true
 }
 
 func (s *Session) consumeAudioTrack(track *webrtc.TrackRemote) {
