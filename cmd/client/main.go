@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -13,9 +14,20 @@ import (
 	"time"
 
 	"github.com/danchitnis/llrdc/internal/client"
+	"gopkg.in/yaml.v3"
 )
 
 var clientBuildID = "dev"
+
+type ClientConfig struct {
+	Resolution *struct {
+		Width  int `yaml:"width"`
+		Height int `yaml:"height"`
+	} `yaml:"resolution"`
+	FPS   *int    `yaml:"fps"`
+	Codec *string `yaml:"codec"`
+	DPI   *int    `yaml:"dpi"`
+}
 
 func init() {
 	if runtime.GOOS == "darwin" {
@@ -26,8 +38,21 @@ func init() {
 
 func main() {
 	log.Println("DEBUG: Client starting")
+
+	defaultConfigPath := "config.yaml"
+	if exePath, err := os.Executable(); err == nil {
+		if strings.HasSuffix(filepath.Dir(exePath), "Contents/MacOS") {
+			// Running inside LLrdc.app/Contents/MacOS/client
+			// Move up to LLrdc.app level for the config
+			defaultConfigPath = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(exePath))), "config.yaml")
+		} else {
+			defaultConfigPath = filepath.Join(filepath.Dir(exePath), "config.yaml")
+		}
+	}
+
 	serverURL := flag.String("server", "", "LLrdc server URL (e.g. http://localhost:8080)")
 	controlAddr := flag.String("control-addr", "127.0.0.1:18080", "Loopback control API listen address")
+	configPathFlag := flag.String("config", defaultConfigPath, "Path to YAML configuration file")
 	windowTitle := flag.String("title", "LLrdc Native Client", "Native client window title")
 	windowWidth := flag.Int("width", 1280, "Initial native client window width")
 	windowHeight := flag.Int("height", 720, "Initial native client window height")
@@ -38,6 +63,29 @@ func main() {
 	debugCursor := flag.Bool("debug-cursor", false, "Render a red dot at the local mouse position to visualize input latency")
 	exitAfter := flag.Duration("exit-after", 0, "Exit automatically after the given duration (e.g. 5s)")
 	flag.Parse()
+
+	var clientConfig ClientConfig
+	if *configPathFlag != "" {
+		if data, err := os.ReadFile(*configPathFlag); err == nil {
+			if err := yaml.Unmarshal(data, &clientConfig); err != nil {
+				log.Printf("failed to parse config file %s: %v", *configPathFlag, err)
+			} else {
+				log.Printf("loaded configuration from %s", *configPathFlag)
+			}
+		}
+	}
+
+	// Apply configuration overrides
+	if clientConfig.Resolution != nil {
+		if clientConfig.Resolution.Width > 0 {
+			log.Printf("Config: setting window width to %d", clientConfig.Resolution.Width)
+			*windowWidth = clientConfig.Resolution.Width
+		}
+		if clientConfig.Resolution.Height > 0 {
+			log.Printf("Config: setting window height to %d", clientConfig.Resolution.Height)
+			*windowHeight = clientConfig.Resolution.Height
+		}
+	}
 
 	var renderer client.Renderer = client.NullRenderer{}
 	var windowRenderer client.WindowRenderer
@@ -176,6 +224,27 @@ func main() {
 						continue
 					}
 					log.Printf("connected to %s", desiredServerURL)
+
+					// Send configuration from YAML if provided
+					if clientConfig.FPS != nil || clientConfig.Codec != nil || clientConfig.DPI != nil {
+						configMap := make(map[string]any)
+						if clientConfig.FPS != nil {
+							log.Printf("Config: setting server framerate to %d", *clientConfig.FPS)
+							configMap["framerate"] = *clientConfig.FPS
+						}
+						if clientConfig.Codec != nil {
+							log.Printf("Config: setting server videoCodec to %s", *clientConfig.Codec)
+							configMap["videoCodec"] = *clientConfig.Codec
+						}
+						if clientConfig.DPI != nil {
+							log.Printf("Config: setting server hdpi to %d", *clientConfig.DPI)
+							configMap["hdpi"] = *clientConfig.DPI
+						}
+						if err := session.SendConfig(configMap); err != nil {
+							log.Printf("failed to send initial config: %v", err)
+						}
+					}
+
 					if windowRenderer != nil {
 						width, height := windowRenderer.Size()
 						if err := session.SendResize(width, height); err != nil {

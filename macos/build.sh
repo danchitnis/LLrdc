@@ -52,5 +52,10 @@ fi
 
 cp "macos/Info.plist" "${CONTENTS_DIR}/Info.plist"
 
+# Copy config.yaml if it exists
+if [ -f "macos/config.yaml" ]; then
+    cp "macos/config.yaml" "${APP_DIR}/config.yaml"
+fi
+
 echo "Build complete: ${APP_DIR}"
 echo "Run with: open ${APP_DIR} --args -server http://YOUR_SERVER_IP:8080"

@@ -1,0 +1,17 @@
+# LLrdc Native Client Configuration
+# This file is read at launch. Settings are optional.
+
+# Initial window resolution
+resolution:
+  width: 1280
+  height: 720
+
+# Target frame rate
+fps: 60
+
+# Video codec (e.g., h264, vp8, h265, av1)
+# Note: macOS native renderer currently optimized for h264
+codec: h264
+
+# Display scaling / DPI (100 = 1x, 200 = 2x/Retina)
+dpi: 200
