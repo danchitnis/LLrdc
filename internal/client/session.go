@@ -325,6 +325,25 @@ func (s *Session) Connect(serverURL string) error {
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
 
+	// Read initial config message synchronously
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	messageType, raw, err := conn.ReadMessage()
+	_ = conn.SetReadDeadline(time.Time{})
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("read initial config: %w", err)
+	}
+	if messageType != websocket.TextMessage {
+		_ = conn.Close()
+		return fmt.Errorf("expected text message for initial config, got %d", messageType)
+	}
+
+	var initMsg map[string]any
+	if err := json.Unmarshal(raw, &initMsg); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("parse initial config: %w", err)
+	}
+
 	m := &webrtc.MediaEngine{}
 	if err := m.RegisterDefaultCodecs(); err != nil {
 		return fmt.Errorf("register default codecs: %w", err)
@@ -400,16 +419,28 @@ func (s *Session) Connect(serverURL string) error {
 	s.state.PeerConnectionState = webrtc.PeerConnectionStateNew.String()
 	s.state.ICEConnectionState = webrtc.ICEConnectionStateNew.String()
 	s.state.InputChannelOpen = false
+
 	s.state.VideoCodec = ""
 	s.state.LastConfig = nil
+	if msgType, _ := initMsg["type"].(string); msgType == "config" {
+		s.state.LastConfig = cloneMap(initMsg)
+		if codec, ok := initMsg["videoCodec"].(string); ok {
+			s.state.VideoCodec = codec
+		}
+		if width, ok := numberToInt(initMsg["screenWidth"]); ok {
+			s.state.ServerScreenWidth = width
+		}
+		if height, ok := numberToInt(initMsg["screenHeight"]); ok {
+			s.state.ServerScreenHeight = height
+		}
+	}
+
 	s.state.LastStats = nil
 	s.state.LastResizeWidth = 0
 	s.state.LastResizeHeight = 0
 	s.state.LastResizeAt = time.Time{}
 	s.state.LastPresentedWidth = 0
 	s.state.LastPresentedHeight = 0
-	s.state.ServerScreenWidth = 0
-	s.state.ServerScreenHeight = 0
 	s.state.LastMessageAt = time.Time{}
 	s.state.LastVideoPacketAt = time.Time{}
 	s.state.LastVideoFrameAt = time.Time{}
@@ -427,6 +458,9 @@ func (s *Session) Connect(serverURL string) error {
 		"connected": true,
 		"serverUrl": serverURL,
 	})
+	if msgType, _ := initMsg["type"].(string); msgType == "config" {
+		s.emit(EventConfig, cloneMap(initMsg))
+	}
 
 	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate == nil {
@@ -501,7 +535,13 @@ func (s *Session) Connect(serverURL string) error {
 
 	if provider, ok := s.renderer.(PreferredVideoCodecProvider); ok {
 		if preferred := strings.TrimSpace(provider.PreferredVideoCodec()); preferred != "" {
-			_ = s.SendConfig(map[string]any{"videoCodec": preferred})
+			bestCodec := preferred
+			if qsv, _ := initMsg["qsvAvailable"].(bool); qsv {
+				bestCodec = preferred + "_qsv"
+			} else if nvenc, _ := initMsg["nvidiaAvailable"].(bool); nvenc {
+				bestCodec = preferred + "_nvenc"
+			}
+			_ = s.SendConfig(map[string]any{"videoCodec": bestCodec})
 		}
 	}
 
@@ -659,6 +699,34 @@ func (s *Session) SendResize(width, height int) error {
 func (s *Session) SendConfig(config map[string]any) error {
 	msg := cloneMap(config)
 	msg["type"] = "config"
+
+	// Upgrade codec if it's a generic one and hardware is available
+	s.mu.RLock()
+	lastConfig := s.state.LastConfig
+	s.mu.RUnlock()
+
+	if vCodec, ok := msg["videoCodec"].(string); ok && lastConfig != nil {
+		if vCodec == "h264" {
+			if qsv, _ := lastConfig["qsvAvailable"].(bool); qsv {
+				msg["videoCodec"] = "h264_qsv"
+			} else if nvenc, _ := lastConfig["nvidiaAvailable"].(bool); nvenc {
+				msg["videoCodec"] = "h264_nvenc"
+			}
+		} else if vCodec == "h265" {
+			if qsv, _ := lastConfig["h265QsvAvailable"].(bool); qsv {
+				msg["videoCodec"] = "h265_qsv"
+			} else if nvenc, _ := lastConfig["h265Nvenc444Available"].(bool); nvenc {
+				msg["videoCodec"] = "h265_nvenc"
+			}
+		} else if vCodec == "av1" {
+			if qsv, _ := lastConfig["av1QsvAvailable"].(bool); qsv {
+				msg["videoCodec"] = "av1_qsv"
+			} else if nvenc, _ := lastConfig["av1NvencAvailable"].(bool); nvenc {
+				msg["videoCodec"] = "av1_nvenc"
+			}
+		}
+	}
+
 	return s.sendMessage(msg)
 }
 
