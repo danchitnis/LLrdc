@@ -16,6 +16,8 @@ typedef void (*WindowEventCallback)(void* renderer, int eventType, int data1, in
 typedef void (*InputEventCallback)(void* renderer, char* jsonMsg);
 typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint32_t ts);
 
+int llrdc_test_mouse_payload(double contentW, double contentH, double videoW, double videoH, double pointX, double pointYFromTop, double* outX, double* outY, double* outFrameH);
+
 @interface LLrdcView : NSView
 @property (nonatomic, strong) AVSampleBufferDisplayLayer *videoLayer;
 @property (nonatomic, assign) void* renderer;
@@ -23,12 +25,83 @@ typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint
 @property (nonatomic, assign) WindowEventCallback windowCallback;
 @property (nonatomic, assign) BOOL clicked;
 @property (nonatomic, assign) BOOL autoStart;
+@property (nonatomic, assign) NSSize videoContentSize;
+@property (nonatomic, assign) NSSize remoteTargetSize;
+- (NSDictionary *)mouseMovePayloadForEvent:(NSEvent *)event;
+- (void)sendInput:(NSDictionary*)dict;
 @end
 
 @interface LLrdcWindowDelegate : NSObject <NSWindowDelegate>
 @property (nonatomic, assign) void* renderer;
 @property (nonatomic, assign) WindowEventCallback callback;
 @end
+
+static NSSize llrdc_aligned_size(NSSize size) {
+    NSInteger width = (NSInteger)llround(size.width);
+    NSInteger height = (NSInteger)llround(size.height);
+    if (width >= 8) {
+        width = (width / 8) * 8;
+    }
+    if (height >= 8) {
+        height = (height / 8) * 8;
+    }
+    return NSMakeSize(width, height);
+}
+
+static NSSize llrdc_target_size_for_content(NSSize contentSize, NSSize aspectSize) {
+    // Simply align the contentSize to 8 pixels to match the server's requirements,
+    // allowing the remote desktop to adopt the window's aspect ratio.
+    return llrdc_aligned_size(contentSize);
+}
+
+int llrdc_test_mouse_payload(double contentW, double contentH, double videoW, double videoH, double pointX, double pointYFromTop, double* outX, double* outY, double* outFrameH) {
+    @autoreleasepool {
+        [NSApplication sharedApplication];
+
+        NSRect contentRect = NSMakeRect(0, 0, contentW, contentH);
+        NSWindow *window = [[NSWindow alloc] initWithContentRect:contentRect
+                                                       styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable)
+                                                         backing:NSBackingStoreBuffered
+                                                           defer:NO];
+        LLrdcView *view = [[LLrdcView alloc] initWithFrame:contentRect];
+        view.videoContentSize = NSMakeSize(videoW, videoH);
+        [window setContentView:view];
+        [window layoutIfNeeded];
+
+        NSPoint viewPoint = NSMakePoint(pointX, contentH - pointYFromTop);
+        NSPoint windowPoint = [view convertPoint:viewPoint toView:nil];
+        NSEvent *event = [NSEvent mouseEventWithType:NSEventTypeMouseMoved
+                                            location:windowPoint
+                                       modifierFlags:0
+                                           timestamp:0
+                                        windowNumber:[window windowNumber]
+                                             context:nil
+                                         eventNumber:0
+                                          clickCount:0
+                                            pressure:0];
+        NSDictionary *payload = [view mouseMovePayloadForEvent:event];
+        if (payload == nil) {
+            return 0;
+        }
+
+        NSNumber *x = payload[@"x"];
+        NSNumber *y = payload[@"y"];
+        if (x == nil || y == nil) {
+            return 0;
+        }
+
+        if (outX != NULL) {
+            *outX = [x doubleValue];
+        }
+        if (outY != NULL) {
+            *outY = [y doubleValue];
+        }
+        if (outFrameH != NULL) {
+            *outFrameH = window.frame.size.height;
+        }
+        return 1;
+    }
+}
 
 @implementation LLrdcWindowDelegate
 - (void)windowWillClose:(NSNotification *)notification {
@@ -38,6 +111,19 @@ typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint
 - (void)windowDidResize:(NSNotification *)notification {
     NSWindow *window = [notification object];
     NSSize size = [window contentRectForFrameRect:[window frame]].size;
+    CGFloat scale = [window backingScaleFactor];
+    NSSize pixelSize = NSMakeSize(size.width * scale, size.height * scale);
+    LLrdcView *view = (LLrdcView *)[window contentView];
+    if (view != nil) {
+        NSSize aspectSize = view.videoContentSize.width > 0 && view.videoContentSize.height > 0 ? view.videoContentSize : view.remoteTargetSize;
+        NSSize targetSize = llrdc_target_size_for_content(pixelSize, aspectSize);
+        if ((NSInteger)llround(targetSize.width) > 0 && (NSInteger)llround(targetSize.height) > 0 &&
+            ((NSInteger)llround(targetSize.width) != (NSInteger)llround(view.remoteTargetSize.width) ||
+             (NSInteger)llround(targetSize.height) != (NSInteger)llround(view.remoteTargetSize.height))) {
+            view.remoteTargetSize = targetSize;
+            [view sendInput:@{@"type": @"resize", @"width": @((int)targetSize.width), @"height": @((int)targetSize.height)}];
+        }
+    }
     if (self.callback) self.callback(self.renderer, 5, (int)size.width, (int)size.height, NULL);
 }
 
@@ -149,6 +235,8 @@ static BOOL llrdc_update_parameter_sets(NSData *spsData, NSData *ppsData) {
     g_app_state.view.inputCallback = g_app_state.inCb;
     g_app_state.view.windowCallback = g_app_state.winCb;
     g_app_state.view.autoStart = (g_app_state.autoStart != 0);
+    g_app_state.view.videoContentSize = NSMakeSize(g_app_state.w, g_app_state.h);
+    g_app_state.view.remoteTargetSize = llrdc_aligned_size(NSMakeSize(g_app_state.w, g_app_state.h));
     if (g_app_state.view.autoStart) {
         g_app_state.view.clicked = YES;
         g_app_state.view.videoLayer.hidden = NO;
@@ -160,6 +248,9 @@ static BOOL llrdc_update_parameter_sets(NSData *spsData, NSData *ppsData) {
     [g_app_state.view setNeedsDisplay:YES];
     [NSApp activateIgnoringOtherApps:YES];
 
+    NSSize contentSize = [g_app_state.window contentRectForFrameRect:[g_app_state.window frame]].size;
+    CGFloat scale = [g_app_state.window backingScaleFactor];
+    if (g_app_state.winCb) g_app_state.winCb(g_app_state.renderer, 5, (int)(contentSize.width * scale), (int)(contentSize.height * scale), NULL);
     if (g_app_state.winCb) g_app_state.winCb(g_app_state.renderer, 1, 0, 0, NULL);
     if (g_app_state.view.autoStart && g_app_state.winCb) g_app_state.winCb(g_app_state.renderer, 20, 0, 0, NULL);
 }
@@ -197,7 +288,7 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         self.wantsLayer = YES;
         self.videoLayer = [[AVSampleBufferDisplayLayer alloc] init];
         self.videoLayer.frame = self.bounds;
-        self.videoLayer.videoGravity = AVLayerVideoGravityResizeAspect;
+        self.videoLayer.videoGravity = AVLayerVideoGravityResize;
         self.videoLayer.hidden = YES;
         [self.layer addSublayer:self.videoLayer];
 
@@ -206,6 +297,17 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         [self addTrackingArea:area];
     }
     return self;
+}
+
+- (void)setFrame:(NSRect)frame {
+    [super setFrame:frame];
+    [self layout];
+}
+
+- (void)layout {
+    [super layout];
+    self.videoLayer.frame = self.bounds;
+    self.videoLayer.contentsScale = self.window.backingScaleFactor;
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -238,11 +340,6 @@ static NSString* nseventToDOMKey(NSEvent *event) {
     [tri fill];
 }
 
-- (void)setFrame:(NSRect)frame {
-    [super setFrame:frame];
-    self.videoLayer.frame = self.bounds;
-}
-
 - (BOOL)acceptsFirstResponder { return YES; }
 
 - (void)sendInput:(NSDictionary*)dict {
@@ -255,11 +352,47 @@ static NSString* nseventToDOMKey(NSEvent *event) {
     }
 }
 
-- (void)mouseMoved:(NSEvent *)event {
+- (NSRect)currentVideoRect {
+    return self.bounds;
+}
+
+- (NSDictionary *)mouseMovePayloadForEvent:(NSEvent *)event {
     NSPoint location = [self convertPoint:[event locationInWindow] fromView:nil];
-    double x = location.x / self.bounds.size.width;
-    double y = 1.0 - (location.y / self.bounds.size.height);
-    [self sendInput:@{@"type": @"mousemove", @"x": @(x), @"y": @(y)}];
+    NSRect bounds = self.bounds;
+    if (bounds.size.width <= 0 || bounds.size.height <= 0) {
+        return nil;
+    }
+
+    // Since videoGravity is AVLayerVideoGravityResize, the video fills the bounds.
+    // Map points directly to 0.0-1.0 range.
+    double x = location.x / bounds.size.width;
+    double y = 1.0 - (location.y / bounds.size.height);
+
+    if (x < 0.0) x = 0.0;
+    if (x > 1.0) x = 1.0;
+    if (y < 0.0) y = 0.0;
+    if (y > 1.0) y = 1.0;
+
+    return @{@"type": @"mousemove", @"x": @(x), @"y": @(y)};
+}
+
+- (void)sendMouseMoveForEvent:(NSEvent *)event {
+    NSDictionary *payload = [self mouseMovePayloadForEvent:event];
+    if (payload != nil) {
+        [self sendInput:payload];
+    }
+}
+
+- (void)mouseMoved:(NSEvent *)event {
+    [self sendMouseMoveForEvent:event];
+}
+
+- (void)mouseDragged:(NSEvent *)event {
+    [self sendMouseMoveForEvent:event];
+}
+
+- (void)rightMouseDragged:(NSEvent *)event {
+    [self sendMouseMoveForEvent:event];
 }
 
 - (void)mouseDown:(NSEvent *)event {
@@ -270,11 +403,15 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         if (self.windowCallback) self.windowCallback(self.renderer, 20, 0, 0, NULL);
         return;
     }
+    [self sendMouseMoveForEvent:event];
     [self sendInput:@{@"type": @"mousebtn", @"button": @0, @"action": @"mousedown"}];
 }
 
 - (void)mouseUp:(NSEvent *)event { [self sendInput:@{@"type": @"mousebtn", @"button": @0, @"action": @"mouseup"}]; }
-- (void)rightMouseDown:(NSEvent *)event { [self sendInput:@{@"type": @"mousebtn", @"button": @2, @"action": @"mousedown"}]; }
+- (void)rightMouseDown:(NSEvent *)event {
+    [self sendMouseMoveForEvent:event];
+    [self sendInput:@{@"type": @"mousebtn", @"button": @2, @"action": @"mousedown"}];
+}
 - (void)rightMouseUp:(NSEvent *)event { [self sendInput:@{@"type": @"mousebtn", @"button": @2, @"action": @"mouseup"}]; }
 
 - (void)scrollWheel:(NSEvent *)event {
@@ -394,9 +531,17 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
         }
 
         view.videoLayer.hidden = NO;
+        CGSize presentationSize = CMVideoFormatDescriptionGetPresentationDimensions(g_app_state.formatDesc, true, true);
+        CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(g_app_state.formatDesc);
+        if (presentationSize.width <= 0 || presentationSize.height <= 0) {
+            presentationSize = CGSizeMake(dimensions.width, dimensions.height);
+        }
+        if (presentationSize.width > 0 && presentationSize.height > 0) {
+            view.videoContentSize = NSMakeSize(presentationSize.width, presentationSize.height);
+        }
         [view.videoLayer enqueueSampleBuffer:sampleBuffer];
         if (g_app_state.presentCb) {
-            g_app_state.presentCb(g_app_state.renderer, (int)view.bounds.size.width, (int)view.bounds.size.height, ts);
+            g_app_state.presentCb(g_app_state.renderer, (int)lround(presentationSize.width), (int)lround(presentationSize.height), ts);
         }
 
         CFRelease(sampleBuffer);

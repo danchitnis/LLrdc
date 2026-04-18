@@ -210,9 +210,17 @@ func main() {
 		})
 		windowRenderer.SetInputSink(func(msg map[string]any) error {
 			if msgType, _ := msg["type"].(string); msgType == "resize" {
-				width, _ := msg["width"].(int)
-				height, _ := msg["height"].(int)
-				return session.SendResize(width, height)
+				var width, height int
+				if w, ok := msg["width"].(float64); ok {
+					width = int(w)
+				}
+				if h, ok := msg["height"].(float64); ok {
+					height = int(h)
+				}
+				if width > 0 && height > 0 {
+					return session.SendResize(width, height)
+				}
+				return nil
 			}
 			return session.SendInput(msg)
 		})

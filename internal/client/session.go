@@ -94,6 +94,15 @@ func (b *HookBus) Emit(event Event, payload EventPayload) {
 type SessionState struct {
 	ServerURL               string             `json:"serverUrl"`
 	BuildID                 string             `json:"buildId,omitempty"`
+	WindowWidth             int                `json:"windowWidth,omitempty"`
+	WindowHeight            int                `json:"windowHeight,omitempty"`
+	LastResizeWidth         int                `json:"lastResizeWidth,omitempty"`
+	LastResizeHeight        int                `json:"lastResizeHeight,omitempty"`
+	LastResizeAt            time.Time          `json:"lastResizeAt,omitempty"`
+	LastPresentedWidth      int                `json:"lastPresentedWidth,omitempty"`
+	LastPresentedHeight     int                `json:"lastPresentedHeight,omitempty"`
+	ServerScreenWidth       int                `json:"serverScreenWidth,omitempty"`
+	ServerScreenHeight      int                `json:"serverScreenHeight,omitempty"`
 	Connected               bool               `json:"connected"`
 	WebRTCConnected         bool               `json:"webrtcConnected"`
 	PeerConnectionState     string             `json:"peerConnectionState,omitempty"`
@@ -212,6 +221,12 @@ func (s *Session) UpdateWindowState(state NativeWindowLifecycle) {
 	if state.RenderLoopStarted {
 		s.state.RenderLoopStarted = true
 	}
+	if state.Width > 0 {
+		s.state.WindowWidth = state.Width
+	}
+	if state.Height > 0 {
+		s.state.WindowHeight = state.Height
+	}
 	if state.Created {
 		s.state.WindowCreated = true
 	}
@@ -247,6 +262,8 @@ func (s *Session) UpdateWindowState(state NativeWindowLifecycle) {
 	s.emit(EventStateChanged, map[string]any{
 		"windowBackend":           current.WindowBackend,
 		"windowId":                current.WindowID,
+		"windowWidth":             current.WindowWidth,
+		"windowHeight":            current.WindowHeight,
 		"windowCreated":           current.WindowCreated,
 		"windowShown":             current.WindowShown,
 		"windowMapped":            current.WindowMapped,
@@ -386,6 +403,13 @@ func (s *Session) Connect(serverURL string) error {
 	s.state.VideoCodec = ""
 	s.state.LastConfig = nil
 	s.state.LastStats = nil
+	s.state.LastResizeWidth = 0
+	s.state.LastResizeHeight = 0
+	s.state.LastResizeAt = time.Time{}
+	s.state.LastPresentedWidth = 0
+	s.state.LastPresentedHeight = 0
+	s.state.ServerScreenWidth = 0
+	s.state.ServerScreenHeight = 0
 	s.state.LastMessageAt = time.Time{}
 	s.state.LastVideoPacketAt = time.Time{}
 	s.state.LastVideoFrameAt = time.Time{}
@@ -502,6 +526,29 @@ func (s *Session) Connect(serverURL string) error {
 	return nil
 }
 
+func numberToInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), true
+	case float32:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(i), true
+	default:
+		return 0, false
+	}
+}
+
 func (s *Session) Disconnect() error {
 	s.connectMu.Lock()
 	defer s.connectMu.Unlock()
@@ -559,6 +606,8 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 	now := time.Now()
 	s.state.LastPresentAt = now
 	s.state.Presenting = true
+	s.state.LastPresentedWidth = event.Width
+	s.state.LastPresentedHeight = event.Height
 	if s.state.FirstFramePresentedAt.IsZero() {
 		s.state.FirstFramePresentedAt = now
 	}
@@ -595,7 +644,12 @@ func (s *Session) RecordDecodeAwaitingKeyframe(awaiting bool) {
 }
 
 func (s *Session) SendResize(width, height int) error {
-	return s.sendMessage(map[string]any{
+	s.mu.Lock()
+	s.state.LastResizeWidth = width
+	s.state.LastResizeHeight = height
+	s.state.LastResizeAt = time.Now()
+	s.mu.Unlock()
+	return s.sendJSON(map[string]any{
 		"type":   "resize",
 		"width":  width,
 		"height": height,
@@ -691,6 +745,12 @@ func (s *Session) readLoop(conn *websocket.Conn, pc *webrtc.PeerConnection) {
 			s.state.LastConfig = cloneMap(msg)
 			if codec, ok := msg["videoCodec"].(string); ok {
 				s.state.VideoCodec = codec
+			}
+			if width, ok := numberToInt(msg["screenWidth"]); ok {
+				s.state.ServerScreenWidth = width
+			}
+			if height, ok := numberToInt(msg["screenHeight"]); ok {
+				s.state.ServerScreenHeight = height
 			}
 			s.mu.Unlock()
 			s.emit(EventConfig, cloneMap(msg))
