@@ -49,6 +49,15 @@ func (s *ControlServer) handleReady(w http.ResponseWriter, _ *http.Request) {
 	state := s.session.State()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"buildId":                 state.BuildID,
+		"windowWidth":             state.WindowWidth,
+		"windowHeight":            state.WindowHeight,
+		"lastResizeWidth":         state.LastResizeWidth,
+		"lastResizeHeight":        state.LastResizeHeight,
+		"lastResizeAt":            state.LastResizeAt,
+		"lastPresentedWidth":      state.LastPresentedWidth,
+		"lastPresentedHeight":     state.LastPresentedHeight,
+		"serverScreenWidth":       state.ServerScreenWidth,
+		"serverScreenHeight":      state.ServerScreenHeight,
 		"ready":                   state.Connected,
 		"connected":               state.Connected,
 		"webrtcConnected":         state.WebRTCConnected,

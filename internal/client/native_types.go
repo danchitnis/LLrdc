@@ -32,6 +32,8 @@ type NativeRendererOptions struct {
 type NativeWindowLifecycle struct {
 	Backend                 string
 	WindowID                uint64
+	Width                   int
+	Height                  int
 	Created                 bool
 	Shown                   bool
 	Mapped                  bool

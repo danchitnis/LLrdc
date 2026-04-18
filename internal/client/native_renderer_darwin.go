@@ -267,10 +267,8 @@ func llrdc_window_callback(idPtr unsafe.Pointer, eventType C.int, data1 C.int, d
 		event.Visible = true
 	case 5:
 		event.Event = "size_changed"
-		r.mu.Lock()
-		r.width = int(data1)
-		r.height = int(data2)
-		r.mu.Unlock()
+		event.Width = int(data1)
+		event.Height = int(data2)
 	case 13:
 		event.Event = "close"
 	case 20:
@@ -291,6 +289,18 @@ func llrdc_input_callback(idPtr unsafe.Pointer, jsonMsg *C.char) {
 	msgStr := C.GoString(jsonMsg)
 	var msg map[string]any
 	if err := json.Unmarshal([]byte(msgStr), &msg); err == nil {
+		if msgType, _ := msg["type"].(string); msgType == "resize" {
+			if width, ok := msg["width"].(float64); ok {
+				r.mu.Lock()
+				r.width = int(width)
+				r.mu.Unlock()
+			}
+			if height, ok := msg["height"].(float64); ok {
+				r.mu.Lock()
+				r.height = int(height)
+				r.mu.Unlock()
+			}
+		}
 		r.mu.RLock()
 		fn := r.inputSink
 		r.mu.RUnlock()

@@ -347,13 +347,16 @@ func (r *NativeRenderer) Run() error {
 					return nil
 				}
 				windowState.applyEvent(e.Event)
-				r.emitLifecycle(windowState.snapshot(windowEventName(e.Event), false))
+				lifecycle := windowState.snapshot(windowEventName(e.Event), false)
 				if e.Event == sdl.WINDOWEVENT_SIZE_CHANGED {
 					r.mu.Lock()
 					r.width = int(e.Data1)
 					r.height = int(e.Data2)
 					r.mu.Unlock()
+					lifecycle.Width = int(e.Data1)
+					lifecycle.Height = int(e.Data2)
 				}
+				r.emitLifecycle(lifecycle)
 			}
 		}
 
@@ -504,18 +507,21 @@ func (r *NativeRenderer) Run() error {
 					return nil
 				}
 				windowState.applyEvent(e.Event)
-				r.emitLifecycle(windowState.snapshot(windowEventName(e.Event), false))
+				lifecycle := windowState.snapshot(windowEventName(e.Event), false)
 				if e.Event == sdl.WINDOWEVENT_SIZE_CHANGED {
 					r.mu.Lock()
 					r.width = int(e.Data1)
 					r.height = int(e.Data2)
 					r.mu.Unlock()
+					lifecycle.Width = int(e.Data1)
+					lifecycle.Height = int(e.Data2)
 					r.sendInput(map[string]any{
 						"type":   "resize",
 						"width":  int(e.Data1),
 						"height": int(e.Data2),
 					})
 				}
+				r.emitLifecycle(lifecycle)
 			}
 		}
 
