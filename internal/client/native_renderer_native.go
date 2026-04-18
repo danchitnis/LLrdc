@@ -156,6 +156,8 @@ func (r *NativeRenderer) SetPresentSink(fn func(NativeFramePresented)) {
 	r.present = fn
 }
 
+func (r *NativeRenderer) SetStatusText(text string) {}
+
 func (r *NativeRenderer) Size() (int, int) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

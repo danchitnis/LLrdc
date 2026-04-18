@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -57,6 +58,7 @@ func main() {
 	windowWidth := flag.Int("width", 1280, "Initial native client window width")
 	windowHeight := flag.Int("height", 720, "Initial native client window height")
 	headless := flag.Bool("headless", false, "Run without creating a native window")
+	showStats := flag.Bool("stats", false, "Show stats overlay on the screen")
 	defaultAutoStart := runtime.GOOS == "darwin"
 	autoStart := flag.Bool("auto-start", defaultAutoStart, "Start streaming automatically without waiting for click")
 	latencyProbe := flag.Bool("latency-probe", false, "Enable internal latency probe (checks center pixel brightness)")
@@ -185,6 +187,74 @@ func main() {
 			case <-shutdownCh:
 			}
 		}()
+
+		if *showStats && windowRenderer != nil {
+			go func() {
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+
+				var lastFrames uint64
+				var lastBytes uint64
+
+				for {
+					select {
+					case <-shutdownCh:
+						return
+					case <-ticker.C:
+						stats := session.Stats()
+						state := session.State()
+
+						fps := stats.PresentedFrames - lastFrames
+						lastFrames = stats.PresentedFrames
+
+						bwMbps := float64(stats.VideoBytes-lastBytes) * 8 / 1024 / 1024
+						lastBytes = stats.VideoBytes
+
+						codec := state.VideoCodec
+						displayCodec := strings.TrimPrefix(strings.ToLower(codec), "video/")
+						displayCodec = strings.ReplaceAll(displayCodec, "h264", "H264")
+						displayCodec = strings.ReplaceAll(displayCodec, "h265", "H265")
+						displayCodec = strings.ReplaceAll(displayCodec, "av1", "AV1")
+						displayCodec = strings.ReplaceAll(displayCodec, "vp8", "VP8")
+						if strings.Contains(strings.ToLower(codec), "nvenc") || strings.Contains(strings.ToLower(codec), "qsv") {
+							displayCodec += " 🚀 GPU"
+						}
+
+						res := ""
+						if state.LastPresentedWidth > 0 {
+							res = fmt.Sprintf("%dx%d | ", state.LastPresentedWidth, state.LastPresentedHeight)
+						}
+
+						avgLat := 0.0
+						if len(state.RecentLatencySamples) > 0 {
+							var sum float64
+							count := 0
+							for _, s := range state.RecentLatencySamples {
+								if s.PresentationAt > 0 && s.ReceiveAt > 0 {
+									sum += float64(s.PresentationAt - s.ReceiveAt)
+									count++
+								}
+							}
+							if count > 0 {
+								avgLat = sum / float64(count)
+							}
+						}
+
+						statsText := fmt.Sprintf("[%s] %s%d FPS | Lat: %dms | BW: %.1fMb",
+							displayCodec, res, fps, int(avgLat), bwMbps)
+
+						if ffmpegCpu, ok := state.LastStats["ffmpegCpu"].(float64); ok {
+							statsText += fmt.Sprintf(" | CPU: %d%%", int(ffmpegCpu))
+						}
+						if gpuUtil, ok := state.LastStats["intelGpuUtil"].(float64); ok && gpuUtil > 0 {
+							statsText += fmt.Sprintf(" | Enc: %d%%", int(gpuUtil))
+						}
+
+						windowRenderer.SetStatusText(statsText)
+					}
+				}
+			}()
+		}
 
 		if windowRenderer != nil {
 			go func() {

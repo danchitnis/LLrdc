@@ -16,6 +16,7 @@ typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint
 void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart);
 void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
 void llrdc_reset_video();
+void llrdc_set_status_text(void* renderer, const char* text);
 void llrdc_run_app();
 void llrdc_stop_app();
 
@@ -105,6 +106,12 @@ func (r *NativeRenderer) SetPresentSink(fn func(NativeFramePresented)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.present = fn
+}
+
+func (r *NativeRenderer) SetStatusText(text string) {
+	cText := C.CString(text)
+	defer C.free(unsafe.Pointer(cText))
+	C.llrdc_set_status_text(nil, cText)
 }
 
 func (r *NativeRenderer) Size() (int, int) {

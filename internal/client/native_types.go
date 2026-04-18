@@ -10,6 +10,7 @@ type WindowRenderer interface {
 	SetLifecycleSink(func(NativeWindowLifecycle))
 	UpdateMouse(x, y float64)
 	SetPresentSink(func(NativeFramePresented))
+	SetStatusText(text string)
 	Size() (int, int)
 }
 

@@ -20,6 +20,7 @@ int llrdc_test_mouse_payload(double contentW, double contentH, double videoW, do
 
 @interface LLrdcView : NSView
 @property (nonatomic, strong) AVSampleBufferDisplayLayer *videoLayer;
+@property (nonatomic, strong) CATextLayer *statusLayer;
 @property (nonatomic, assign) void* renderer;
 @property (nonatomic, assign) InputEventCallback inputCallback;
 @property (nonatomic, assign) WindowEventCallback windowCallback;
@@ -292,6 +293,16 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         self.videoLayer.hidden = YES;
         [self.layer addSublayer:self.videoLayer];
 
+        self.statusLayer = [[CATextLayer alloc] init];
+        self.statusLayer.fontSize = 12;
+        self.statusLayer.foregroundColor = [NSColor colorWithDeviceRed:68/255.0 green:255/255.0 blue:68/255.0 alpha:1.0].CGColor;
+        self.statusLayer.backgroundColor = [NSColor colorWithDeviceRed:0 green:0 blue:0 alpha:0.5].CGColor;
+        self.statusLayer.cornerRadius = 4.0;
+        self.statusLayer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
+        self.statusLayer.hidden = YES;
+        self.statusLayer.alignmentMode = kCAAlignmentRight;
+        [self.layer addSublayer:self.statusLayer];
+
         NSTrackingAreaOptions options = (NSTrackingActiveAlways | NSTrackingInVisibleRect | NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved);
         NSTrackingArea *area = [[NSTrackingArea alloc] initWithRect:[self bounds] options:options owner:self userInfo:nil];
         [self addTrackingArea:area];
@@ -308,6 +319,16 @@ static NSString* nseventToDOMKey(NSEvent *event) {
     [super layout];
     self.videoLayer.frame = self.bounds;
     self.videoLayer.contentsScale = self.window.backingScaleFactor;
+
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : [[NSScreen mainScreen] backingScaleFactor];
+    CGFloat margin = 10.0;
+    CGFloat width = 500.0; // Fixed width for right-alignment logic
+    if (width > self.bounds.size.width - 2 * margin) {
+        width = self.bounds.size.width - 2 * margin;
+    }
+    // Position at the top right
+    self.statusLayer.frame = NSMakeRect(self.bounds.size.width - width - margin, self.bounds.size.height - 25.0, width, 20.0);
+    self.statusLayer.contentsScale = scale;
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -552,6 +573,17 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
 void llrdc_reset_video() {
     dispatch_async(dispatch_get_main_queue(), ^{
         llrdc_reset_video_state_locked();
+    });
+}
+
+void llrdc_set_status_text(void* renderer, const char* text) {
+    NSString *status = text ? [NSString stringWithUTF8String:text] : @"";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        LLrdcView *view = g_app_state.view;
+        if (view && view.statusLayer) {
+            view.statusLayer.string = status;
+            view.statusLayer.hidden = (status.length == 0);
+        }
     });
 }
 
