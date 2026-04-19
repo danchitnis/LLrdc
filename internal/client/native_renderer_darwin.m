@@ -15,21 +15,36 @@ void llrdc_present_callback(void* renderer, int width, int height, uint32_t ts);
 typedef void (*WindowEventCallback)(void* renderer, int eventType, int data1, int data2, char* error);
 typedef void (*InputEventCallback)(void* renderer, char* jsonMsg);
 typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint32_t ts);
+typedef struct {
+    void* bytes;
+    size_t len;
+    char* error;
+} llrdc_png_result;
 
 int llrdc_test_mouse_payload(double contentW, double contentH, double videoW, double videoH, double pointX, double pointYFromTop, double* outX, double* outY, double* outFrameH);
 
 @interface LLrdcView : NSView
 @property (nonatomic, strong) AVSampleBufferDisplayLayer *videoLayer;
-@property (nonatomic, strong) CATextLayer *statusLayer;
+@property (nonatomic, strong) CATextLayer *hudLayer;
+@property (nonatomic, strong) CALayer *menuBackgroundLayer;
+@property (nonatomic, strong) CATextLayer *menuTitleLayer;
+@property (nonatomic, strong) CATextLayer *menuHintLayer;
+@property (nonatomic, strong) CATextLayer *menuItemsLayer;
+@property (nonatomic, strong) CALayer *debugCursorLayer;
 @property (nonatomic, assign) void* renderer;
 @property (nonatomic, assign) InputEventCallback inputCallback;
 @property (nonatomic, assign) WindowEventCallback windowCallback;
 @property (nonatomic, assign) BOOL clicked;
 @property (nonatomic, assign) BOOL autoStart;
+@property (nonatomic, assign) BOOL debugCursorEnabled;
+@property (nonatomic, assign) CGPoint debugCursorPoint;
 @property (nonatomic, assign) NSSize videoContentSize;
 @property (nonatomic, assign) NSSize remoteTargetSize;
+@property (nonatomic, assign) NSInteger menuItemCount;
 - (NSDictionary *)mouseMovePayloadForEvent:(NSEvent *)event;
+- (NSDictionary *)mouseButtonPayloadForEvent:(NSEvent *)event button:(NSNumber *)button action:(NSString *)action;
 - (void)sendInput:(NSDictionary*)dict;
+- (void)updateDebugCursor;
 @end
 
 @interface LLrdcWindowDelegate : NSObject <NSWindowDelegate>
@@ -155,7 +170,8 @@ static struct {
 
 static void llrdc_reset_video_state_locked(void) {
     if (g_app_state.view && g_app_state.view.videoLayer) {
-        [g_app_state.view.videoLayer flushAndRemoveImage];
+        AVSampleBufferVideoRenderer *renderer = g_app_state.view.videoLayer.sampleBufferRenderer;
+        [renderer flushWithRemovalOfDisplayedImage:YES completionHandler:nil];
         g_app_state.view.videoLayer.hidden = NO;
     }
     if (g_app_state.formatDesc) {
@@ -275,8 +291,9 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         case 0x17: return @"Digit5"; case 0x16: return @"Digit6"; case 0x1A: return @"Digit7"; case 0x1C: return @"Digit8";
         case 0x19: return @"Digit9"; case 0x1D: return @"Digit0";
         case 0x31: return @"Space"; case 0x24: return @"Enter"; case 0x35: return @"Escape"; case 0x33: return @"Backspace";
-        case 0x30: return @"Tab";
+        case 0x30: return @"Tab"; case 0x2B: return @"Comma";
         case 0x7E: return @"ArrowUp"; case 0x7D: return @"ArrowDown"; case 0x7B: return @"ArrowLeft"; case 0x7C: return @"ArrowRight";
+        case 0x7A: return @"F1";
         case 0x3B: return @"ControlLeft"; case 0x38: return @"ShiftLeft"; case 0x3A: return @"AltLeft"; case 0x37: return @"MetaLeft";
         default: return nil;
     }
@@ -293,15 +310,53 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         self.videoLayer.hidden = YES;
         [self.layer addSublayer:self.videoLayer];
 
-        self.statusLayer = [[CATextLayer alloc] init];
-        self.statusLayer.fontSize = 12;
-        self.statusLayer.foregroundColor = [NSColor colorWithDeviceRed:68/255.0 green:255/255.0 blue:68/255.0 alpha:1.0].CGColor;
-        self.statusLayer.backgroundColor = [NSColor colorWithDeviceRed:0 green:0 blue:0 alpha:0.5].CGColor;
-        self.statusLayer.cornerRadius = 4.0;
-        self.statusLayer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
-        self.statusLayer.hidden = YES;
-        self.statusLayer.alignmentMode = kCAAlignmentRight;
-        [self.layer addSublayer:self.statusLayer];
+        self.hudLayer = [[CATextLayer alloc] init];
+        self.hudLayer.fontSize = 12;
+        self.hudLayer.foregroundColor = [NSColor colorWithDeviceRed:68/255.0 green:255/255.0 blue:68/255.0 alpha:1.0].CGColor;
+        self.hudLayer.backgroundColor = [NSColor colorWithDeviceRed:0 green:0 blue:0 alpha:0.55].CGColor;
+        self.hudLayer.cornerRadius = 4.0;
+        self.hudLayer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
+        self.hudLayer.hidden = YES;
+        self.hudLayer.alignmentMode = kCAAlignmentLeft;
+        self.hudLayer.wrapped = YES;
+        [self.layer addSublayer:self.hudLayer];
+
+        self.menuBackgroundLayer = [[CALayer alloc] init];
+        self.menuBackgroundLayer.backgroundColor = [NSColor colorWithDeviceRed:12/255.0 green:14/255.0 blue:18/255.0 alpha:0.88].CGColor;
+        self.menuBackgroundLayer.borderColor = [NSColor colorWithDeviceRed:96/255.0 green:124/255.0 blue:255/255.0 alpha:1.0].CGColor;
+        self.menuBackgroundLayer.borderWidth = 1.0;
+        self.menuBackgroundLayer.cornerRadius = 12.0;
+        self.menuBackgroundLayer.hidden = YES;
+        [self.layer addSublayer:self.menuBackgroundLayer];
+
+        self.menuTitleLayer = [[CATextLayer alloc] init];
+        self.menuTitleLayer.fontSize = 22;
+        self.menuTitleLayer.foregroundColor = [NSColor whiteColor].CGColor;
+        self.menuTitleLayer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
+        self.menuTitleLayer.hidden = YES;
+        [self.layer addSublayer:self.menuTitleLayer];
+
+        self.menuHintLayer = [[CATextLayer alloc] init];
+        self.menuHintLayer.fontSize = 11;
+        self.menuHintLayer.foregroundColor = [NSColor colorWithDeviceRed:180/255.0 green:188/255.0 blue:204/255.0 alpha:1.0].CGColor;
+        self.menuHintLayer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
+        self.menuHintLayer.wrapped = YES;
+        self.menuHintLayer.hidden = YES;
+        [self.layer addSublayer:self.menuHintLayer];
+
+        self.menuItemsLayer = [[CATextLayer alloc] init];
+        self.menuItemsLayer.fontSize = 14;
+        self.menuItemsLayer.foregroundColor = [NSColor colorWithDeviceRed:240/255.0 green:244/255.0 blue:255/255.0 alpha:1.0].CGColor;
+        self.menuItemsLayer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
+        self.menuItemsLayer.wrapped = YES;
+        self.menuItemsLayer.hidden = YES;
+        [self.layer addSublayer:self.menuItemsLayer];
+
+        self.debugCursorLayer = [[CALayer alloc] init];
+        self.debugCursorLayer.backgroundColor = [NSColor colorWithDeviceRed:1.0 green:0.0 blue:0.0 alpha:0.95].CGColor;
+        self.debugCursorLayer.cornerRadius = 5.0;
+        self.debugCursorLayer.hidden = YES;
+        [self.layer addSublayer:self.debugCursorLayer];
 
         NSTrackingAreaOptions options = (NSTrackingActiveAlways | NSTrackingInVisibleRect | NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved);
         NSTrackingArea *area = [[NSTrackingArea alloc] initWithRect:[self bounds] options:options owner:self userInfo:nil];
@@ -326,9 +381,40 @@ static NSString* nseventToDOMKey(NSEvent *event) {
     if (width > self.bounds.size.width - 2 * margin) {
         width = self.bounds.size.width - 2 * margin;
     }
-    // Position at the top right
-    self.statusLayer.frame = NSMakeRect(self.bounds.size.width - width - margin, self.bounds.size.height - 25.0, width, 20.0);
-    self.statusLayer.contentsScale = scale;
+    self.hudLayer.frame = NSMakeRect(margin, self.bounds.size.height - 36.0, width, 24.0);
+    self.hudLayer.contentsScale = scale;
+
+    CGFloat panelWidth = MIN(self.bounds.size.width - 40.0, 640.0);
+    if (panelWidth < 280.0) {
+        panelWidth = self.bounds.size.width;
+    }
+    NSInteger itemCount = self.menuItemCount > 0 ? self.menuItemCount : 1;
+    CGFloat panelHeight = MIN(self.bounds.size.height - 40.0, MAX(160.0, 108.0 + itemCount * 22.0));
+    if (panelHeight < 120.0) {
+        panelHeight = self.bounds.size.height;
+    }
+    CGFloat panelX = (self.bounds.size.width - panelWidth) / 2.0;
+    CGFloat panelY = (self.bounds.size.height - panelHeight) / 2.0;
+    self.menuBackgroundLayer.frame = NSMakeRect(panelX, panelY, panelWidth, panelHeight);
+    self.menuTitleLayer.frame = NSMakeRect(panelX + 18.0, panelY + panelHeight - 46.0, panelWidth - 36.0, 28.0);
+    self.menuHintLayer.frame = NSMakeRect(panelX + 18.0, panelY + panelHeight - 86.0, panelWidth - 36.0, 34.0);
+    CGFloat itemsHeight = MAX(22.0, itemCount * 22.0);
+    CGFloat itemsTop = panelY + 86.0;
+    CGFloat itemsBottom = self.bounds.size.height - (itemsTop + itemsHeight);
+    self.menuItemsLayer.frame = NSMakeRect(panelX + 18.0, itemsBottom, panelWidth - 36.0, itemsHeight);
+
+    [self updateDebugCursor];
+}
+
+- (void)updateDebugCursor {
+    if (!self.debugCursorEnabled) {
+        self.debugCursorLayer.hidden = YES;
+        return;
+    }
+    CGFloat x = self.debugCursorPoint.x * self.bounds.size.width;
+    CGFloat y = (1.0 - self.debugCursorPoint.y) * self.bounds.size.height;
+    self.debugCursorLayer.hidden = NO;
+    self.debugCursorLayer.frame = NSMakeRect(x - 5.0, y - 5.0, 10.0, 10.0);
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -404,6 +490,20 @@ static NSString* nseventToDOMKey(NSEvent *event) {
     }
 }
 
+- (NSDictionary *)mouseButtonPayloadForEvent:(NSEvent *)event button:(NSNumber *)button action:(NSString *)action {
+    NSMutableDictionary *payload = [NSMutableDictionary dictionaryWithDictionary:@{
+        @"type": @"mousebtn",
+        @"button": button,
+        @"action": action,
+    }];
+    NSDictionary *movePayload = [self mouseMovePayloadForEvent:event];
+    if (movePayload[@"x"] != nil && movePayload[@"y"] != nil) {
+        payload[@"x"] = movePayload[@"x"];
+        payload[@"y"] = movePayload[@"y"];
+    }
+    return payload;
+}
+
 - (void)mouseMoved:(NSEvent *)event {
     [self sendMouseMoveForEvent:event];
 }
@@ -425,15 +525,15 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         return;
     }
     [self sendMouseMoveForEvent:event];
-    [self sendInput:@{@"type": @"mousebtn", @"button": @0, @"action": @"mousedown"}];
+    [self sendInput:[self mouseButtonPayloadForEvent:event button:@0 action:@"mousedown"]];
 }
 
-- (void)mouseUp:(NSEvent *)event { [self sendInput:@{@"type": @"mousebtn", @"button": @0, @"action": @"mouseup"}]; }
+- (void)mouseUp:(NSEvent *)event { [self sendInput:[self mouseButtonPayloadForEvent:event button:@0 action:@"mouseup"]]; }
 - (void)rightMouseDown:(NSEvent *)event {
     [self sendMouseMoveForEvent:event];
-    [self sendInput:@{@"type": @"mousebtn", @"button": @2, @"action": @"mousedown"}];
+    [self sendInput:[self mouseButtonPayloadForEvent:event button:@2 action:@"mousedown"]];
 }
-- (void)rightMouseUp:(NSEvent *)event { [self sendInput:@{@"type": @"mousebtn", @"button": @2, @"action": @"mouseup"}]; }
+- (void)rightMouseUp:(NSEvent *)event { [self sendInput:[self mouseButtonPayloadForEvent:event button:@2 action:@"mouseup"]]; }
 
 - (void)scrollWheel:(NSEvent *)event {
     [self sendInput:@{@"type": @"wheel", @"deltaX": @([event scrollingDeltaX] * 10), @"deltaY": @(-[event scrollingDeltaY] * 10)}];
@@ -485,12 +585,13 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
         if (!view || !view.videoLayer) {
             return;
         }
+        AVSampleBufferVideoRenderer *renderer = view.videoLayer.sampleBufferRenderer;
 
-        if (![view.videoLayer isReadyForMoreMediaData]) {
-            [view.videoLayer flush];
+        if (!renderer.readyForMoreMediaData) {
+            [renderer flushWithRemovalOfDisplayedImage:NO completionHandler:nil];
         }
-        if (view.videoLayer.status == AVQueuedSampleBufferRenderingStatusFailed) {
-            [view.videoLayer flushAndRemoveImage];
+        if (renderer.status == AVQueuedSampleBufferRenderingStatusFailed) {
+            [renderer flushWithRemovalOfDisplayedImage:YES completionHandler:nil];
         }
 
         if (!llrdc_update_parameter_sets(spsData, ppsData) || !g_app_state.formatDesc) {
@@ -560,7 +661,7 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
         if (presentationSize.width > 0 && presentationSize.height > 0) {
             view.videoContentSize = NSMakeSize(presentationSize.width, presentationSize.height);
         }
-        [view.videoLayer enqueueSampleBuffer:sampleBuffer];
+        [renderer enqueueSampleBuffer:sampleBuffer];
         if (g_app_state.presentCb) {
             g_app_state.presentCb(g_app_state.renderer, (int)lround(presentationSize.width), (int)lround(presentationSize.height), ts);
         }
@@ -576,15 +677,104 @@ void llrdc_reset_video() {
     });
 }
 
-void llrdc_set_status_text(void* renderer, const char* text) {
-    NSString *status = text ? [NSString stringWithUTF8String:text] : @"";
+void llrdc_set_overlay_state(const char* hudText, int hudR, int hudG, int hudB, int hudA, int menuVisible, const char* menuTitle, const char* menuHint, const char* menuItems) {
+    NSString *hud = hudText ? [NSString stringWithUTF8String:hudText] : @"";
+    NSString *title = menuTitle ? [NSString stringWithUTF8String:menuTitle] : @"";
+    NSString *hint = menuHint ? [NSString stringWithUTF8String:menuHint] : @"";
+    NSString *items = menuItems ? [NSString stringWithUTF8String:menuItems] : @"";
     dispatch_async(dispatch_get_main_queue(), ^{
         LLrdcView *view = g_app_state.view;
-        if (view && view.statusLayer) {
-            view.statusLayer.string = status;
-            view.statusLayer.hidden = (status.length == 0);
+        if (!view) {
+            return;
         }
+        view.hudLayer.string = hud;
+        view.hudLayer.hidden = (hud.length == 0);
+        view.hudLayer.foregroundColor = [NSColor colorWithDeviceRed:hudR/255.0 green:hudG/255.0 blue:hudB/255.0 alpha:hudA/255.0].CGColor;
+
+        BOOL showMenu = menuVisible != 0;
+        view.menuBackgroundLayer.hidden = !showMenu;
+        view.menuTitleLayer.hidden = !showMenu;
+        view.menuHintLayer.hidden = !showMenu;
+        view.menuItemsLayer.hidden = !showMenu;
+        view.menuTitleLayer.string = title;
+        view.menuHintLayer.string = hint;
+        view.menuItemsLayer.string = items;
+        view.menuItemCount = items.length > 0 ? [[items componentsSeparatedByString:@"\n"] count] : 0;
+        [view setNeedsLayout:YES];
+        [view layoutSubtreeIfNeeded];
     });
+}
+
+void llrdc_set_debug_cursor(int enabled) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        LLrdcView *view = g_app_state.view;
+        if (!view) {
+            return;
+        }
+        view.debugCursorEnabled = (enabled != 0);
+        [view updateDebugCursor];
+    });
+}
+
+void llrdc_set_mouse_position(double x, double y) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        LLrdcView *view = g_app_state.view;
+        if (!view) {
+            return;
+        }
+        view.debugCursorPoint = CGPointMake(x, y);
+        [view updateDebugCursor];
+    });
+}
+
+void llrdc_set_window_size(int w, int h) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!g_app_state.window) {
+            return;
+        }
+        [g_app_state.window setContentSize:NSMakeSize(w, h)];
+    });
+}
+
+llrdc_png_result llrdc_capture_png() {
+    __block llrdc_png_result result = {0};
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        LLrdcView *view = g_app_state.view;
+        if (!view) {
+            result.error = strdup("view unavailable");
+            return;
+        }
+        NSRect bounds = [view bounds];
+        NSBitmapImageRep *rep = [view bitmapImageRepForCachingDisplayInRect:bounds];
+        if (!rep) {
+            result.error = strdup("bitmap capture failed");
+            return;
+        }
+        [view cacheDisplayInRect:bounds toBitmapImageRep:rep];
+        NSData *data = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+        if (!data || data.length == 0) {
+            result.error = strdup("png encoding failed");
+            return;
+        }
+        void *copy = malloc(data.length);
+        if (!copy) {
+            result.error = strdup("png allocation failed");
+            return;
+        }
+        memcpy(copy, data.bytes, data.length);
+        result.bytes = copy;
+        result.len = data.length;
+    });
+    return result;
+}
+
+void llrdc_free_png_result(llrdc_png_result result) {
+    if (result.bytes) {
+        free(result.bytes);
+    }
+    if (result.error) {
+        free(result.error);
+    }
 }
 
 void llrdc_run_app() {

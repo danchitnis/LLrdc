@@ -59,7 +59,11 @@ static void llrdc_vpx_close(llrdc_vpx_decoder* decoder) {
 import "C"
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"runtime"
 	"strings"
 	"sync"
@@ -83,8 +87,11 @@ type NativeRenderer struct {
 	inputSink               func(map[string]any) error
 	lifecycle               func(NativeWindowLifecycle)
 	present                 func(NativeFramePresented)
+	overlay                 OverlayState
 	samples                 chan nativeVideoSample
 	streamResets            chan string
+	resizeRequests          chan nativeResizeRequest
+	snapshotRequests        chan chan nativeSnapshotResult
 	stopCh                  chan struct{}
 	doneCh                  chan struct{}
 
@@ -110,6 +117,17 @@ type vp8Decoder struct {
 	raw C.llrdc_vpx_decoder
 }
 
+type nativeResizeRequest struct {
+	width  int
+	height int
+	result chan error
+}
+
+type nativeSnapshotResult struct {
+	body []byte
+	err  error
+}
+
 func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
 	width := opts.Width
 	if width <= 0 {
@@ -133,6 +151,8 @@ func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
 		decoderAwaitingKeyframe: true,
 		samples:                 make(chan nativeVideoSample, 8),
 		streamResets:            make(chan string, 1),
+		resizeRequests:          make(chan nativeResizeRequest, 4),
+		snapshotRequests:        make(chan chan nativeSnapshotResult, 2),
 		stopCh:                  make(chan struct{}),
 		doneCh:                  make(chan struct{}),
 	}, nil
@@ -156,7 +176,56 @@ func (r *NativeRenderer) SetPresentSink(fn func(NativeFramePresented)) {
 	r.present = fn
 }
 
-func (r *NativeRenderer) SetStatusText(text string) {}
+func (r *NativeRenderer) SetOverlayState(state OverlayState) {
+	r.mu.Lock()
+	r.overlay = cloneOverlayState(state)
+	r.mu.Unlock()
+}
+
+func (r *NativeRenderer) SetLatencyProbe(enabled bool) {
+	r.mu.Lock()
+	r.probeLatency = enabled
+	r.mu.Unlock()
+}
+
+func (r *NativeRenderer) SetDebugCursor(enabled bool) {
+	r.mu.Lock()
+	r.debugCursor = enabled
+	r.mu.Unlock()
+}
+
+func (r *NativeRenderer) SetWindowSize(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("invalid window size %dx%d", width, height)
+	}
+	r.mu.Lock()
+	r.width = width
+	r.height = height
+	runStarted := r.runStarted
+	r.mu.Unlock()
+	if !runStarted {
+		return nil
+	}
+	result := make(chan error, 1)
+	req := nativeResizeRequest{width: width, height: height, result: result}
+	select {
+	case r.resizeRequests <- req:
+	case <-r.stopCh:
+		return fmt.Errorf("renderer has stopped")
+	}
+	return <-result
+}
+
+func (r *NativeRenderer) CaptureSnapshotPNG() ([]byte, error) {
+	result := make(chan nativeSnapshotResult, 1)
+	select {
+	case r.snapshotRequests <- result:
+	case <-r.stopCh:
+		return nil, fmt.Errorf("renderer has stopped")
+	}
+	snapshot := <-result
+	return snapshot.body, snapshot.err
+}
 
 func (r *NativeRenderer) Size() (int, int) {
 	r.mu.RLock()
@@ -267,7 +336,155 @@ func (r *NativeRenderer) drawClickToStart(renderer *sdl.Renderer) {
 		_ = renderer.DrawLine(tx+i, ty-halfH, tx+i, ty+halfH)
 	}
 
-	renderer.Present()
+}
+
+func (r *NativeRenderer) drawOverlay(renderer *sdl.Renderer) {
+	r.mu.RLock()
+	state := cloneOverlayState(r.overlay)
+	r.mu.RUnlock()
+
+	if len(state.HUDLines) > 0 {
+		maxWidth := int32(0)
+		lineHeight := int32(16)
+		for _, line := range state.HUDLines {
+			width, _ := measureBitmapText(line, 2)
+			if width > maxWidth {
+				maxWidth = width
+			}
+		}
+		panel := sdl.Rect{X: 8, Y: 8, W: maxWidth + 16, H: int32(len(state.HUDLines))*lineHeight + 8}
+		drawOverlayPanel(renderer, panel, OverlayColor{R: 0, G: 0, B: 0, A: 160}, OverlayColor{R: state.HUDColor.R, G: state.HUDColor.G, B: state.HUDColor.B, A: 220})
+		for idx, line := range state.HUDLines {
+			drawBitmapText(renderer, panel.X+8, panel.Y+6+int32(idx)*lineHeight, 2, line, state.HUDColor)
+		}
+	}
+
+	if !state.MenuVisible {
+		return
+	}
+
+	outputW, outputH, err := renderer.GetOutputSize()
+	if err != nil {
+		return
+	}
+	layout := computeMenuLayout(int(outputW), int(outputH), len(state.MenuItems))
+	itemHeight := int32(layout.itemHeight)
+	panel := sdl.Rect{
+		X: int32(layout.panelX),
+		Y: int32(layout.panelY),
+		W: int32(layout.panelW),
+		H: int32(layout.panelH),
+	}
+	drawOverlayPanel(renderer, panel, OverlayColor{R: 12, G: 14, B: 18, A: 220}, OverlayColor{R: 96, G: 124, B: 255, A: 255})
+	drawBitmapText(renderer, panel.X+16, panel.Y+14, 3, state.MenuTitle, OverlayColor{R: 255, G: 255, B: 255, A: 255})
+	drawBitmapText(renderer, panel.X+16, panel.Y+42, 2, state.MenuHint, OverlayColor{R: 180, G: 188, B: 204, A: 255})
+
+	for idx, line := range state.MenuItems {
+		y := panel.Y + int32(layout.itemsStart) + int32(idx)*itemHeight
+		if idx == state.SelectedIndex {
+			highlight := sdl.Rect{X: panel.X + 10, Y: y - 2, W: panel.W - 20, H: itemHeight}
+			drawOverlayPanel(renderer, highlight, OverlayColor{R: 34, G: 52, B: 98, A: 180}, OverlayColor{R: 86, G: 118, B: 230, A: 255})
+		}
+		drawBitmapText(renderer, panel.X+20, y, 2, line, OverlayColor{R: 240, G: 244, B: 255, A: 255})
+	}
+}
+
+func (r *NativeRenderer) processWindowRequests(window *sdl.Window, renderer *sdl.Renderer) {
+	for {
+		select {
+		case req := <-r.resizeRequests:
+			window.SetSize(int32(req.width), int32(req.height))
+			r.mu.Lock()
+			r.width = req.width
+			r.height = req.height
+			r.mu.Unlock()
+			req.result <- nil
+		case response := <-r.snapshotRequests:
+			body, err := captureRendererPNG(renderer)
+			response <- nativeSnapshotResult{body: body, err: err}
+		default:
+			return
+		}
+	}
+}
+
+func measureBitmapText(text string, scale int32) (int32, int32) {
+	if scale <= 0 {
+		scale = 2
+	}
+	width := int32(len(text)) * (5*scale + scale)
+	if len(text) > 0 {
+		width -= scale
+	}
+	return width, 7 * scale
+}
+
+func drawBitmapText(renderer *sdl.Renderer, x, y, scale int32, text string, c OverlayColor) {
+	if scale <= 0 {
+		scale = 2
+	}
+	_ = renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
+	_ = renderer.SetDrawColor(c.R, c.G, c.B, c.A)
+	cursorX := x
+	for _, raw := range strings.ToUpper(text) {
+		glyph := glyphForRune(raw)
+		for row := int32(0); row < 7; row++ {
+			for col := int32(0); col < 5; col++ {
+				if glyph[row][col] != '1' {
+					continue
+				}
+				_ = renderer.FillRect(&sdl.Rect{
+					X: cursorX + col*scale,
+					Y: y + row*scale,
+					W: scale,
+					H: scale,
+				})
+			}
+		}
+		cursorX += 6 * scale
+	}
+}
+
+func drawOverlayPanel(renderer *sdl.Renderer, rect sdl.Rect, fill OverlayColor, border OverlayColor) {
+	_ = renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
+	_ = renderer.SetDrawColor(fill.R, fill.G, fill.B, fill.A)
+	_ = renderer.FillRect(&rect)
+	_ = renderer.SetDrawColor(border.R, border.G, border.B, border.A)
+	_ = renderer.DrawRect(&rect)
+}
+
+func captureRendererPNG(renderer *sdl.Renderer) ([]byte, error) {
+	width, height, err := renderer.GetOutputSize()
+	if err != nil {
+		return nil, err
+	}
+	if width <= 0 || height <= 0 {
+		return nil, fmt.Errorf("renderer output is unavailable")
+	}
+	pitch := int(width) * 4
+	pixels := make([]byte, int(height)*pitch)
+	if err := renderer.ReadPixels(nil, sdl.PIXELFORMAT_ARGB8888, unsafe.Pointer(&pixels[0]), pitch); err != nil {
+		return nil, err
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
+	for y := 0; y < int(height); y++ {
+		for x := 0; x < int(width); x++ {
+			offset := y*pitch + x*4
+			img.SetRGBA(x, y, color.RGBA{
+				R: pixels[offset+2],
+				G: pixels[offset+1],
+				B: pixels[offset+0],
+				A: pixels[offset+3],
+			})
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (r *NativeRenderer) Run() error {
@@ -334,6 +551,8 @@ func (r *NativeRenderer) Run() error {
 	clicked := r.autoStart
 	for !clicked {
 		r.drawClickToStart(renderer)
+		r.drawOverlay(renderer)
+		renderer.Present()
 
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch e := event.(type) {
@@ -361,6 +580,8 @@ func (r *NativeRenderer) Run() error {
 				r.emitLifecycle(lifecycle)
 			}
 		}
+
+		r.processWindowRequests(window, renderer)
 
 		select {
 		case <-r.stopCh:
@@ -451,6 +672,8 @@ func (r *NativeRenderer) Run() error {
 	}()
 
 	for {
+		r.processWindowRequests(window, renderer)
+
 		select {
 		case <-r.stopCh:
 			return nil
@@ -479,10 +702,21 @@ func (r *NativeRenderer) Run() error {
 				if e.Type == sdl.MOUSEBUTTONUP {
 					action = "mouseup"
 				}
+				r.mu.RLock()
+				w, h := r.width, r.height
+				r.mu.RUnlock()
+				x := 0.0
+				y := 0.0
+				if w > 0 && h > 0 {
+					x = float64(e.X) / float64(w)
+					y = float64(e.Y) / float64(h)
+				}
 				r.sendInput(map[string]any{
 					"type":   "mousebtn",
 					"button": sdlButtonToDOM(e.Button),
 					"action": action,
+					"x":      x,
+					"y":      y,
 				})
 			case *sdl.MouseWheelEvent:
 				r.sendInput(map[string]any{
@@ -543,8 +777,15 @@ func (r *NativeRenderer) Run() error {
 			}
 			_ = texture.UpdateYUV(nil, frame.yPlane, int(frame.yStride), frame.uPlane, int(frame.uStride), frame.vPlane, int(frame.vStride))
 			_ = renderer.Clear()
+			r.mu.RLock()
+			ww, wh := r.width, r.height
+			probeLatency := r.probeLatency
+			debugCursor := r.debugCursor
+			mx, my := r.mouseX, r.mouseY
+			r.mu.RUnlock()
+
 			brightness := -1
-			if r.probeLatency {
+			if probeLatency {
 				// Compute center pixel brightness (Y channel)
 				cx := int(decoded.frame.width / 2)
 				cy := int(decoded.frame.height / 2)
@@ -555,10 +796,6 @@ func (r *NativeRenderer) Run() error {
 			}
 
 			// Ensure the renderer's logical size matches the window size so drawing coordinates match mouse coordinates
-			r.mu.RLock()
-			ww, wh := r.width, r.height
-			r.mu.RUnlock()
-
 			if ww > 0 && wh > 0 {
 				lw, lh := renderer.GetLogicalSize()
 				if lw != int32(ww) || lh != int32(wh) {
@@ -568,15 +805,12 @@ func (r *NativeRenderer) Run() error {
 
 			_ = renderer.Copy(texture, nil, nil)
 
-			if r.debugCursor {
-				r.mu.RLock()
-				mx, my := r.mouseX, r.mouseY
-				r.mu.RUnlock()
-
+			if debugCursor {
 				_ = renderer.SetDrawColor(255, 0, 0, 255)
 				_ = renderer.FillRect(&sdl.Rect{X: mx - 5, Y: my - 5, W: 10, H: 10})
 			}
 
+			r.drawOverlay(renderer)
 			renderer.Present()
 			r.emitPresent(NativeFramePresented{
 				Width:           int(decoded.frame.width),
@@ -589,6 +823,20 @@ func (r *NativeRenderer) Run() error {
 			})
 
 		case <-time.After(10 * time.Millisecond):
+			if texture != nil {
+				_ = renderer.Clear()
+				_ = renderer.Copy(texture, nil, nil)
+				r.mu.RLock()
+				debugCursor := r.debugCursor
+				mx, my := r.mouseX, r.mouseY
+				r.mu.RUnlock()
+				if debugCursor {
+					_ = renderer.SetDrawColor(255, 0, 0, 255)
+					_ = renderer.FillRect(&sdl.Rect{X: mx - 5, Y: my - 5, W: 10, H: 10})
+				}
+				r.drawOverlay(renderer)
+				renderer.Present()
+			}
 		case <-r.stopCh:
 			return nil
 		}

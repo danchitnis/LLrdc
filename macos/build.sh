@@ -42,7 +42,7 @@ if [ ! -f "macos/Info.plist" ]; then
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key>
-    <string>10.15</string>
+    <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

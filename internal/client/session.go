@@ -135,7 +135,13 @@ type SessionState struct {
 	FirstFramePresentedAt   time.Time          `json:"firstFramePresentedAt,omitempty"`
 	LastLatencySample       map[string]any     `json:"lastLatencySample,omitempty"`
 	RecentLatencySamples    []LatencyBreakdown `json:"recentLatencySamples,omitempty"`
+	RecentVideoByteSamples  []TimedByteSample  `json:"recentVideoByteSamples,omitempty"`
 	CurrentTrackCodecs      map[string]string  `json:"currentTrackCodecs,omitempty"`
+}
+
+type TimedByteSample struct {
+	AtMs  int64 `json:"atMs"`
+	Bytes int   `json:"bytes"`
 }
 
 type SessionStats struct {
@@ -199,6 +205,10 @@ func (s *Session) State() SessionState {
 	if s.state.RecentLatencySamples != nil {
 		copyState.RecentLatencySamples = make([]LatencyBreakdown, len(s.state.RecentLatencySamples))
 		copy(copyState.RecentLatencySamples, s.state.RecentLatencySamples)
+	}
+	if s.state.RecentVideoByteSamples != nil {
+		copyState.RecentVideoByteSamples = make([]TimedByteSample, len(s.state.RecentVideoByteSamples))
+		copy(copyState.RecentVideoByteSamples, s.state.RecentVideoByteSamples)
 	}
 	copyState.CurrentTrackCodecs = cloneMapString(s.state.CurrentTrackCodecs)
 	return copyState
@@ -447,6 +457,7 @@ func (s *Session) Connect(serverURL string) error {
 	s.state.LastPresentAt = time.Time{}
 	s.state.FirstFramePresentedAt = time.Time{}
 	s.state.LastLatencySample = nil
+	s.state.RecentVideoByteSamples = nil
 	s.state.DecoderAwaitingKeyframe = true
 	s.state.Presenting = false
 	s.state.CurrentTrackCodecs = make(map[string]string)
@@ -674,6 +685,16 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 	})
 }
 
+func (s *Session) recordVideoByteSampleLocked(at time.Time, size int) {
+	s.state.RecentVideoByteSamples = append(s.state.RecentVideoByteSamples, TimedByteSample{
+		AtMs:  at.UnixMilli(),
+		Bytes: size,
+	})
+	if len(s.state.RecentVideoByteSamples) > 600 {
+		s.state.RecentVideoByteSamples = s.state.RecentVideoByteSamples[len(s.state.RecentVideoByteSamples)-600:]
+	}
+}
+
 func (s *Session) RecordDecodeAwaitingKeyframe(awaiting bool) {
 	s.mu.Lock()
 	s.state.DecoderAwaitingKeyframe = awaiting
@@ -727,7 +748,7 @@ func (s *Session) SendConfig(config map[string]any) error {
 		}
 	}
 
-	return s.sendMessage(msg)
+	return s.sendJSON(msg)
 }
 
 func (s *Session) SendInput(msg map[string]any) error {
@@ -851,11 +872,13 @@ func (s *Session) consumeBinaryVideoMessage(raw []byte) {
 	}
 
 	s.mu.Lock()
+	now := time.Now()
 	s.stats.VideoPackets++
 	s.stats.VideoFrames++
 	s.stats.VideoBytes += uint64(len(packet.chunkData))
-	s.state.LastVideoPacketAt = time.Now()
+	s.state.LastVideoPacketAt = now
 	s.state.LastVideoFrameAt = s.state.LastVideoPacketAt
+	s.recordVideoByteSampleLocked(now, len(packet.chunkData))
 	s.mu.Unlock()
 
 	if err := s.renderer.HandleVideoFrame(codec, packet.chunkData, packet.packetTimestamp); err != nil {
@@ -915,9 +938,11 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 		}
 
 		s.mu.Lock()
+		now := time.Now()
 		s.stats.VideoPackets++
 		s.stats.VideoBytes += uint64(packet.MarshalSize())
-		s.state.LastVideoPacketAt = time.Now()
+		s.state.LastVideoPacketAt = now
+		s.recordVideoByteSampleLocked(now, packet.MarshalSize())
 		s.mu.Unlock()
 
 		if builder == nil {

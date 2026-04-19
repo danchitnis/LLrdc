@@ -10,7 +10,11 @@ type WindowRenderer interface {
 	SetLifecycleSink(func(NativeWindowLifecycle))
 	UpdateMouse(x, y float64)
 	SetPresentSink(func(NativeFramePresented))
-	SetStatusText(text string)
+	SetOverlayState(OverlayState)
+	SetLatencyProbe(enabled bool)
+	SetDebugCursor(enabled bool)
+	SetWindowSize(width, height int) error
+	CaptureSnapshotPNG() ([]byte, error)
 	Size() (int, int)
 }
 
@@ -67,4 +71,21 @@ type LatencyBreakdown struct {
 	ReceiveAt       int64  `json:"receiveAt"`
 	DecodeReadyAt   int64  `json:"decodeReadyAt"`
 	PresentationAt  int64  `json:"presentationAt"`
+}
+
+type OverlayColor struct {
+	R uint8 `json:"r"`
+	G uint8 `json:"g"`
+	B uint8 `json:"b"`
+	A uint8 `json:"a"`
+}
+
+type OverlayState struct {
+	HUDLines      []string     `json:"hudLines,omitempty"`
+	HUDColor      OverlayColor `json:"hudColor"`
+	MenuVisible   bool         `json:"menuVisible"`
+	MenuTitle     string       `json:"menuTitle,omitempty"`
+	MenuHint      string       `json:"menuHint,omitempty"`
+	MenuItems     []string     `json:"menuItems,omitempty"`
+	SelectedIndex int          `json:"selectedIndex,omitempty"`
 }

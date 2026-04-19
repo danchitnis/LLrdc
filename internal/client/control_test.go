@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,7 @@ func TestControlServerStateEndpoints(t *testing.T) {
 	t.Parallel()
 
 	session := NewSession(nil)
-	server := NewControlServer("127.0.0.1:0", session)
+	server := NewControlServer("127.0.0.1:0", session, nil)
 
 	readyReq := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	readyRec := httptest.NewRecorder()
@@ -48,7 +49,7 @@ func TestControlServerLatencyEndpointWithoutSamples(t *testing.T) {
 	t.Parallel()
 
 	session := NewSession(nil)
-	server := NewControlServer("127.0.0.1:0", session)
+	server := NewControlServer("127.0.0.1:0", session, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/latencyz/latest", nil)
 	rec := httptest.NewRecorder()
@@ -83,7 +84,7 @@ func TestControlServerReadyIncludesWindowLifecycleState(t *testing.T) {
 		Desktop:    0,
 	})
 	session.RecordPresentedFrame(NativeFramePresented{Width: 1280, Height: 720})
-	server := NewControlServer("127.0.0.1:0", session)
+	server := NewControlServer("127.0.0.1:0", session, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	rec := httptest.NewRecorder()
@@ -110,5 +111,111 @@ func TestControlServerReadyIncludesWindowLifecycleState(t *testing.T) {
 	}
 	if presenting, _ := ready["presenting"].(bool); !presenting {
 		t.Fatalf("expected presenting state, got %#v", ready)
+	}
+}
+
+func TestControlServerMenuAndOverlayEndpoints(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	server := NewControlServer("127.0.0.1:0", session, &ControlHooks{
+		GetMenuState: func() any {
+			return MenuStateSnapshot{Visible: true, Title: "TEST"}
+		},
+		GetOverlayState: func() any {
+			return OverlayState{MenuVisible: true, MenuTitle: "TEST"}
+		},
+	})
+
+	menuReq := httptest.NewRequest(http.MethodGet, "/menuz", nil)
+	menuRec := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(menuRec, menuReq)
+	if menuRec.Code != http.StatusOK {
+		t.Fatalf("unexpected /menuz status: got %d want %d", menuRec.Code, http.StatusOK)
+	}
+
+	var menu MenuStateSnapshot
+	if err := json.Unmarshal(menuRec.Body.Bytes(), &menu); err != nil {
+		t.Fatalf("unmarshal /menuz response: %v", err)
+	}
+	if !menu.Visible || menu.Title != "TEST" {
+		t.Fatalf("unexpected menu payload: %+v", menu)
+	}
+
+	overlayReq := httptest.NewRequest(http.MethodGet, "/overlayz", nil)
+	overlayRec := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(overlayRec, overlayReq)
+	if overlayRec.Code != http.StatusOK {
+		t.Fatalf("unexpected /overlayz status: got %d want %d", overlayRec.Code, http.StatusOK)
+	}
+}
+
+func TestControlServerCommandEndpoint(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	var got string
+	server := NewControlServer("127.0.0.1:0", session, &ControlHooks{
+		ExecuteCommand: func(id string) error {
+			got = id
+			return nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/command", bytes.NewBufferString(`{"id":"menu.toggle"}`))
+	rec := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected /command status: got %d want %d", rec.Code, http.StatusOK)
+	}
+	if got != "menu.toggle" {
+		t.Fatalf("unexpected command id: %q", got)
+	}
+}
+
+func TestControlServerConnectUsesHook(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	var got string
+	server := NewControlServer("127.0.0.1:0", session, &ControlHooks{
+		Connect: func(serverURL string) error {
+			got = serverURL
+			return nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/connect", bytes.NewBufferString(`{"server_url":"http://example.test:8080"}`))
+	rec := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("unexpected /connect status: got %d want %d", rec.Code, http.StatusAccepted)
+	}
+	if got != "http://example.test:8080" {
+		t.Fatalf("unexpected connect server url: %q", got)
+	}
+}
+
+func TestControlServerSnapshotEndpoint(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	server := NewControlServer("127.0.0.1:0", session, &ControlHooks{
+		CaptureSnapshot: func() ([]byte, error) {
+			return []byte("png-bytes"), nil
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/snapshotz", nil)
+	rec := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected /snapshotz status: got %d want %d", rec.Code, http.StatusOK)
+	}
+	if contentType := rec.Header().Get("Content-Type"); contentType != "image/png" {
+		t.Fatalf("unexpected content type: %q", contentType)
+	}
+	if rec.Body.String() != "png-bytes" {
+		t.Fatalf("unexpected snapshot body: %q", rec.Body.String())
 	}
 }

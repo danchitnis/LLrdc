@@ -13,10 +13,21 @@ typedef void (*WindowEventCallback)(void* renderer, int eventType, int data1, in
 typedef void (*InputEventCallback)(void* renderer, char* jsonMsg);
 typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint32_t ts);
 
+typedef struct {
+	void* bytes;
+	size_t len;
+	char* error;
+} llrdc_png_result;
+
 void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart);
 void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
 void llrdc_reset_video();
-void llrdc_set_status_text(void* renderer, const char* text);
+void llrdc_set_overlay_state(const char* hudText, int hudR, int hudG, int hudB, int hudA, int menuVisible, const char* menuTitle, const char* menuHint, const char* menuItems);
+void llrdc_set_debug_cursor(int enabled);
+void llrdc_set_mouse_position(double x, double y);
+void llrdc_set_window_size(int w, int h);
+llrdc_png_result llrdc_capture_png();
+void llrdc_free_png_result(llrdc_png_result result);
 void llrdc_run_app();
 void llrdc_stop_app();
 
@@ -28,6 +39,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -68,10 +80,13 @@ type NativeRenderer struct {
 	height    int
 	autoStart bool
 
-	mu        sync.RWMutex
-	inputSink func(map[string]any) error
-	lifecycle func(NativeWindowLifecycle)
-	present   func(NativeFramePresented)
+	mu           sync.RWMutex
+	inputSink    func(map[string]any) error
+	lifecycle    func(NativeWindowLifecycle)
+	present      func(NativeFramePresented)
+	overlay      OverlayState
+	latencyProbe bool
+	debugCursor  bool
 
 	sps    []byte
 	pps    []byte
@@ -81,12 +96,14 @@ type NativeRenderer struct {
 
 func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
 	return &NativeRenderer{
-		title:     opts.Title,
-		width:     opts.Width,
-		height:    opts.Height,
-		autoStart: opts.AutoStart,
-		stopCh:    make(chan struct{}),
-		doneCh:    make(chan struct{}),
+		title:        opts.Title,
+		width:        opts.Width,
+		height:       opts.Height,
+		autoStart:    opts.AutoStart,
+		latencyProbe: opts.ProbeLatency,
+		debugCursor:  opts.DebugCursor,
+		stopCh:       make(chan struct{}),
+		doneCh:       make(chan struct{}),
 	}, nil
 }
 
@@ -108,10 +125,69 @@ func (r *NativeRenderer) SetPresentSink(fn func(NativeFramePresented)) {
 	r.present = fn
 }
 
-func (r *NativeRenderer) SetStatusText(text string) {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-	C.llrdc_set_status_text(nil, cText)
+func (r *NativeRenderer) SetOverlayState(state OverlayState) {
+	r.mu.Lock()
+	r.overlay = cloneOverlayState(state)
+	r.mu.Unlock()
+
+	hudText := strings.Join(state.HUDLines, "\n")
+	menuItems := strings.Join(state.MenuItems, "\n")
+	cHUD := C.CString(hudText)
+	cTitle := C.CString(state.MenuTitle)
+	cHint := C.CString(state.MenuHint)
+	cItems := C.CString(menuItems)
+	defer C.free(unsafe.Pointer(cHUD))
+	defer C.free(unsafe.Pointer(cTitle))
+	defer C.free(unsafe.Pointer(cHint))
+	defer C.free(unsafe.Pointer(cItems))
+	C.llrdc_set_overlay_state(
+		cHUD,
+		C.int(state.HUDColor.R),
+		C.int(state.HUDColor.G),
+		C.int(state.HUDColor.B),
+		C.int(state.HUDColor.A),
+		C.int(boolToInt(state.MenuVisible)),
+		cTitle,
+		cHint,
+		cItems,
+	)
+}
+
+func (r *NativeRenderer) SetLatencyProbe(enabled bool) {
+	r.mu.Lock()
+	r.latencyProbe = enabled
+	r.mu.Unlock()
+}
+
+func (r *NativeRenderer) SetDebugCursor(enabled bool) {
+	r.mu.Lock()
+	r.debugCursor = enabled
+	r.mu.Unlock()
+	C.llrdc_set_debug_cursor(C.int(boolToInt(enabled)))
+}
+
+func (r *NativeRenderer) SetWindowSize(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("invalid window size %dx%d", width, height)
+	}
+	r.mu.Lock()
+	r.width = width
+	r.height = height
+	r.mu.Unlock()
+	C.llrdc_set_window_size(C.int(width), C.int(height))
+	return nil
+}
+
+func (r *NativeRenderer) CaptureSnapshotPNG() ([]byte, error) {
+	result := C.llrdc_capture_png()
+	defer C.llrdc_free_png_result(result)
+	if result.error != nil {
+		return nil, errors.New(C.GoString(result.error))
+	}
+	if result.bytes == nil || result.len == 0 {
+		return nil, fmt.Errorf("snapshot unavailable")
+	}
+	return C.GoBytes(result.bytes, C.int(result.len)), nil
 }
 
 func (r *NativeRenderer) Size() (int, int) {
@@ -253,7 +329,16 @@ func (r *NativeRenderer) emitPresent(event NativeFramePresented) {
 	}
 }
 
-func (r *NativeRenderer) UpdateMouse(x, y float64) {}
+func (r *NativeRenderer) UpdateMouse(x, y float64) {
+	C.llrdc_set_mouse_position(C.double(x), C.double(y))
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
 
 //export llrdc_window_callback
 func llrdc_window_callback(idPtr unsafe.Pointer, eventType C.int, data1 C.int, data2 C.int, errStr *C.char) {

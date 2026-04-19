@@ -8,7 +8,7 @@ This directory contains the native macOS client for LLrdc. Unlike the Linux clie
 - **Native Experience**: Packaged as a standard `.app` bundle with support for high-resolution displays.
 
 ## Requirements
-- macOS 10.15 or later.
+- macOS 14.0 or later.
 - Go 1.21 or later.
 - Xcode Command Line Tools (`xcode-select --install`).
 

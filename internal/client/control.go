@@ -9,12 +9,22 @@ import (
 type ControlServer struct {
 	session *Session
 	server  *http.Server
+	hooks   *ControlHooks
 }
 
-func NewControlServer(addr string, session *Session) *ControlServer {
+type ControlHooks struct {
+	GetMenuState    func() any
+	Connect         func(serverURL string) error
+	ExecuteCommand  func(id string) error
+	CaptureSnapshot func() ([]byte, error)
+	GetOverlayState func() any
+}
+
+func NewControlServer(addr string, session *Session, hooks *ControlHooks) *ControlServer {
 	mux := http.NewServeMux()
 	cs := &ControlServer{
 		session: session,
+		hooks:   hooks,
 		server: &http.Server{
 			Addr:    addr,
 			Handler: mux,
@@ -26,13 +36,16 @@ func NewControlServer(addr string, session *Session) *ControlServer {
 	mux.HandleFunc("/statsz", cs.handleStats)
 	mux.HandleFunc("/latencyz/latest", cs.handleLatency)
 	mux.HandleFunc("/connect", cs.handleConnect)
-	mux.HandleFunc("/disconnect", cs.handleDisconnect)
 	mux.HandleFunc("/resize", cs.handleResize)
 	mux.HandleFunc("/config", cs.handleConfig)
 	mux.HandleFunc("/input/mousemove", cs.handleMouseMove)
 	mux.HandleFunc("/input/mousebtn", cs.handleMouseButton)
 	mux.HandleFunc("/input/key", cs.handleKey)
 	mux.HandleFunc("/input/wheel", cs.handleWheel)
+	mux.HandleFunc("/menuz", cs.handleMenu)
+	mux.HandleFunc("/command", cs.handleCommand)
+	mux.HandleFunc("/snapshotz", cs.handleSnapshot)
+	mux.HandleFunc("/overlayz", cs.handleOverlay)
 
 	return cs
 }
@@ -113,19 +126,19 @@ func (s *ControlServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 	}
+	if s.hooks != nil && s.hooks.Connect != nil {
+		if err := s.hooks.Connect(payload.ServerURL); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
+		return
+	}
 	if err := s.session.Connect(payload.ServerURL); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true})
-}
-
-func (s *ControlServer) handleDisconnect(w http.ResponseWriter, _ *http.Request) {
-	if err := s.session.Disconnect(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *ControlServer) handleResize(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +255,57 @@ func (s *ControlServer) handleWheel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *ControlServer) handleMenu(w http.ResponseWriter, _ *http.Request) {
+	if s.hooks == nil || s.hooks.GetMenuState == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "menu_state_unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.hooks.GetMenuState())
+}
+
+func (s *ControlServer) handleCommand(w http.ResponseWriter, r *http.Request) {
+	if s.hooks == nil || s.hooks.ExecuteCommand == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "commands_unavailable"})
+		return
+	}
+	var payload struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	if err := s.hooks.ExecuteCommand(payload.ID); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *ControlServer) handleSnapshot(w http.ResponseWriter, _ *http.Request) {
+	if s.hooks == nil || s.hooks.CaptureSnapshot == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "snapshot_unavailable"})
+		return
+	}
+	body, err := s.hooks.CaptureSnapshot()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
+func (s *ControlServer) handleOverlay(w http.ResponseWriter, _ *http.Request) {
+	if s.hooks == nil || s.hooks.GetOverlayState == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "overlay_state_unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.hooks.GetOverlayState())
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
