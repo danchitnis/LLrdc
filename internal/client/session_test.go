@@ -4,6 +4,9 @@ import (
 	"encoding/binary"
 	"math"
 	"testing"
+	"time"
+
+	"github.com/pion/webrtc/v4"
 )
 
 func TestHTTPToWebsocketURL(t *testing.T) {
@@ -122,5 +125,85 @@ func TestParseBinaryVideoPacket(t *testing.T) {
 	}
 	if len(packet.chunkData) != 3 {
 		t.Fatalf("unexpected payload length: %d", len(packet.chunkData))
+	}
+}
+
+func TestHandlePeerConnectionStateChangeDoesNotEmitWhileHoldingSessionLock(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	session.mu.Lock()
+	session.connectionID = 1
+	session.mu.Unlock()
+
+	reconnectSeen := make(chan struct{}, 1)
+	session.Hooks().On(EventReconnectRequest, func(_ EventPayload) {
+		_ = session.State()
+		select {
+		case reconnectSeen <- struct{}{}:
+		default:
+		}
+	})
+
+	done := make(chan struct{})
+	go func() {
+		_, shouldReconnect := session.handlePeerConnectionStateChange(1, webrtc.PeerConnectionStateClosed)
+		if shouldReconnect {
+			session.emit(EventReconnectRequest, nil)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("peer connection state change deadlocked")
+	}
+
+	select {
+	case <-reconnectSeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconnect hook was not delivered")
+	}
+}
+
+func TestHandlePeerConnectionStateChangeIgnoresStaleConnection(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	session.mu.Lock()
+	session.connectionID = 2
+	session.state.PeerConnectionState = webrtc.PeerConnectionStateConnected.String()
+	session.mu.Unlock()
+
+	shouldSendReady, shouldReconnect := session.handlePeerConnectionStateChange(1, webrtc.PeerConnectionStateClosed)
+	if shouldSendReady || shouldReconnect {
+		t.Fatal("stale connection state change should be ignored")
+	}
+	if got := session.State().PeerConnectionState; got != webrtc.PeerConnectionStateConnected.String() {
+		t.Fatalf("stale connection mutated state: got %q", got)
+	}
+}
+
+func TestDisconnectIfCurrentIgnoresStaleConnection(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	session.mu.Lock()
+	session.connectionID = 2
+	session.state.Connected = true
+	session.state.ServerURL = "http://current.example"
+	session.mu.Unlock()
+
+	if err := session.disconnectIfCurrent(1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	state := session.State()
+	if !state.Connected {
+		t.Fatal("stale disconnect should not clear current connection")
+	}
+	if state.ServerURL != "http://current.example" {
+		t.Fatalf("stale disconnect mutated server URL: %q", state.ServerURL)
 	}
 }

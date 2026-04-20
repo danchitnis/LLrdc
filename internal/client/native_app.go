@@ -144,6 +144,32 @@ type NativeApp struct {
 	reconnecting      atomic.Bool
 }
 
+func (a *NativeApp) filterCodecOptions(options []codecOption) []codecOption {
+	if a.renderer == nil {
+		return options
+	}
+	provider, ok := a.renderer.(SupportedVideoCodecsProvider)
+	if !ok {
+		return options
+	}
+	supported := provider.SupportedVideoCodecs()
+	if len(supported) == 0 {
+		return options
+	}
+
+	filtered := make([]codecOption, 0, len(options))
+	for _, opt := range options {
+		val := strings.ToLower(opt.Value)
+		for _, s := range supported {
+			if val == strings.ToLower(s) {
+				filtered = append(filtered, opt)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
 func NewNativeApp(opts NativeAppOptions) *NativeApp {
 	if opts.Paths.ExecutablePath == "" {
 		opts.Paths = ResolveAppPaths("")
@@ -167,6 +193,7 @@ func NewNativeApp(opts NativeAppOptions) *NativeApp {
 		shutdownCh:        make(chan struct{}),
 	}
 
+	app.codecOptions = app.filterCodecOptions(app.codecOptions)
 	app.codecIndex = app.codecIndexForConfig()
 	app.framerateIndex = app.framerateIndexForConfig()
 	app.resolutionIndex = app.resolutionIndexForRenderer()
@@ -362,6 +389,9 @@ func (a *NativeApp) attachSessionHooks() {
 		}
 		a.refreshOverlay()
 	})
+	a.session.Hooks().On(EventReconnectRequest, func(_ EventPayload) {
+		a.scheduleReconnect()
+	})
 	a.session.Hooks().On(EventStateChanged, func(event EventPayload) {
 		if connected, ok := event.Data["connected"].(bool); ok && !connected {
 			if a.session.State().ShutdownRequested {
@@ -497,12 +527,23 @@ func (a *NativeApp) startConnectLoop() {
 				}
 				log.Printf("connected to %s", a.desiredServerURL)
 				a.sendInitialConfig()
+				a.drainReconnectRequests()
 				a.reconnecting.Store(false)
 				a.refreshOverlay()
 				break
 			}
 		}
 	}()
+}
+
+func (a *NativeApp) drainReconnectRequests() {
+	for {
+		select {
+		case <-a.reconnectRequests:
+		default:
+			return
+		}
+	}
 }
 
 func (a *NativeApp) sendInitialConfig() {

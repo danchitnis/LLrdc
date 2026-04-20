@@ -3,11 +3,13 @@
 package client
 
 /*
-#cgo pkg-config: vpx sdl2
+#cgo pkg-config: vpx sdl2 libavcodec libavutil
 #include <vpx/vpx_decoder.h>
 #include <vpx/vp8dx.h>
 #include <vpx/vpx_image.h>
 #include <SDL2/SDL.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/imgutils.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -55,6 +57,79 @@ static void llrdc_vpx_close(llrdc_vpx_decoder* decoder) {
         vpx_codec_destroy(&decoder->ctx);
         decoder->initialized = 0;
 }
+
+typedef struct {
+    AVCodecContext* ctx;
+    AVFrame* frame;
+    AVPacket* packet;
+    int initialized;
+} llrdc_av_decoder;
+
+static int llrdc_av_init(llrdc_av_decoder* decoder, const char* codec_name) {
+    if (decoder->initialized) {
+        return 0;
+    }
+    enum AVCodecID codec_id = AV_CODEC_ID_NONE;
+    if (strstr(codec_name, "h264") || strstr(codec_name, "H264")) {
+        codec_id = AV_CODEC_ID_H264;
+    }
+
+    if (codec_id == AV_CODEC_ID_NONE) {
+        return -1;
+    }
+
+    const AVCodec* codec = avcodec_find_decoder(codec_id);
+    if (!codec) {
+        return -2;
+    }
+
+    decoder->ctx = avcodec_alloc_context3(codec);
+    if (!decoder->ctx) {
+        return -3;
+    }
+
+    if (avcodec_open2(decoder->ctx, codec, NULL) < 0) {
+        avcodec_free_context(&decoder->ctx);
+        return -4;
+    }
+
+    decoder->frame = av_frame_alloc();
+    decoder->packet = av_packet_alloc();
+    decoder->initialized = 1;
+    return 0;
+}
+
+static int llrdc_av_decode(llrdc_av_decoder* decoder, const unsigned char* data, unsigned int size) {
+    if (!decoder->initialized) {
+        return -1;
+    }
+    decoder->packet->data = (uint8_t*)data;
+    decoder->packet->size = size;
+
+    int ret = avcodec_send_packet(decoder->ctx, decoder->packet);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ret = avcodec_receive_frame(decoder->ctx, decoder->frame);
+    if (ret == AVERROR(EAGAIN)) {
+        return 1; // Need more data
+    }
+    if (ret == AVERROR_EOF) {
+        return 2; // EOF
+    }
+    return ret;
+}
+
+static void llrdc_av_close(llrdc_av_decoder* decoder) {
+    if (!decoder->initialized) {
+        return;
+    }
+    avcodec_free_context(&decoder->ctx);
+    av_frame_free(&decoder->frame);
+    av_packet_free(&decoder->packet);
+    decoder->initialized = 0;
+}
 */
 import "C"
 
@@ -64,6 +139,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"log"
 	"runtime"
 	"strings"
 	"sync"
@@ -115,6 +191,10 @@ type nativeDecodedSample struct {
 
 type vp8Decoder struct {
 	raw C.llrdc_vpx_decoder
+}
+
+type avDecoder struct {
+	raw C.llrdc_av_decoder
 }
 
 type nativeResizeRequest struct {
@@ -233,10 +313,15 @@ func (r *NativeRenderer) Size() (int, int) {
 	return r.width, r.height
 }
 
+func (r *NativeRenderer) PreferredVideoCodec() string {
+	return "vp8"
+}
+
+func (r *NativeRenderer) SupportedVideoCodecs() []string {
+	return []string{"vp8", "h264"}
+}
+
 func (r *NativeRenderer) ResetVideoStream(codec string) {
-	if !strings.Contains(strings.ToLower(codec), "vp8") {
-		return
-	}
 	select {
 	case r.streamResets <- codec:
 	default:
@@ -249,9 +334,6 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 }
 
 func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
-	if !strings.Contains(strings.ToLower(codec), "vp8") {
-		return fmt.Errorf("native renderer currently supports VP8 only, got %s", codec)
-	}
 	sample := nativeVideoSample{
 		codec:           codec,
 		data:            append([]byte(nil), frame...),
@@ -596,38 +678,78 @@ func (r *NativeRenderer) Run() error {
 
 	decodedFrames := make(chan nativeDecodedSample, 2)
 	go func() {
-		decoder := &vp8Decoder{}
-		if err := decoder.Init(); err != nil {
-			r.emitLifecycle(NativeWindowLifecycle{Error: fmt.Sprintf("decoder init: %v", err)})
-			return
-		}
-		defer decoder.Close()
+		defer close(decodedFrames)
+		var currentCodec string
+		var vp8 *vp8Decoder
+		var av *avDecoder
 
-		r.mu.Lock()
-		r.decoderAwaitingKeyframe = true
-		r.mu.Unlock()
+		closeDecoders := func() {
+			if vp8 != nil {
+				vp8.Close()
+				vp8 = nil
+			}
+			if av != nil {
+				av.Close()
+				av = nil
+			}
+		}
+		defer closeDecoders()
 
 		for {
 			select {
 			case <-r.stopCh:
 				return
-			case <-r.streamResets:
-				decoder.Close()
-				decoder = &vp8Decoder{}
-				_ = decoder.Init()
-				r.mu.Lock()
-				r.decoderAwaitingKeyframe = true
-				r.mu.Unlock()
+			case codec := <-r.streamResets:
+				if codec == "decode_error" {
+					// Keep current decoder but wait for keyframe
+					r.mu.Lock()
+					r.decoderAwaitingKeyframe = true
+					r.mu.Unlock()
+					continue
+				}
+				sCodec := strings.ToLower(codec)
+				cCodec := strings.ToLower(currentCodec)
+				if currentCodec != "" && !strings.Contains(sCodec, cCodec) && !strings.Contains(cCodec, sCodec) {
+					log.Printf("Resetting stream to codec %s (previous %s)", codec, currentCodec)
+					closeDecoders()
+					currentCodec = codec
+					r.mu.Lock()
+					r.decoderAwaitingKeyframe = true
+					r.mu.Unlock()
+				}
 			case sample, ok := <-r.samples:
 				if !ok {
 					return
 				}
+
+				sCodec := strings.ToLower(sample.codec)
+				cCodec := strings.ToLower(currentCodec)
+
+				if currentCodec == "" {
+					currentCodec = sample.codec
+					cCodec = strings.ToLower(currentCodec)
+				}
+
+				if currentCodec != "" && !strings.Contains(sCodec, cCodec) && !strings.Contains(cCodec, sCodec) {
+					log.Printf("Codec mismatch in sample (got %s, expected %s), resetting decoders", sample.codec, currentCodec)
+					closeDecoders()
+					currentCodec = sample.codec
+					r.mu.Lock()
+					r.decoderAwaitingKeyframe = true
+					r.mu.Unlock()
+					// Signal main loop to recreate texture
+					select {
+					case r.streamResets <- "reset_texture":
+					default:
+					}
+				}
+
 				r.mu.RLock()
 				awaiting := r.decoderAwaitingKeyframe
 				r.mu.RUnlock()
 
 				if awaiting {
-					if !isVP8Keyframe(sample.data) {
+					if !isKeyframe(sample.codec, sample.data) {
 						continue
 					}
 					r.mu.Lock()
@@ -635,28 +757,66 @@ func (r *NativeRenderer) Run() error {
 					r.mu.Unlock()
 					r.emitLifecycle(NativeWindowLifecycle{DecoderStateChanged: true, DecoderAwaitingKeyframe: false})
 				}
-				frame, err := decoder.Decode(sample.data)
-				decodeReadyAt := time.Now()
-				if err != nil {
-					r.mu.Lock()
-					r.decoderAwaitingKeyframe = true
-					r.mu.Unlock()
-					select {
-					case r.streamResets <- "decode_error":
-					default:
+
+				if strings.Contains(strings.ToLower(sample.codec), "vp8") {
+					if vp8 == nil {
+						log.Printf("Initializing VP8 decoder for %s", sample.codec)
+						vp8 = &vp8Decoder{}
+						if err := vp8.Init(); err != nil {
+							log.Printf("VP8 init error: %v", err)
+							r.emitLifecycle(NativeWindowLifecycle{Error: err.Error()})
+							continue
+						}
 					}
-					r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
-					continue
-				}
-				if frame.width > 0 && frame.height > 0 {
-					select {
-					case decodedFrames <- nativeDecodedSample{
-						frame:           frame,
-						packetTimestamp: sample.packetTimestamp,
-						receiveAt:       sample.receiveAt,
-						decodeReadyAt:   decodeReadyAt,
-					}:
-					default:
+					frame, err := vp8.Decode(sample.data)
+					if err != nil {
+						log.Printf("VP8 decode error: %v", err)
+						r.mu.Lock()
+						r.decoderAwaitingKeyframe = true
+						r.mu.Unlock()
+						r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
+						continue
+					}
+					if frame.width > 0 && frame.height > 0 {
+						select {
+						case decodedFrames <- nativeDecodedSample{
+							frame:           frame,
+							packetTimestamp: sample.packetTimestamp,
+							receiveAt:       sample.receiveAt,
+							decodeReadyAt:   time.Now(),
+						}:
+						default:
+						}
+					}
+				} else {
+					if av == nil {
+						log.Printf("Initializing FFmpeg decoder for %s", sample.codec)
+						av = &avDecoder{}
+						if err := av.Init(sample.codec); err != nil {
+							log.Printf("FFmpeg init error: %v", err)
+							r.emitLifecycle(NativeWindowLifecycle{Error: err.Error()})
+							continue
+						}
+					}
+					frame, err := av.Decode(sample.data)
+					if err != nil {
+						log.Printf("FFmpeg decode error: %v", err)
+						r.mu.Lock()
+						r.decoderAwaitingKeyframe = true
+						r.mu.Unlock()
+						r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
+						continue
+					}
+					if frame.width > 0 && frame.height > 0 {
+						select {
+						case decodedFrames <- nativeDecodedSample{
+							frame:           frame,
+							packetTimestamp: sample.packetTimestamp,
+							receiveAt:       sample.receiveAt,
+							decodeReadyAt:   time.Now(),
+						}:
+						default:
+						}
 					}
 				}
 			}
@@ -762,6 +922,18 @@ func (r *NativeRenderer) Run() error {
 		}
 
 		select {
+		case codec := <-r.streamResets:
+			if codec == "reset_texture" {
+				log.Printf("Resetting SDL texture for codec change")
+				if texture != nil {
+					texture.Destroy()
+					texture = nil
+				}
+				continue
+			}
+			r.mu.Lock()
+			r.decoderAwaitingKeyframe = true
+			r.mu.Unlock()
 		case decoded := <-decodedFrames:
 			frame := decoded.frame
 			if texture == nil || textureWidth != frame.width || textureHeight != frame.height {
@@ -1024,11 +1196,65 @@ func (d *vp8Decoder) Close() {
 	C.llrdc_vpx_close(&d.raw)
 }
 
-func isVP8Keyframe(data []byte) bool {
-	if len(data) == 0 {
-		return false
+func (d *avDecoder) Init(codec string) error {
+	cStr := C.CString(codec)
+	defer C.free(unsafe.Pointer(cStr))
+	if rc := C.llrdc_av_init(&d.raw, cStr); rc != 0 {
+		return fmt.Errorf("init av decoder (%s): %d", codec, int(rc))
 	}
-	return data[0]&0x01 == 0
+	return nil
+}
+
+func (d *avDecoder) Decode(data []byte) (decodedFrame, error) {
+	if len(data) == 0 {
+		return decodedFrame{}, nil
+	}
+	rc := C.llrdc_av_decode(&d.raw, (*C.uchar)(unsafe.Pointer(&data[0])), C.uint(len(data)))
+	if rc != 0 {
+		if int(rc) == 1 { // Need more data
+			return decodedFrame{}, nil
+		}
+		if int(rc) == 2 { // EOF
+			return decodedFrame{}, nil
+		}
+		return decodedFrame{}, fmt.Errorf("decode av frame: %d", int(rc))
+	}
+
+	f := d.raw.frame
+	width := int32(f.width)
+	height := int32(f.height)
+
+	yStride := int32(f.linesize[0])
+	uStride := int32(f.linesize[1])
+	vStride := int32(f.linesize[2])
+
+	return decodedFrame{
+		width:   width,
+		height:  height,
+		yPlane:  C.GoBytes(unsafe.Pointer(f.data[0]), C.int(yStride*height)),
+		uPlane:  C.GoBytes(unsafe.Pointer(f.data[1]), C.int(uStride*((height+1)/2))),
+		vPlane:  C.GoBytes(unsafe.Pointer(f.data[2]), C.int(vStride*((height+1)/2))),
+		yStride: yStride,
+		uStride: uStride,
+		vStride: vStride,
+	}, nil
+}
+
+func (d *avDecoder) Close() {
+	C.llrdc_av_close(&d.raw)
+}
+
+func isKeyframe(codec string, data []byte) bool {
+	if strings.Contains(strings.ToLower(codec), "vp8") {
+		if len(data) == 0 {
+			return false
+		}
+		return data[0]&0x01 == 0
+	}
+	if strings.Contains(strings.ToLower(codec), "h264") {
+		return isH264KeyframePayload(data)
+	}
+	return false
 }
 
 func clampUnit(value float64) float64 {

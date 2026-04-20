@@ -13,7 +13,7 @@ CONTROL_ADDR="${LLRDC_CLIENT_CONTROL_ADDR:-127.0.0.1:18080}"
 WINDOW_WIDTH="${LLRDC_CLIENT_WIDTH:-1280}"
 WINDOW_HEIGHT="${LLRDC_CLIENT_HEIGHT:-720}"
 WINDOW_TITLE="${LLRDC_CLIENT_TITLE:-LLrdc Native Client}"
-REBUILD=1
+REBUILD=0
 
 package_is_stale() {
   [[ ! -x "${CLIENT_BIN}" ]] && return 0
@@ -23,6 +23,7 @@ package_is_stale() {
     "${ROOT_DIR}/Dockerfile.client" \
     "${ROOT_DIR}/go.mod" \
     "${ROOT_DIR}/go.sum" \
+    "${ROOT_DIR}/scripts/package-native-client.sh" \
     -newer "${CLIENT_BIN}" \
     -print -quit | grep -q .
 }

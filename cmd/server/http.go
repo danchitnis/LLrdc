@@ -238,6 +238,17 @@ func startHTTPServer() {
 	}
 }
 
+func CloseAllClients() {
+	clientsMutex.Lock()
+	defer clientsMutex.Unlock()
+	log.Printf("Signaling all %d client connections to reconnect...", len(clients))
+	for _, client := range clients {
+		client.mu.Lock()
+		_ = client.conn.WriteJSON(map[string]interface{}{"type": "reconnect_hint"})
+		client.mu.Unlock()
+	}
+}
+
 func broadcastJSON(msg interface{}) {
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
@@ -322,9 +333,10 @@ func handleInputMessage(msg map[string]interface{}) {
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Incoming WebSocket connection from %s", r.RemoteAddr)
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		log.Printf("WebSocket upgrade error for %s: %v", r.RemoteAddr, err)
 		return
 	}
 	defer conn.Close()
@@ -571,6 +583,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 						log.Printf("Restarted stream did not become ready in time: %v", err)
 						PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 					}
+					// Signal client that it must reconnect to see the new stream/codec
+					go func() {
+						time.Sleep(250 * time.Millisecond)
+						log.Printf("Sending reconnect hint to clients...")
+						CloseAllClients()
+					}()
 				}
 
 				broadcastConfig(true)

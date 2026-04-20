@@ -5,14 +5,46 @@ set -euo pipefail
 IMAGE_NAME="${CLIENT_IMAGE_NAME:-llrdc-client:native}"
 PACKAGE_ROOT="${PACKAGE_ROOT:-dist}"
 IMAGE_PLATFORM="${CLIENT_IMAGE_PLATFORM:-linux/amd64}"
-SKIP_LIBS_REGEX='^(ld-linux-x86-64\.so\.2|libc\.so\.6|libm\.so\.6|libpthread\.so\.0|libdl\.so\.2|librt\.so\.1|libresolv\.so\.2)$'
-INCLUDE_BUNDLED_LIBS_REGEX='^(libvpx\.so(\..*)?)$'
+# Libraries we expect to be provided by the host's native environment (X11, Wayland, SDL, core C runtime, and Desktop Environment libs like GLib/Pango/Cairo)
+SKIP_LIBS_REGEX='^(ld-linux-x86-64\.so\.2|libc\.so\.6|libm\.so\.6|libpthread\.so\.0|libdl\.so\.2|librt\.so\.1|libresolv\.so\.2|libgcc_s\.so\.1|libstdc\+\+\.so\.6|libX.*|libwayland.*|libxcb.*|libxkbcommon.*|libdbus-1\.so\.3|libexpat\.so\.1|libffi\.so\.8|libGL.*|libvulkan.*|libSDL2.*|libglib.*|libgobject.*|libgio.*|libgmodule.*|libpango.*|libcairo.*|libharfbuzz.*|libfontconfig.*|libfreetype.*|libdecor.*|libasound.*|libpulse.*)$'
+
 BUILD_ID="${CLIENT_BUILD_ID:-$(
+
   {
     find cmd internal -type f -print0
-    printf '%s\0' Dockerfile.client go.mod go.sum
+    printf '%s\0' Dockerfile.client go.mod go.sum scripts/package-native-client.sh
   } | xargs -0 sha256sum | sort | sha256sum | cut -c1-16
 )}"
+
+FORCE_REBUILD=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --force-rebuild|--rebuild)
+      FORCE_REBUILD=1
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+PLATFORM_OS="${IMAGE_PLATFORM%%/*}"
+PLATFORM_ARCH="${IMAGE_PLATFORM##*/}"
+PACKAGE_NAME="llrdc-client-${PLATFORM_OS}-${PLATFORM_ARCH}"
+PACKAGE_DIR="${PACKAGE_ROOT}/${PACKAGE_NAME}"
+PACKAGE_ARCHIVE="${PACKAGE_ROOT}/${PACKAGE_NAME}.tar.gz"
+
+if [[ "${FORCE_REBUILD}" -eq 0 ]] \
+  && [[ -f "${PACKAGE_DIR}/BUILD_ID" ]] \
+  && [[ -x "${PACKAGE_DIR}/bin/llrdc-client" ]] \
+  && [[ -x "${PACKAGE_DIR}/bin/llrdc-client.bin" ]] \
+  && [[ -f "${PACKAGE_ARCHIVE}" ]] \
+  && [[ "$(tr -d '[:space:]' < "${PACKAGE_DIR}/BUILD_ID")" == "${BUILD_ID}" ]]; then
+  echo "Reusing native client package at ${PACKAGE_DIR} (BUILD_ID ${BUILD_ID})"
+  exit 0
+fi
 
 DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}" docker build \
   --platform "${IMAGE_PLATFORM}" \
@@ -24,6 +56,7 @@ ARCH="$(docker image inspect "${IMAGE_NAME}" --format '{{.Architecture}}')"
 OS="$(docker image inspect "${IMAGE_NAME}" --format '{{.Os}}')"
 PACKAGE_NAME="llrdc-client-${OS}-${ARCH}"
 PACKAGE_DIR="${PACKAGE_ROOT}/${PACKAGE_NAME}"
+PACKAGE_ARCHIVE="${PACKAGE_ROOT}/${PACKAGE_NAME}.tar.gz"
 CONTAINER_ID="$(docker create "${IMAGE_NAME}")"
 LIB_LIST_FILE="$(mktemp)"
 MANIFEST_FILE="$(mktemp)"
@@ -36,7 +69,7 @@ trap cleanup EXIT
 
 rm -rf "${PACKAGE_DIR}"
 mkdir -p "${PACKAGE_DIR}/bin" "${PACKAGE_DIR}/lib"
-rm -f "${PACKAGE_ROOT}/${PACKAGE_NAME}.tar.gz"
+rm -f "${PACKAGE_ARCHIVE}"
 printf '%s\n' "${BUILD_ID}" >"${PACKAGE_DIR}/BUILD_ID"
 
 docker cp "${CONTAINER_ID}:/usr/local/bin/llrdc-client" "${PACKAGE_DIR}/bin/llrdc-client.bin"
@@ -55,10 +88,6 @@ while IFS=$'\t' read -r original_path resolved_path; do
   [[ -n "${resolved_path}" ]] || continue
   soname="$(basename "${original_path}")"
   if [[ "${soname}" =~ ${SKIP_LIBS_REGEX} ]]; then
-    printf '%s -> host runtime\n' "${original_path}" >>"${MANIFEST_FILE}"
-    continue
-  fi
-  if [[ ! "${soname}" =~ ${INCLUDE_BUNDLED_LIBS_REGEX} ]]; then
     printf '%s -> host runtime\n' "${original_path}" >>"${MANIFEST_FILE}"
     continue
   fi
@@ -136,7 +165,7 @@ EOF
   cat "${MANIFEST_FILE}"
 } >"${PACKAGE_DIR}/manifest.txt"
 
-tar -C "${PACKAGE_ROOT}" -czf "${PACKAGE_ROOT}/${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
+tar -C "${PACKAGE_ROOT}" -czf "${PACKAGE_ARCHIVE}" "${PACKAGE_NAME}"
 
 echo "Packaged native host client at ${PACKAGE_DIR}"
-echo "Created archive ${PACKAGE_ROOT}/${PACKAGE_NAME}.tar.gz"
+echo "Created archive ${PACKAGE_ARCHIVE}"

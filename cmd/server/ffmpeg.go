@@ -549,6 +549,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 						"-p", "cpu-used=8",
 						"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
 						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
+						"-p", fmt.Sprintf("bufsize=%dM", targetBandwidthMbps*2),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
 				}

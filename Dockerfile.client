@@ -11,6 +11,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     pkg-config \
     libsdl2-dev \
     libvpx-dev \
+    libavcodec-dev \
+    libavutil-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
@@ -19,6 +21,7 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
 
 COPY internal ./internal
 COPY cmd ./cmd
+
 
 FROM builder AS test
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -40,6 +43,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     libsdl2-2.0-0 \
     libvpx7 \
+    libavcodec59 \
+    libavutil57 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/llrdc-client /usr/local/bin/llrdc-client

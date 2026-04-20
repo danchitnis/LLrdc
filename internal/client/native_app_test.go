@@ -11,6 +11,8 @@ type testWindowRenderer struct {
 	overlay      OverlayState
 	latencyProbe bool
 	debugCursor  bool
+	preferred    string
+	supported    []string
 }
 
 func (r *testWindowRenderer) HandleVideoFrame(string, []byte, uint32) error { return nil }
@@ -32,6 +34,52 @@ func (r *testWindowRenderer) SetWindowSize(width, height int) error {
 }
 func (r *testWindowRenderer) CaptureSnapshotPNG() ([]byte, error) { return []byte("png"), nil }
 func (r *testWindowRenderer) Size() (int, int)                    { return r.width, r.height }
+func (r *testWindowRenderer) PreferredVideoCodec() string         { return r.preferred }
+func (r *testWindowRenderer) SupportedVideoCodecs() []string {
+	return append([]string(nil), r.supported...)
+}
+
+func TestNativeAppFiltersCodecOptionsByRendererSupport(t *testing.T) {
+	t.Parallel()
+
+	linuxRenderer := &testWindowRenderer{
+		width:     1280,
+		height:    720,
+		preferred: "vp8",
+		supported: []string{"vp8", "h264"},
+	}
+	linuxApp := NewNativeApp(NativeAppOptions{
+		Renderer:    linuxRenderer,
+		ControlAddr: "127.0.0.1:0",
+		BuildID:     "test",
+	})
+
+	if len(linuxApp.codecOptions) != 2 {
+		t.Fatalf("expected 2 Linux native codec options, got %d", len(linuxApp.codecOptions))
+	}
+	if linuxApp.codecOptions[0].Value != "vp8" || linuxApp.codecOptions[1].Value != "h264" {
+		t.Fatalf("unexpected Linux native codec options: %#v", linuxApp.codecOptions)
+	}
+
+	macosRenderer := &testWindowRenderer{
+		width:     1280,
+		height:    720,
+		preferred: "h264",
+		supported: []string{"h264"},
+	}
+	macosApp := NewNativeApp(NativeAppOptions{
+		Renderer:    macosRenderer,
+		ControlAddr: "127.0.0.1:0",
+		BuildID:     "test",
+	})
+
+	if len(macosApp.codecOptions) != 1 {
+		t.Fatalf("expected 1 macOS native codec option, got %d", len(macosApp.codecOptions))
+	}
+	if macosApp.codecOptions[0].Value != "h264" {
+		t.Fatalf("unexpected macOS native codec option: %#v", macosApp.codecOptions)
+	}
+}
 
 func TestNativeAppMenuCommandsUpdateRendererState(t *testing.T) {
 	t.Parallel()

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -31,6 +32,10 @@ type PreferredVideoCodecProvider interface {
 	PreferredVideoCodec() string
 }
 
+type SupportedVideoCodecsProvider interface {
+	SupportedVideoCodecs() []string
+}
+
 type NullRenderer struct{}
 
 func (NullRenderer) HandleVideoFrame(_ string, _ []byte, _ uint32) error { return nil }
@@ -40,12 +45,13 @@ func (NullRenderer) Close() error                                        { retur
 type Event string
 
 const (
-	EventStateChanged Event = "state_changed"
-	EventConfig       Event = "config"
-	EventStats        Event = "stats"
-	EventInputSent    Event = "input_sent"
-	EventFrame        Event = "frame"
-	EventError        Event = "error"
+	EventStateChanged     Event = "state_changed"
+	EventConfig           Event = "config"
+	EventStats            Event = "stats"
+	EventInputSent        Event = "input_sent"
+	EventFrame            Event = "frame"
+	EventError            Event = "error"
+	EventReconnectRequest Event = "reconnect_request"
 )
 
 type EventPayload struct {
@@ -161,16 +167,18 @@ type Session struct {
 	renderer Renderer
 	hooks    *HookBus
 
-	mu        sync.RWMutex
-	wsMu      sync.Mutex
-	connectMu sync.Mutex
-	conn      *websocket.Conn
-	pc        *webrtc.PeerConnection
-	input     *webrtc.DataChannel
-	udpConn   *net.UDPConn
-	state     SessionState
-	stats     SessionStats
-	closed    chan struct{}
+	mu           sync.RWMutex
+	wsMu         sync.Mutex
+	connectMu    sync.Mutex
+	connecting   atomic.Bool
+	connectionID uint64
+	conn         *websocket.Conn
+	pc           *webrtc.PeerConnection
+	input        *webrtc.DataChannel
+	udpConn      *net.UDPConn
+	state        SessionState
+	stats        SessionStats
+	closed       chan struct{}
 
 	keyframeRequests chan struct{}
 }
@@ -311,6 +319,11 @@ func (s *Session) ClearShutdown() {
 }
 
 func (s *Session) Connect(serverURL string) error {
+	if !s.connecting.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer s.connecting.Store(false)
+
 	s.connectMu.Lock()
 	defer s.connectMu.Unlock()
 
@@ -318,9 +331,12 @@ func (s *Session) Connect(serverURL string) error {
 		return errors.New("server URL is required")
 	}
 
+	// Ensure previous connection is fully cleaned up
 	if err := s.disconnectLocked(); err != nil {
 		return err
 	}
+	// Small pause to allow OS to release UDP ports
+	time.Sleep(100 * time.Millisecond)
 
 	wsURL, err := httpToWebsocketURL(serverURL)
 	if err != nil {
@@ -334,7 +350,6 @@ func (s *Session) Connect(serverURL string) error {
 		}
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
-
 	// Read initial config message synchronously
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	messageType, raw, err := conn.ReadMessage()
@@ -353,34 +368,21 @@ func (s *Session) Connect(serverURL string) error {
 		_ = conn.Close()
 		return fmt.Errorf("parse initial config: %w", err)
 	}
-
 	m := &webrtc.MediaEngine{}
 	if err := m.RegisterDefaultCodecs(); err != nil {
+		_ = conn.Close()
 		return fmt.Errorf("register default codecs: %w", err)
 	}
 
 	i := &interceptor.Registry{}
 	if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
+		_ = conn.Close()
 		return fmt.Errorf("register default interceptors: %w", err)
 	}
 
 	se := webrtc.SettingEngine{}
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
-
-	/*
-		// Create a UDP socket with large buffers to prevent packet loss during bursts
-		if udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0}); err == nil {
-			_ = udpConn.SetReadBuffer(4 * 1024 * 1024) // 4MB
-			mux := ice.NewUDPMuxDefault(ice.UDPMuxParams{
-				UDPConn: udpConn,
-			})
-			se.SetICEUDPMux(mux)
-			s.mu.Lock()
-			s.udpConn = udpConn
-			s.mu.Unlock()
-		}
-	*/
 
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(m),
@@ -395,6 +397,16 @@ func (s *Session) Connect(serverURL string) error {
 		_ = conn.Close()
 		return fmt.Errorf("create peer connection: %w", err)
 	}
+	// Wait for PeerConnection to reach a stable state
+	ready := make(chan bool, 1)
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateConnected {
+			select {
+			case ready <- true:
+			default:
+			}
+		}
+	})
 
 	ordered := false
 	maxRetransmits := uint16(0)
@@ -419,7 +431,10 @@ func (s *Session) Connect(serverURL string) error {
 		return fmt.Errorf("add audio transceiver: %w", err)
 	}
 
+	var connectionID uint64
 	s.mu.Lock()
+	s.connectionID++
+	connectionID = s.connectionID
 	s.conn = conn
 	s.pc = pc
 	s.input = dc
@@ -484,14 +499,11 @@ func (s *Session) Connect(serverURL string) error {
 	})
 
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		s.mu.Lock()
-		s.state.WebRTCConnected = state == webrtc.PeerConnectionStateConnected
-		s.state.PeerConnectionState = state.String()
-		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected || state == webrtc.PeerConnectionStateClosed {
-			s.state.InputChannelOpen = false
+		shouldSendReady, shouldReconnect := s.handlePeerConnectionStateChange(connectionID, state)
+		if shouldReconnect {
+			s.emit(EventReconnectRequest, nil)
 		}
-		s.mu.Unlock()
-		if state == webrtc.PeerConnectionStateConnected {
+		if shouldSendReady {
 			_ = s.sendMessage(map[string]any{"type": "webrtc_ready"})
 		}
 		s.emit(EventStateChanged, map[string]any{
@@ -501,6 +513,10 @@ func (s *Session) Connect(serverURL string) error {
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		s.mu.Lock()
+		if s.connectionID != connectionID {
+			s.mu.Unlock()
+			return
+		}
 		s.state.ICEConnectionState = state.String()
 		s.mu.Unlock()
 		s.emit(EventStateChanged, map[string]any{
@@ -511,6 +527,10 @@ func (s *Session) Connect(serverURL string) error {
 	pc.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		codec := track.Codec().MimeType
 		s.mu.Lock()
+		if s.connectionID != connectionID {
+			s.mu.Unlock()
+			return
+		}
 		s.state.CurrentTrackCodecs[track.Kind().String()] = codec
 		if track.Kind() == webrtc.RTPCodecTypeVideo {
 			s.state.VideoCodec = codec
@@ -527,34 +547,20 @@ func (s *Session) Connect(serverURL string) error {
 	})
 
 	dc.OnOpen(func() {
-		s.mu.Lock()
-		s.state.InputChannelOpen = true
-		s.mu.Unlock()
-		s.emit(EventStateChanged, map[string]any{
-			"inputChannelOpen": true,
-		})
+		if s.setInputChannelOpen(connectionID, true) {
+			s.emit(EventStateChanged, map[string]any{
+				"inputChannelOpen": true,
+			})
+		}
 	})
 
 	dc.OnClose(func() {
-		s.mu.Lock()
-		s.state.InputChannelOpen = false
-		s.mu.Unlock()
-		s.emit(EventStateChanged, map[string]any{
-			"inputChannelOpen": false,
-		})
-	})
-
-	if provider, ok := s.renderer.(PreferredVideoCodecProvider); ok {
-		if preferred := strings.TrimSpace(provider.PreferredVideoCodec()); preferred != "" {
-			bestCodec := preferred
-			if qsv, _ := initMsg["qsvAvailable"].(bool); qsv {
-				bestCodec = preferred + "_qsv"
-			} else if nvenc, _ := initMsg["nvidiaAvailable"].(bool); nvenc {
-				bestCodec = preferred + "_nvenc"
-			}
-			_ = s.SendConfig(map[string]any{"videoCodec": bestCodec})
+		if s.setInputChannelOpen(connectionID, false) {
+			s.emit(EventStateChanged, map[string]any{
+				"inputChannelOpen": false,
+			})
 		}
-	}
+	})
 
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
@@ -573,10 +579,16 @@ func (s *Session) Connect(serverURL string) error {
 		return fmt.Errorf("send webrtc offer: %w", err)
 	}
 
-	go s.readLoop(conn, pc)
+	go s.readLoop(connectionID, conn, pc)
+
+	// Wait for PeerConnection to connect or timeout
+	select {
+	case <-ready:
+	case <-time.After(2 * time.Second):
+	}
+
 	return nil
 }
-
 func numberToInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:
@@ -606,12 +618,61 @@ func (s *Session) Disconnect() error {
 	return s.disconnectLocked()
 }
 
-func (s *Session) disconnectLocked() error {
+func (s *Session) handlePeerConnectionStateChange(connectionID uint64, state webrtc.PeerConnectionState) (shouldSendReady bool, shouldReconnect bool) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.connectionID != connectionID {
+		return false, false
+	}
+
+	s.state.WebRTCConnected = state == webrtc.PeerConnectionStateConnected
+	s.state.PeerConnectionState = state.String()
+
+	isDown := state == webrtc.PeerConnectionStateFailed ||
+		state == webrtc.PeerConnectionStateDisconnected ||
+		state == webrtc.PeerConnectionStateClosed
+
+	if isDown {
+		s.state.InputChannelOpen = false
+		shouldReconnect = !s.state.ShutdownRequested
+	}
+
+	return state == webrtc.PeerConnectionStateConnected, shouldReconnect
+}
+
+func (s *Session) setInputChannelOpen(connectionID uint64, open bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.connectionID != connectionID {
+		return false
+	}
+	s.state.InputChannelOpen = open
+	return true
+}
+
+func (s *Session) disconnectLocked() error {
+	return s.disconnectIfCurrentLocked(s.connectionID)
+}
+
+func (s *Session) disconnectIfCurrent(connectionID uint64) error {
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+	return s.disconnectIfCurrentLocked(connectionID)
+}
+
+func (s *Session) disconnectIfCurrentLocked(connectionID uint64) error {
+	s.mu.Lock()
+	if s.connectionID != connectionID {
+		s.mu.Unlock()
+		return nil
+	}
 	conn := s.conn
 	pc := s.pc
 	input := s.input
 	udpConn := s.udpConn
+	s.connectionID++
 	s.conn = nil
 	s.pc = nil
 	s.input = nil
@@ -641,7 +702,7 @@ func (s *Session) disconnectLocked() error {
 		}()
 		select {
 		case <-done:
-		case <-time.After(1500 * time.Millisecond):
+		case <-time.After(500 * time.Millisecond):
 		}
 	}
 
@@ -780,12 +841,14 @@ func (s *Session) sendMessage(msg map[string]any) error {
 	return s.sendRaw(body)
 }
 
-func (s *Session) readLoop(conn *websocket.Conn, pc *webrtc.PeerConnection) {
+func (s *Session) readLoop(connectionID uint64, conn *websocket.Conn, pc *webrtc.PeerConnection) {
 	for {
 		messageType, raw, err := conn.ReadMessage()
 		if err != nil {
 			s.setError(err)
-			_ = s.Disconnect()
+			go func() {
+				_ = s.disconnectIfCurrent(connectionID)
+			}()
 			return
 		}
 		if messageType == websocket.BinaryMessage {
@@ -848,6 +911,8 @@ func (s *Session) readLoop(conn *websocket.Conn, pc *webrtc.PeerConnection) {
 			s.state.LastStats = cloneMap(msg)
 			s.mu.Unlock()
 			s.emit(EventStats, cloneMap(msg))
+		case "reconnect_hint":
+			s.emit(EventReconnectRequest, nil)
 		default:
 			s.emit(EventStateChanged, cloneMap(msg))
 		}
@@ -903,6 +968,8 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 		builder = samplebuilder.New(256, &codecs.VP8Packet{}, 90000)
 	} else if strings.Contains(codecName, "h264") {
 		builder = samplebuilder.New(256, &codecs.H264Packet{}, 90000)
+	} else if strings.Contains(codecName, "h265") || strings.Contains(codecName, "hevc") {
+		builder = samplebuilder.New(256, &codecs.H265Packet{}, 90000)
 	}
 	stopKeyframeRequests := make(chan struct{})
 	var stopKeyframeOnce sync.Once
@@ -999,24 +1066,56 @@ func isVP8KeyframePayload(data []byte) bool {
 }
 
 func isH264KeyframePayload(data []byte) bool {
-	for _, nalu := range splitH264NALUs(data) {
-		if len(nalu) == 0 {
-			continue
-		}
-		naluType := nalu[0] & 0x1F
-		if naluType == 7 || naluType == 8 || naluType == 5 || naluType == 24 {
-			return true
-		}
-	}
-	if len(data) < 1 {
+	if len(data) == 0 {
 		return false
 	}
+
+	// 1. Try Annex-B (start codes)
+	nalus := splitH264NALUs(data)
+	if len(nalus) > 0 {
+		for _, nalu := range nalus {
+			if len(nalu) == 0 {
+				continue
+			}
+			naluType := nalu[0] & 0x1F
+			if naluType == 7 || naluType == 8 || naluType == 5 {
+				return true
+			}
+		}
+	}
+
+	// 2. Try AVCC (length-prefixed, 4-byte headers)
+	// WebRTC often sends H.264 in AVCC format.
+	ptr := 0
+	for ptr+4 <= len(data) {
+		naluSize := int(binary.BigEndian.Uint32(data[ptr : ptr+4]))
+		ptr += 4
+		if ptr+naluSize > len(data) {
+			break
+		}
+		if naluSize > 0 {
+			naluType := data[ptr] & 0x1F
+			if naluType == 7 || naluType == 8 || naluType == 5 {
+				return true
+			}
+		}
+		ptr += naluSize
+	}
+
+	// 3. Last resort: check first byte (some minimal encodings)
 	naluType := data[0] & 0x1F
-	return naluType == 7 || naluType == 8 || naluType == 5 || naluType == 24
+	if naluType == 7 || naluType == 8 || naluType == 5 {
+		return true
+	}
+
+	return false
 }
 
 func requestInitialKeyframes(pc *webrtc.PeerConnection, mediaSSRC uint32, stop <-chan struct{}) {
 	requestKeyframe := func() bool {
+		if pc == nil || pc.RemoteDescription() == nil {
+			return false
+		}
 		if err := pc.WriteRTCP([]rtcp.Packet{
 			&rtcp.PictureLossIndication{MediaSSRC: mediaSSRC},
 		}); err != nil {
