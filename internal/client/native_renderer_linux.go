@@ -975,6 +975,10 @@ func (r *NativeRenderer) Run() error {
 				}
 			}
 
+			// TODO(agent-linux): Implement letterboxing (aspect-fit) here to match macOS.
+			// Instead of renderer.Copy(texture, nil, nil), calculate a destination rect
+			// that preserves the video aspect ratio within the window (ww, wh).
+			// Also update mouse input mapping in the event loop to be relative to that rect.
 			_ = renderer.Copy(texture, nil, nil)
 
 			if debugCursor {

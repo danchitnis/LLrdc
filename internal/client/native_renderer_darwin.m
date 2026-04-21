@@ -306,7 +306,7 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         self.wantsLayer = YES;
         self.videoLayer = [[AVSampleBufferDisplayLayer alloc] init];
         self.videoLayer.frame = self.bounds;
-        self.videoLayer.videoGravity = AVLayerVideoGravityResize;
+        self.videoLayer.videoGravity = AVLayerVideoGravityResizeAspect;
         self.videoLayer.hidden = YES;
         [self.layer addSublayer:self.videoLayer];
 
@@ -460,20 +460,41 @@ static NSString* nseventToDOMKey(NSEvent *event) {
 }
 
 - (NSRect)currentVideoRect {
-    return self.bounds;
+    NSSize videoSize = self.videoContentSize;
+    if (videoSize.width <= 0 || videoSize.height <= 0) {
+        return self.bounds;
+    }
+
+    CGFloat viewAspect = self.bounds.size.width / self.bounds.size.height;
+    CGFloat videoAspect = videoSize.width / videoSize.height;
+
+    NSRect videoRect = NSZeroRect;
+    if (viewAspect > videoAspect) {
+        // Pillarboxed
+        videoRect.size.height = self.bounds.size.height;
+        videoRect.size.width = videoRect.size.height * videoAspect;
+        videoRect.origin.y = 0;
+        videoRect.origin.x = (self.bounds.size.width - videoRect.size.width) / 2.0;
+    } else {
+        // Letterboxed
+        videoRect.size.width = self.bounds.size.width;
+        videoRect.size.height = videoRect.size.width / videoAspect;
+        videoRect.origin.x = 0;
+        videoRect.origin.y = (self.bounds.size.height - videoRect.size.height) / 2.0;
+    }
+    return videoRect;
 }
 
 - (NSDictionary *)mouseMovePayloadForEvent:(NSEvent *)event {
     NSPoint location = [self convertPoint:[event locationInWindow] fromView:nil];
-    NSRect bounds = self.bounds;
-    if (bounds.size.width <= 0 || bounds.size.height <= 0) {
+    NSRect videoRect = [self currentVideoRect];
+    if (videoRect.size.width <= 0 || videoRect.size.height <= 0) {
         return nil;
     }
 
-    // Since videoGravity is AVLayerVideoGravityResize, the video fills the bounds.
-    // Map points directly to 0.0-1.0 range.
-    double x = location.x / bounds.size.width;
-    double y = 1.0 - (location.y / bounds.size.height);
+    // Map points relative to the actual video display area (letterboxed/pillarboxed)
+    double x = (location.x - videoRect.origin.x) / videoRect.size.width;
+    double y = 1.0 - ((location.y - videoRect.origin.y) / videoRect.size.height);
 
     if (x < 0.0) x = 0.0;
     if (x > 1.0) x = 1.0;
