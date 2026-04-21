@@ -173,6 +173,9 @@ type NativeRenderer struct {
 
 	mouseX int32
 	mouseY int32
+
+	videoWidth  int32
+	videoHeight int32
 }
 
 type nativeVideoSample struct {
@@ -846,15 +849,50 @@ func (r *NativeRenderer) Run() error {
 				return nil
 			case *sdl.MouseMotionEvent:
 				r.mu.Lock()
-				w, h := r.width, r.height
+				ww, wh := int32(r.width), int32(r.height)
+				vw, vh := textureWidth, textureHeight
 				r.mouseX = e.X
 				r.mouseY = e.Y
 				r.mu.Unlock()
-				if w > 0 && h > 0 {
+
+				if ww > 0 && wh > 0 && vw > 0 && vh > 0 {
+					videoAspect := float64(vw) / float64(vh)
+					windowAspect := float64(ww) / float64(wh)
+
+					var dw, dh int32
+					var dx, dy int32
+					if windowAspect > videoAspect {
+						dh = wh
+						dw = int32(float64(dh) * videoAspect)
+						dx = (ww - dw) / 2
+						dy = 0
+					} else {
+						dw = ww
+						dh = int32(float64(dw) / videoAspect)
+						dx = 0
+						dy = (wh - dh) / 2
+					}
+
+					x := (float64(e.X) - float64(dx)) / float64(dw)
+					y := (float64(e.Y) - float64(dy)) / float64(dh)
+
+					if x < 0 {
+						x = 0
+					}
+					if x > 1 {
+						x = 1
+					}
+					if y < 0 {
+						y = 0
+					}
+					if y > 1 {
+						y = 1
+					}
+
 					r.sendInput(map[string]any{
 						"type": "mousemove",
-						"x":    float64(e.X) / float64(w),
-						"y":    float64(e.Y) / float64(h),
+						"x":    x,
+						"y":    y,
 					})
 				}
 			case *sdl.MouseButtonEvent:
@@ -863,14 +901,48 @@ func (r *NativeRenderer) Run() error {
 					action = "mouseup"
 				}
 				r.mu.RLock()
-				w, h := r.width, r.height
+				ww, wh := int32(r.width), int32(r.height)
+				vw, vh := textureWidth, textureHeight
 				r.mu.RUnlock()
+
 				x := 0.0
 				y := 0.0
-				if w > 0 && h > 0 {
-					x = float64(e.X) / float64(w)
-					y = float64(e.Y) / float64(h)
+
+				if ww > 0 && wh > 0 && vw > 0 && vh > 0 {
+					videoAspect := float64(vw) / float64(vh)
+					windowAspect := float64(ww) / float64(wh)
+
+					var dw, dh int32
+					var dx, dy int32
+					if windowAspect > videoAspect {
+						dh = wh
+						dw = int32(float64(dh) * videoAspect)
+						dx = (ww - dw) / 2
+						dy = 0
+					} else {
+						dw = ww
+						dh = int32(float64(dw) / videoAspect)
+						dx = 0
+						dy = (wh - dh) / 2
+					}
+
+					x = (float64(e.X) - float64(dx)) / float64(dw)
+					y = (float64(e.Y) - float64(dy)) / float64(dh)
+
+					if x < 0 {
+						x = 0
+					}
+					if x > 1 {
+						x = 1
+					}
+					if y < 0 {
+						y = 0
+					}
+					if y > 1 {
+						y = 1
+					}
 				}
+
 				r.sendInput(map[string]any{
 					"type":   "mousebtn",
 					"button": sdlButtonToDOM(e.Button),
@@ -946,6 +1018,10 @@ func (r *NativeRenderer) Run() error {
 					return fmt.Errorf("create texture: %w", err)
 				}
 				textureWidth, textureHeight = frame.width, frame.height
+				r.mu.Lock()
+				r.videoWidth = frame.width
+				r.videoHeight = frame.height
+				r.mu.Unlock()
 			}
 			_ = texture.UpdateYUV(nil, frame.yPlane, int(frame.yStride), frame.uPlane, int(frame.uStride), frame.vPlane, int(frame.vStride))
 			_ = renderer.Clear()
@@ -975,11 +1051,32 @@ func (r *NativeRenderer) Run() error {
 				}
 			}
 
-			// TODO(agent-linux): Implement letterboxing (aspect-fit) here to match macOS.
-			// Instead of renderer.Copy(texture, nil, nil), calculate a destination rect
-			// that preserves the video aspect ratio within the window (ww, wh).
-			// Also update mouse input mapping in the event loop to be relative to that rect.
-			_ = renderer.Copy(texture, nil, nil)
+			// Compute aspect-fit destination rect
+			var dstRect *sdl.Rect
+			if textureWidth > 0 && textureHeight > 0 && ww > 0 && wh > 0 {
+				videoAspect := float64(textureWidth) / float64(textureHeight)
+				windowAspect := float64(ww) / float64(wh)
+
+				var dw, dh int32
+				var dx, dy int32
+
+				if windowAspect > videoAspect {
+					// Pillarboxed (bars on sides)
+					dh = int32(wh)
+					dw = int32(float64(dh) * videoAspect)
+					dx = (int32(ww) - dw) / 2
+					dy = 0
+				} else {
+					// Letterboxed (bars on top/bottom)
+					dw = int32(ww)
+					dh = int32(float64(dw) / videoAspect)
+					dx = 0
+					dy = (int32(wh) - dh) / 2
+				}
+				dstRect = &sdl.Rect{X: dx, Y: dy, W: dw, H: dh}
+			}
+
+			_ = renderer.Copy(texture, nil, dstRect)
 
 			if debugCursor {
 				_ = renderer.SetDrawColor(255, 0, 0, 255)
@@ -1001,11 +1098,35 @@ func (r *NativeRenderer) Run() error {
 		case <-time.After(10 * time.Millisecond):
 			if texture != nil {
 				_ = renderer.Clear()
-				_ = renderer.Copy(texture, nil, nil)
+
 				r.mu.RLock()
+				ww, wh := r.width, r.height
 				debugCursor := r.debugCursor
 				mx, my := r.mouseX, r.mouseY
 				r.mu.RUnlock()
+
+				// Compute aspect-fit destination rect
+				var dstRect *sdl.Rect
+				if textureWidth > 0 && textureHeight > 0 && ww > 0 && wh > 0 {
+					videoAspect := float64(textureWidth) / float64(textureHeight)
+					windowAspect := float64(ww) / float64(wh)
+					var dw, dh int32
+					var dx, dy int32
+					if windowAspect > videoAspect {
+						dh = int32(wh)
+						dw = int32(float64(dh) * videoAspect)
+						dx = (int32(ww) - dw) / 2
+						dy = 0
+					} else {
+						dw = int32(ww)
+						dh = int32(float64(dw) / videoAspect)
+						dx = 0
+						dy = (int32(wh) - dh) / 2
+					}
+					dstRect = &sdl.Rect{X: dx, Y: dy, W: dw, H: dh}
+				}
+
+				_ = renderer.Copy(texture, nil, dstRect)
 				if debugCursor {
 					_ = renderer.SetDrawColor(255, 0, 0, 255)
 					_ = renderer.FillRect(&sdl.Rect{X: mx - 5, Y: my - 5, W: 10, H: 10})
@@ -1134,8 +1255,75 @@ func windowEventName(event uint8) string {
 func (r *NativeRenderer) UpdateMouse(x, y float64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.mouseX = int32(x * float64(r.width))
-	r.mouseY = int32(y * float64(r.height))
+
+	ww, wh := int32(r.width), int32(r.height)
+	vw, vh := r.videoWidth, r.videoHeight
+
+	if ww > 0 && wh > 0 && vw > 0 && vh > 0 {
+		videoAspect := float64(vw) / float64(vh)
+		windowAspect := float64(ww) / float64(wh)
+
+		var dw, dh int32
+		var dx, dy int32
+		if windowAspect > videoAspect {
+			dh = wh
+			dw = int32(float64(dh) * videoAspect)
+			dx = (ww - dw) / 2
+			dy = 0
+		} else {
+			dw = ww
+			dh = int32(float64(dw) / videoAspect)
+			dx = 0
+			dy = (wh - dh) / 2
+		}
+
+		r.mouseX = dx + int32(x*float64(dw))
+		r.mouseY = dy + int32(y*float64(dh))
+	} else {
+		r.mouseX = int32(x * float64(r.width))
+		r.mouseY = int32(y * float64(r.height))
+	}
+}
+
+func (r *NativeRenderer) TestMouseMapping(windowW, windowH int32, videoW, videoH int32, mouseX, mouseY int32) (float64, float64) {
+	if windowW <= 0 || windowH <= 0 || videoW <= 0 || videoH <= 0 {
+		return 0, 0
+	}
+
+	videoAspect := float64(videoW) / float64(videoH)
+	windowAspect := float64(windowW) / float64(windowH)
+
+	var dw, dh int32
+	var dx, dy int32
+	if windowAspect > videoAspect {
+		dh = windowH
+		dw = int32(float64(dh) * videoAspect)
+		dx = (windowW - dw) / 2
+		dy = 0
+	} else {
+		dw = windowW
+		dh = int32(float64(dw) / videoAspect)
+		dx = 0
+		dy = (windowH - dh) / 2
+	}
+
+	x := (float64(mouseX) - float64(dx)) / float64(dw)
+	y := (float64(mouseY) - float64(dy)) / float64(dh)
+
+	if x < 0 {
+		x = 0
+	}
+	if x > 1 {
+		x = 1
+	}
+	if y < 0 {
+		y = 0
+	}
+	if y > 1 {
+		y = 1
+	}
+
+	return x, y
 }
 
 func (r *NativeRenderer) sendInput(msg map[string]any) {

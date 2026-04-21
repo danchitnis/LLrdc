@@ -26,9 +26,15 @@ docker network create "${NETWORK_NAME}" >/dev/null
 docker run -d --rm --name "${SERVER_NAME}" --network "${NETWORK_NAME}" \
   "${SERVER_IMAGE_NAME}" /app/llrdc --port 8080 --test-pattern --video-codec vp8 >/dev/null
 
-docker run -d --rm --name "${CLIENT_NAME}" --network "${NETWORK_NAME}" -p "${HOST_PORT}:18080" \
+docker run -d --rm --name "${CLIENT_NAME}" --network host \
+  -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY="${DISPLAY:-:0}" \
+  -v "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY:-wayland-0}:${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY:-wayland-0}" \
+  -e WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" \
+  -e XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR}" \
+  -e XAUTHORITY="${XAUTHORITY:-}" \
+  --ipc=host \
   --entrypoint /bin/sh "${CLIENT_IMAGE_NAME}" -lc \
-  "xvfb-run -a /usr/local/bin/llrdc-client --server http://${SERVER_NAME}:8080 --control-addr 0.0.0.0:18080 --auto-start --exit-after 20s" >/dev/null
+  "/usr/local/bin/llrdc-client --server http://127.0.0.1:8080 --control-addr 0.0.0.0:18080 --auto-start --exit-after 20s" >/dev/null
 
 for _ in {1..80}; do
   stats="$(curl -fsS "http://127.0.0.1:${HOST_PORT}/statsz" 2>/dev/null || true)"

@@ -19,8 +19,13 @@ trap cleanup EXIT
 
 docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 docker run -d --rm --name "${CONTAINER_NAME}" -p "${HOST_PORT}:18080" \
+  -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY="${DISPLAY:-:0}" \
+  -v "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY:-wayland-0}:${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY:-wayland-0}" \
+  -e WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" \
+  -e XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR}" \
+  -e XAUTHORITY="${XAUTHORITY:-}" \
   --entrypoint /bin/sh "${IMAGE_NAME}" -lc \
-  "xvfb-run -a /usr/local/bin/llrdc-client --control-addr 0.0.0.0:18080 --auto-start --exit-after 10s" >/dev/null
+  "/usr/local/bin/llrdc-client --control-addr 0.0.0.0:18080 --auto-start --exit-after 10s" >/dev/null
 
 for _ in {1..40}; do
   if curl -fsS "http://${CONTROL_ADDR}/readyz" >/dev/null 2>&1; then
