@@ -431,7 +431,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 			} else {
 				// Base config using wf-recorder
 				args := []string{
-					"-o0", "wf-recorder",
+					"wf-recorder",
 				}
 
 				if !targetDamageTracking {
@@ -557,7 +557,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				args = append(args, "-f", "pipe:1")
 
 				log.Printf("Starting wf-recorder capture: %v", args)
-				cmd = exec.Command("stdbuf", append([]string{"-i0", "-o0"}, args[1:]...)...)
+				cmd = exec.Command("stdbuf", append([]string{"-i0", "-o0"}, args...)...)
 				cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0", "XDG_RUNTIME_DIR=/tmp/llrdc-run")
 			}
 

@@ -230,8 +230,9 @@ xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce
 xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
 xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create
 
+BG_FILE="%s"
 for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
-  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "%s" --create
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "$BG_FILE" --create
   xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/image-style -n -t int -s 5 --create
   xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/color-style -n -t int -s 0 --create
 done
@@ -241,8 +242,8 @@ xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --creat
 xfdesktop --reload
 
 # swaybg is more reliable for Wayland backgrounds on labwc
-swaybg -o HEADLESS-1 -i "%s" -m stretch &
-`, gdkScale, bgFile, bgFile)
+swaybg -o HEADLESS-1 -i "$BG_FILE" -m stretch &
+`, gdkScale, bgFile)
 	}
 
 	autostart := fmt.Sprintf(`#!/bin/sh
@@ -371,14 +372,14 @@ touch "$READY_FILE"
 		readiness.Set(readinessPulseAudio, true)
 	}
 
-	go func() {
+	if !minimal {
 		if err := waitForFile(desktopReadyMarker, 30*time.Second, 100*time.Millisecond); err != nil {
-			log.Printf("Warning: desktop session readiness marker not found: %v", err)
+			log.Printf("Warning: desktop session readiness failed: %v", err)
 		}
-		readiness.Set(readinessDesktopSession, true)
-		log.Println("Desktop session is fully ready.")
-		PrimeFrameGeneration(0, 10, 100*time.Millisecond)
-	}()
+	}
+	readiness.Set(readinessDesktopSession, true)
+	log.Println("Desktop session is fully ready.")
+	PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
 	// We consider it "ready enough" to start streaming once the socket is there and input is ready
 	return nil
