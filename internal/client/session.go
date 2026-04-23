@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -126,6 +127,7 @@ type SessionState struct {
 	WindowEvent             string             `json:"windowEvent,omitempty"`
 	WindowFlags             uint32             `json:"windowFlags,omitempty"`
 	WindowHasFocus          bool               `json:"windowHasFocus"`
+	WindowPointerInside     bool               `json:"windowPointerInside"`
 	WindowHasSurface        bool               `json:"windowHasSurface"`
 	WindowDesktop           int                `json:"windowDesktop"`
 	Presenting              bool               `json:"presenting"`
@@ -141,6 +143,7 @@ type SessionState struct {
 	FirstFramePresentedAt   time.Time          `json:"firstFramePresentedAt,omitempty"`
 	LastLatencySample       map[string]any     `json:"lastLatencySample,omitempty"`
 	RecentLatencySamples    []LatencyBreakdown `json:"recentLatencySamples,omitempty"`
+	RecentLocalInputSamples []LocalInputSample `json:"recentLocalInputSamples,omitempty"`
 	RecentVideoByteSamples  []TimedByteSample  `json:"recentVideoByteSamples,omitempty"`
 	CurrentTrackCodecs      map[string]string  `json:"currentTrackCodecs,omitempty"`
 }
@@ -214,6 +217,10 @@ func (s *Session) State() SessionState {
 		copyState.RecentLatencySamples = make([]LatencyBreakdown, len(s.state.RecentLatencySamples))
 		copy(copyState.RecentLatencySamples, s.state.RecentLatencySamples)
 	}
+	if s.state.RecentLocalInputSamples != nil {
+		copyState.RecentLocalInputSamples = make([]LocalInputSample, len(s.state.RecentLocalInputSamples))
+		copy(copyState.RecentLocalInputSamples, s.state.RecentLocalInputSamples)
+	}
 	if s.state.RecentVideoByteSamples != nil {
 		copyState.RecentVideoByteSamples = make([]TimedByteSample, len(s.state.RecentVideoByteSamples))
 		copy(copyState.RecentVideoByteSamples, s.state.RecentVideoByteSamples)
@@ -258,6 +265,7 @@ func (s *Session) UpdateWindowState(state NativeWindowLifecycle) {
 		s.state.WindowFlags = state.Flags
 	}
 	s.state.WindowHasFocus = state.HasFocus
+	s.state.WindowPointerInside = state.PointerInside
 	s.state.WindowHasSurface = state.HasSurface
 	if state.Desktop >= 0 {
 		s.state.WindowDesktop = state.Desktop
@@ -289,6 +297,7 @@ func (s *Session) UpdateWindowState(state NativeWindowLifecycle) {
 		"windowEvent":             current.WindowEvent,
 		"windowFlags":             current.WindowFlags,
 		"windowHasFocus":          current.WindowHasFocus,
+		"windowPointerInside":     current.WindowPointerInside,
 		"windowHasSurface":        current.WindowHasSurface,
 		"windowDesktop":           current.WindowDesktop,
 		"presenting":              current.Presenting,
@@ -374,15 +383,25 @@ func (s *Session) Connect(serverURL string) error {
 		return fmt.Errorf("register default codecs: %w", err)
 	}
 
+	lowLatency, _ := initMsg["webrtc_low_latency"].(bool)
+
 	i := &interceptor.Registry{}
-	if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("register default interceptors: %w", err)
+	if !lowLatency {
+		log.Printf("WebRTC using default interceptors (NACK, Jitter Buffer)")
+		if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("register default interceptors: %w", err)
+		}
+	} else {
+		log.Printf("WebRTC skipping interceptors for low-latency mode")
 	}
 
 	se := webrtc.SettingEngine{}
 	se.DisableSRTPReplayProtection(true)
 	se.DisableSRTCPReplayProtection(true)
+	if lowLatency {
+		se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
+	}
 
 	api := webrtc.NewAPI(
 		webrtc.WithMediaEngine(m),
@@ -725,11 +744,26 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 	}
 
 	sample := LatencyBreakdown{
-		PacketTimestamp: event.PacketTimestamp,
-		Brightness:      event.Brightness,
-		ReceiveAt:       event.ReceiveAt.UnixMilli(),
-		DecodeReadyAt:   event.DecodeReadyAt.UnixMilli(),
-		PresentationAt:  event.PresentationAt.UnixMilli(),
+		PacketTimestamp:    event.PacketTimestamp,
+		Brightness:         event.Brightness,
+		ProbeMarker:        event.ProbeMarker,
+		ReceiveAt:          event.ReceiveAt,
+		DecodeReadyAt:      event.DecodeReadyAt,
+		PresentationAt:     event.PresentationAt,
+		PresentationSource: event.PresentationSource,
+	}
+	if event.CompositorPresentedAt > 0 {
+		sample.CompositorPresentedAt = event.CompositorPresentedAt
+	}
+	s.state.LastLatencySample = map[string]any{
+		"packetTimestamp":       sample.PacketTimestamp,
+		"brightness":            sample.Brightness,
+		"probeMarker":           sample.ProbeMarker,
+		"receiveAt":             sample.ReceiveAt,
+		"decodeReadyAt":         sample.DecodeReadyAt,
+		"presentationAt":        sample.PresentationAt,
+		"compositorPresentedAt": sample.CompositorPresentedAt,
+		"presentationSource":    sample.PresentationSource,
 	}
 	s.state.RecentLatencySamples = append(s.state.RecentLatencySamples, sample)
 	if len(s.state.RecentLatencySamples) > 300 {
@@ -738,11 +772,31 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 
 	s.mu.Unlock()
 	s.emit(EventFrame, map[string]any{
-		"presented":       true,
-		"width":           event.Width,
-		"height":          event.Height,
-		"packetTimestamp": event.PacketTimestamp,
-		"brightness":      event.Brightness,
+		"presented":          true,
+		"width":              event.Width,
+		"height":             event.Height,
+		"packetTimestamp":    event.PacketTimestamp,
+		"brightness":         event.Brightness,
+		"presentationSource": event.PresentationSource,
+	})
+}
+
+func (s *Session) RecordLocalInput(sample LocalInputSample) {
+	s.mu.Lock()
+	s.state.RecentLocalInputSamples = append(s.state.RecentLocalInputSamples, sample)
+	if len(s.state.RecentLocalInputSamples) > 300 {
+		s.state.RecentLocalInputSamples = s.state.RecentLocalInputSamples[1:]
+	}
+	s.mu.Unlock()
+	s.emit(EventInputSent, map[string]any{
+		"type":   sample.Type,
+		"action": sample.Action,
+		"button": sample.Button,
+		"key":    sample.Key,
+		"x":      sample.X,
+		"y":      sample.Y,
+		"atMs":   sample.AtMs,
+		"source": "local_renderer",
 	})
 }
 

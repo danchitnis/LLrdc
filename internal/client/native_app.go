@@ -436,7 +436,7 @@ func (a *NativeApp) attachRendererHooks() {
 			a.requestShutdown("window_close")
 		}
 		if event.Created || event.Shown || event.Mapped || event.Visible || event.Event == "close" || event.Event == "hidden" || event.Event == "unshown" || event.RenderLoopStarted {
-			log.Printf("native window lifecycle: backend=%s id=%d event=%s created=%t shown=%t mapped=%t visible=%t desktop=%d loop=%t flags=%d focus=%t surface=%t awaiting_keyframe=%t", event.Backend, event.WindowID, event.Event, event.Created, event.Shown, event.Mapped, event.Visible, event.Desktop, event.RenderLoopStarted, event.Flags, event.HasFocus, event.HasSurface, event.DecoderAwaitingKeyframe)
+			log.Printf("native window lifecycle: backend=%s id=%d event=%s created=%t shown=%t mapped=%t visible=%t desktop=%d loop=%t flags=%d focus=%t pointer_inside=%t surface=%t awaiting_keyframe=%t", event.Backend, event.WindowID, event.Event, event.Created, event.Shown, event.Mapped, event.Visible, event.Desktop, event.RenderLoopStarted, event.Flags, event.HasFocus, event.PointerInside, event.HasSurface, event.DecoderAwaitingKeyframe)
 		}
 		if event.Error != "" {
 			log.Printf("native window error: %s", event.Error)
@@ -636,6 +636,18 @@ func (a *NativeApp) currentHDPIValue() int {
 
 func (a *NativeApp) handleRendererInput(msg map[string]any) error {
 	msgType, _ := msg["type"].(string)
+	switch msgType {
+	case "mousemove", "mousebtn", "keydown", "keyup", "wheel":
+		a.session.RecordLocalInput(LocalInputSample{
+			Type:   msgType,
+			Action: stringFromAny(msg["action"]),
+			Button: intFromAny(msg["button"]),
+			Key:    stringFromAny(msg["key"]),
+			X:      floatOrZero(msg["x"]),
+			Y:      floatOrZero(msg["y"]),
+			AtMs:   time.Now().UnixMilli(),
+		})
+	}
 	switch msgType {
 	case "resize":
 		width, height := intFromAny(msg["width"]), intFromAny(msg["height"])
@@ -1540,6 +1552,11 @@ func floatFromAny(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func floatOrZero(v any) float64 {
+	value, _ := floatFromAny(v)
+	return value
 }
 
 func stringFromAny(v any) string {

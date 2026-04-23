@@ -130,6 +130,8 @@ dist/llrdc-client-linux-amd64.tar.gz
 The package includes:
 - `bin/llrdc-client`: host launcher
 - `bin/llrdc-client.bin`: packaged client binary
+- `bin/linux-uinput-bench`: packaged native latency injector launcher
+- `bin/linux-uinput-bench.bin`: packaged native latency injector binary
 - `lib/`: bundled runtime shared libraries
 
 ### Run the Native Client on the Host
@@ -162,9 +164,9 @@ Important flags:
 - `--headless`: Disables the window; intended only for debugging, not normal native-client use.
 
 Display backend behavior:
-- X11/Xwayland is preferred automatically on Wayland desktop sessions when `DISPLAY` is available.
-- Native Wayland remains available with `SDL_VIDEODRIVER=wayland`.
-- X11 is selected automatically when `DISPLAY` is present and no explicit backend override is set.
+- Native Wayland is preferred automatically when a Wayland socket is available.
+- X11/Xwayland remains available with `SDL_VIDEODRIVER=x11`.
+- X11 is selected automatically only when Wayland is unavailable and `DISPLAY` is present.
 - No Chromium, WebView, or WebKit is used in any path.
 
 ### Verify the Packaged Host Runtime
@@ -198,6 +200,16 @@ npm run client:test:e2e
 ```
 
 That test starts the existing server container in `--test-pattern` mode, connects the native client to it over WebRTC on a private Docker network, and waits for `/statez` and `/statsz` to show an active stream with decoded video frames.
+
+For headed host-desktop validation on Linux:
+
+```bash
+npm run client:test:headed
+npm run client:benchmark:latency
+```
+
+- `client:test:headed` is a Wayland-first visual smoke test. It packages the client, runs a short Wayland SDL capability probe, connects to a test-pattern server, and captures `/snapshotz` plus a compositor screenshot when supported.
+- `client:benchmark:latency` is the official native Linux latency lane. It packages the client, launches a dedicated Weston bench, drives deterministic pointer moves through the native client control API, and reports stage timings from control injection through native present using a monotonic clock plus probe-marker correlation.
 
 ## Clipboard
 

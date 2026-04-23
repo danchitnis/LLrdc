@@ -40,6 +40,8 @@ if [[ "${FORCE_REBUILD}" -eq 0 ]] \
   && [[ -f "${PACKAGE_DIR}/BUILD_ID" ]] \
   && [[ -x "${PACKAGE_DIR}/bin/llrdc-client" ]] \
   && [[ -x "${PACKAGE_DIR}/bin/llrdc-client.bin" ]] \
+  && [[ -x "${PACKAGE_DIR}/bin/linux-uinput-bench" ]] \
+  && [[ -x "${PACKAGE_DIR}/bin/linux-uinput-bench.bin" ]] \
   && [[ -f "${PACKAGE_ARCHIVE}" ]] \
   && [[ "$(tr -d '[:space:]' < "${PACKAGE_DIR}/BUILD_ID")" == "${BUILD_ID}" ]]; then
   echo "Reusing native client package at ${PACKAGE_DIR} (BUILD_ID ${BUILD_ID})"
@@ -73,6 +75,7 @@ rm -f "${PACKAGE_ARCHIVE}"
 printf '%s\n' "${BUILD_ID}" >"${PACKAGE_DIR}/BUILD_ID"
 
 docker cp "${CONTAINER_ID}:/usr/local/bin/llrdc-client" "${PACKAGE_DIR}/bin/llrdc-client.bin"
+docker cp "${CONTAINER_ID}:/usr/local/bin/linux-uinput-bench" "${PACKAGE_DIR}/bin/linux-uinput-bench.bin"
 
 docker run --rm --platform "${IMAGE_PLATFORM}" --entrypoint /bin/sh "${IMAGE_NAME}" -lc \
   'ldd /usr/local/bin/llrdc-client \
@@ -133,7 +136,32 @@ fi
 exec "${BIN_PATH}" "$@"
 EOF
 
-chmod +x "${PACKAGE_DIR}/bin/llrdc-client" "${PACKAGE_DIR}/bin/llrdc-client.bin"
+cat >"${PACKAGE_DIR}/bin/linux-uinput-bench" <<'EOF'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+LIB_DIR="${ROOT_DIR}/lib"
+BIN_PATH="${SCRIPT_DIR}/linux-uinput-bench.bin"
+
+if [[ ! -x "${BIN_PATH}" ]]; then
+  echo "Missing bench injector binary at ${BIN_PATH}" >&2
+  exit 1
+fi
+
+if compgen -G "${LIB_DIR}/*" >/dev/null 2>&1; then
+  export LD_LIBRARY_PATH="${LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+exec "${BIN_PATH}" "$@"
+EOF
+
+chmod +x \
+  "${PACKAGE_DIR}/bin/llrdc-client" \
+  "${PACKAGE_DIR}/bin/llrdc-client.bin" \
+  "${PACKAGE_DIR}/bin/linux-uinput-bench" \
+  "${PACKAGE_DIR}/bin/linux-uinput-bench.bin"
 
 cat >"${PACKAGE_DIR}/README.txt" <<EOF
 LLrdc Native Client
@@ -144,10 +172,13 @@ This package was built inside Docker and is intended to run directly on the Linu
 Run:
   ./bin/llrdc-client --server http://127.0.0.1:8080 --control-addr 127.0.0.1:18080
 
+Latency bench injector:
+  ./bin/linux-uinput-bench
+
 Display backend selection:
-  - X11/Xwayland is preferred automatically on Wayland sessions when DISPLAY is available.
-  - Native Wayland can still be forced with SDL_VIDEODRIVER=wayland.
-  - X11 is used automatically when DISPLAY is set and Wayland/Xwayland is available.
+  - Native Wayland is preferred automatically when a Wayland socket is available.
+  - X11/Xwayland can still be forced with SDL_VIDEODRIVER=x11.
+  - X11 is used automatically only when Wayland is unavailable and DISPLAY is set.
 
 Important:
   - This is a native SDL/libvpx client. It does not embed Chromium, WebView, or WebKit.

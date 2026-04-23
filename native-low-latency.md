@@ -18,6 +18,8 @@ To reproduce the latency breakdown and verify the improvements:
 WEBRTC_LOW_LATENCY=true WEBRTC_BUFFER_SIZE=0 ./scripts/benchmark-native-latency.sh
 ```
 
+The native benchmark reports `Control API -> Native Present` latency, not physical host input-to-photon latency. It uses a monotonic clock across the server, probe app, and native client, and it correlates each presented frame to one exact probe marker encoded into the frame.
+
 ### 2. Manual Execution (Server + Native Client)
 
 **Start the Server (Docker):**
@@ -32,18 +34,37 @@ npm run client:run -- --server http://127.0.0.1:8080 --auto-start
 
 ## Latency Statistics (1080p60 VP8)
 
-The following statistics represent the typical improvement observed on a local network stack:
+Measured on April 23, 2026 with:
 
-| Stage | Baseline (Standard WebRTC) | Optimized (Low-Latency + Zero Buffer) | Improvement |
-| :--- | :--- | :--- | :--- |
-| **Draw->Brd** (Server Capture) | ~10-20 ms | ~5-15 ms | Queue removal |
-| **Brd->Rec** (Network Transport) | ~65-130 ms | **~31-35 ms** | **-50% to -70%** |
-| **Rec->Dec** (Client Receive) | ~2-5 ms | ~1-2 ms | Interceptor bypass |
-| **Overall E2E** | ~180-200 ms | **~45-60 ms** | **Significant** |
+```bash
+WEBRTC_LOW_LATENCY=true WEBRTC_BUFFER_SIZE=0 LLRDC_WARMUP_COUNT=3 LLRDC_SAMPLE_COUNT=5 ./scripts/benchmark-native-latency.sh
+```
 
-### Statistical Insights:
-- **`Brd->Rec` (Broadcast to Receive)**: This is the primary beneficiary of the Interceptor Bypass. By removing the NACK buffers, the packet processing time on the receiver side is significantly reduced.
-- **Zero Buffering**: Setting `WEBRTC_BUFFER_SIZE=0` ensures that `Draw->Brd` stays consistent even during CPU spikes, as frames are never queued behind older ones.
+This run produced the following `Control API -> Native Present` stage averages:
+
+| Stage | Average | Range |
+| :--- | :--- | :--- |
+| **Ctrl->Req** | `0.0 ms` | `0-0 ms` |
+| **Render** | `18.8 ms` | `12-32 ms` |
+| **Encode** | `6.6 ms` | `5-8 ms` |
+| **Transit** | `52.4 ms` | `32-67 ms` |
+| **Client** | `15.0 ms` | `10-24 ms` |
+| **Overall E2E** | `92.8 ms` | `71-113 ms` |
+
+Per-sample totals from that run:
+
+| Marker | Total E2E |
+| :--- | :--- |
+| `4` | `84 ms` |
+| `5` | `91 ms` |
+| `6` | `98 ms` |
+| `7` | `87 ms` |
+| `8` | `95 ms` |
+
+Notes:
+- These numbers are from the native benchmark harness, not the browser Playwright lane.
+- `Ctrl->Req` is millisecond-quantized in the current report, so sub-millisecond differences will show as `0 ms`.
+- The largest contributor in this run was still `Transit`, even with low-latency WebRTC enabled.
 
 ## Configuration Flags
 

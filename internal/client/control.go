@@ -89,6 +89,7 @@ func (s *ControlServer) handleReady(w http.ResponseWriter, _ *http.Request) {
 		"windowEvent":             state.WindowEvent,
 		"windowFlags":             state.WindowFlags,
 		"windowHasFocus":          state.WindowHasFocus,
+		"windowPointerInside":     state.WindowPointerInside,
 		"windowHasSurface":        state.WindowHasSurface,
 		"windowDesktop":           state.WindowDesktop,
 		"presenting":              state.Presenting,

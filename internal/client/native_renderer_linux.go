@@ -154,6 +154,7 @@ type NativeRenderer struct {
 	width        int
 	height       int
 	autoStart    bool
+	fullscreen   bool
 	probeLatency bool
 	debugCursor  bool
 
@@ -182,14 +183,14 @@ type nativeVideoSample struct {
 	codec           string
 	data            []byte
 	packetTimestamp uint32
-	receiveAt       time.Time
+	receiveAt       int64
 }
 
 type nativeDecodedSample struct {
 	frame           decodedFrame
 	packetTimestamp uint32
-	receiveAt       time.Time
-	decodeReadyAt   time.Time
+	receiveAt       int64
+	decodeReadyAt   int64
 }
 
 type vp8Decoder struct {
@@ -229,6 +230,7 @@ func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
 		width:                   width,
 		height:                  height,
 		autoStart:               opts.AutoStart,
+		fullscreen:              opts.Fullscreen,
 		probeLatency:            opts.ProbeLatency,
 		debugCursor:             opts.DebugCursor,
 		decoderAwaitingKeyframe: true,
@@ -341,7 +343,7 @@ func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTime
 		codec:           codec,
 		data:            append([]byte(nil), frame...),
 		packetTimestamp: packetTimestamp,
-		receiveAt:       time.Now(),
+		receiveAt:       benchmarkClockNowMs(),
 	}
 	select {
 	case r.samples <- sample:
@@ -595,13 +597,17 @@ func (r *NativeRenderer) Run() error {
 	driver, _ := sdl.GetCurrentVideoDriver()
 
 	// Create window
+	windowFlags := uint32(sdl.WINDOW_SHOWN)
+	if !r.fullscreen {
+		windowFlags |= sdl.WINDOW_RESIZABLE
+	}
 	window, err := sdl.CreateWindow(
 		r.title,
 		sdl.WINDOWPOS_CENTERED,
 		sdl.WINDOWPOS_CENTERED,
 		int32(r.width),
 		int32(r.height),
-		sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE,
+		windowFlags,
 	)
 	if err != nil {
 		r.emitLifecycle(NativeWindowLifecycle{Error: fmt.Sprintf("create window: %v", err)})
@@ -612,6 +618,12 @@ func (r *NativeRenderer) Run() error {
 	// Center and show
 	window.SetPosition(sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED)
 	window.Raise()
+	if r.fullscreen {
+		if err := window.SetFullscreen(sdl.WINDOW_FULLSCREEN_DESKTOP); err != nil {
+			r.emitLifecycle(NativeWindowLifecycle{Error: fmt.Sprintf("set fullscreen: %v", err)})
+			return fmt.Errorf("set fullscreen: %w", err)
+		}
+	}
 
 	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
 	if err != nil {
@@ -786,7 +798,7 @@ func (r *NativeRenderer) Run() error {
 							frame:           frame,
 							packetTimestamp: sample.packetTimestamp,
 							receiveAt:       sample.receiveAt,
-							decodeReadyAt:   time.Now(),
+							decodeReadyAt:   benchmarkClockNowMs(),
 						}:
 						default:
 						}
@@ -816,7 +828,7 @@ func (r *NativeRenderer) Run() error {
 							frame:           frame,
 							packetTimestamp: sample.packetTimestamp,
 							receiveAt:       sample.receiveAt,
-							decodeReadyAt:   time.Now(),
+							decodeReadyAt:   benchmarkClockNowMs(),
 						}:
 						default:
 						}
@@ -1033,6 +1045,7 @@ func (r *NativeRenderer) Run() error {
 			r.mu.RUnlock()
 
 			brightness := -1
+			probeMarker := 0
 			if probeLatency {
 				// Compute center pixel brightness (Y channel)
 				cx := int(decoded.frame.width / 2)
@@ -1040,6 +1053,9 @@ func (r *NativeRenderer) Run() error {
 				offset := cy*int(decoded.frame.yStride) + cx
 				if offset >= 0 && offset < len(decoded.frame.yPlane) {
 					brightness = int(decoded.frame.yPlane[offset])
+				}
+				if brightness >= 0 {
+					probeMarker = decodeProbeMarker(decoded.frame)
 				}
 			}
 
@@ -1085,14 +1101,17 @@ func (r *NativeRenderer) Run() error {
 
 			r.drawOverlay(renderer)
 			renderer.Present()
+			presentedAt := benchmarkClockNowMs()
 			r.emitPresent(NativeFramePresented{
-				Width:           int(decoded.frame.width),
-				Height:          int(decoded.frame.height),
-				PacketTimestamp: decoded.packetTimestamp,
-				Brightness:      brightness,
-				ReceiveAt:       decoded.receiveAt,
-				DecodeReadyAt:   decoded.decodeReadyAt,
-				PresentationAt:  time.Now(),
+				Width:              int(decoded.frame.width),
+				Height:             int(decoded.frame.height),
+				PacketTimestamp:    decoded.packetTimestamp,
+				Brightness:         brightness,
+				ProbeMarker:        probeMarker,
+				ReceiveAt:          decoded.receiveAt,
+				DecodeReadyAt:      decoded.decodeReadyAt,
+				PresentationAt:     presentedAt,
+				PresentationSource: "render_present",
 			})
 
 		case <-time.After(10 * time.Millisecond):
@@ -1169,6 +1188,7 @@ type nativeWindowState struct {
 	mapped     bool
 	visible    bool
 	hasFocus   bool
+	pointerIn  bool
 	hasSurface bool
 	flags      uint32
 	desktop    int
@@ -1192,28 +1212,33 @@ func (s *nativeWindowState) applyEvent(event uint8) {
 		s.visible = false
 		s.shown = false
 		s.hasSurface = false
-	case sdl.WINDOWEVENT_FOCUS_GAINED, sdl.WINDOWEVENT_ENTER:
+	case sdl.WINDOWEVENT_FOCUS_GAINED:
 		s.hasFocus = true
 		s.flags |= sdl.WINDOW_INPUT_FOCUS
-	case sdl.WINDOWEVENT_FOCUS_LOST, sdl.WINDOWEVENT_LEAVE:
+	case sdl.WINDOWEVENT_FOCUS_LOST:
 		s.hasFocus = false
 		s.flags &^= sdl.WINDOW_INPUT_FOCUS
+	case sdl.WINDOWEVENT_ENTER:
+		s.pointerIn = true
+	case sdl.WINDOWEVENT_LEAVE:
+		s.pointerIn = false
 	}
 }
 
 func (s nativeWindowState) snapshot(event string, created bool) NativeWindowLifecycle {
 	return NativeWindowLifecycle{
-		Backend:    s.backend,
-		WindowID:   s.windowID,
-		Created:    created,
-		Shown:      s.shown,
-		Mapped:     s.mapped,
-		Visible:    s.visible,
-		Event:      event,
-		Flags:      s.flags,
-		HasFocus:   s.hasFocus,
-		HasSurface: s.hasSurface,
-		Desktop:    s.desktop,
+		Backend:       s.backend,
+		WindowID:      s.windowID,
+		Created:       created,
+		Shown:         s.shown,
+		Mapped:        s.mapped,
+		Visible:       s.visible,
+		Event:         event,
+		Flags:         s.flags,
+		HasFocus:      s.hasFocus,
+		PointerInside: s.pointerIn,
+		HasSurface:    s.hasSurface,
+		Desktop:       s.desktop,
 	}
 }
 
@@ -1344,6 +1369,74 @@ type decodedFrame struct {
 	yStride int32
 	uStride int32
 	vStride int32
+}
+
+func decodeProbeMarker(frame decodedFrame) int {
+	if frame.width <= 0 || frame.height <= 0 || frame.yStride <= 0 || len(frame.yPlane) == 0 {
+		return 0
+	}
+
+	const (
+		markerBits = 16
+		refDarkX   = 80
+		refBrightX = 144
+		startX     = 240
+		startY     = 80
+		cellSize   = 40
+		cellGap    = 20
+	)
+
+	refDark := sampleMarkerCellAverage(frame, refDarkX, startY, cellSize)
+	refBright := sampleMarkerCellAverage(frame, refBrightX, startY, cellSize)
+	if refDark < 0 || refBright < 0 {
+		return 0
+	}
+	threshold := (refDark + refBright) / 2
+
+	marker := 0
+	for bit := 0; bit < markerBits; bit++ {
+		cellX := startX + bit*(cellSize+cellGap)
+		cellAvg := sampleMarkerCellAverage(frame, cellX, startY, cellSize)
+		if cellAvg < 0 {
+			return 0
+		}
+		if cellAvg < threshold {
+			marker++
+			continue
+		}
+		break
+	}
+
+	return marker
+}
+
+func sampleMarkerCellAverage(frame decodedFrame, x, y, size int) int {
+	if size <= 4 || frame.yStride <= 0 || len(frame.yPlane) == 0 {
+		return -1
+	}
+	margin := 4
+	sum := 0
+	count := 0
+	for yy := y + margin; yy < y+size-margin; yy++ {
+		if yy < 0 || yy >= int(frame.height) {
+			return -1
+		}
+		for xx := x + margin; xx < x+size-margin; xx++ {
+			if xx < 0 || xx >= int(frame.width) {
+				return -1
+			}
+			offset := yy*int(frame.yStride) + xx
+			if offset < 0 || offset >= len(frame.yPlane) {
+				return -1
+			}
+			sum += int(frame.yPlane[offset])
+			count++
+		}
+	}
+	if count == 0 {
+		return -1
+	}
+	return sum / count
 }
 
 func (d *vp8Decoder) Init() error {

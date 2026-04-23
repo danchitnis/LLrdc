@@ -35,6 +35,8 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     -ldflags "-X main.clientBuildID=${CLIENT_BUILD_ID}" \
     -o /out/llrdc-client ./cmd/client && \
     CGO_ENABLED=1 go build -tags "${GO_BUILD_TAGS}" -buildvcs=false \
+    -o /out/linux-uinput-bench ./cmd/linux-uinput-bench && \
+    CGO_ENABLED=1 go build -tags "${GO_BUILD_TAGS}" -buildvcs=false \
     -o /out/linux-mouse-probe ./cmd/linux-mouse-probe
 
 FROM debian:bookworm-slim
@@ -49,6 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/llrdc-client /usr/local/bin/llrdc-client
+COPY --from=build /out/linux-uinput-bench /usr/local/bin/linux-uinput-bench
 COPY --from=build /out/linux-mouse-probe /usr/local/bin/linux-mouse-probe
 
 EXPOSE 18080

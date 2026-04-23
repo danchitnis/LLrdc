@@ -5,37 +5,39 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
 )
 
 const latencyProbeStatePath = "/tmp/llrdc-latency-probe.json"
 
-type latencyProbeStateFile struct {
-	Marker        int     `json:"marker"`
-	Color         string  `json:"color"`
-	RequestedAtMs float64 `json:"requestedAtMs"`
-	DrawnAtMs     float64 `json:"drawnAtMs"`
-	FirstMoveAtMs float64 `json:"firstMoveAtMs"`
-	IsMoving      bool    `json:"isMoving"`
-	PID           int     `json:"pid"`
+type latencyTraceRecord struct {
+	Marker                  int   `json:"marker"`
+	ServerTimeMs            int64 `json:"serverTimeMs"`            // T0: Server received control input
+	RequestedAtMs           int64 `json:"requestedAtMs"`           // T1: Probe app detected motion
+	DrawnAtMs               int64 `json:"drawnAtMs"`               // T2: Probe app frame callback fired
+	FirstFrameBroadcastAtMs int64 `json:"firstFrameBroadcastAtMs"` // T3: Server broadcasted the first probe frame
 }
 
-type latencyTraceRecord struct {
-	Marker                  int     `json:"marker"`
-	Color                   string  `json:"color"`
-	RequestedAtMs           float64 `json:"requestedAtMs"`
-	DrawnAtMs               float64 `json:"drawnAtMs"`
-	FirstMoveAtMs           float64 `json:"firstMoveAtMs"`
-	FirstFrameBroadcastAtMs float64 `json:"firstFrameBroadcastAtMs"`
-	ServerTimeMs            float64 `json:"serverTimeMs"`
+type latencyProbeStateFile struct {
+	Marker        int   `json:"marker"`
+	RequestedAtMs int64 `json:"requestedAtMs"`
+	DrawnAtMs     int64 `json:"drawnAtMs"`
 }
 
 var (
 	latencyTraceMu      sync.RWMutex
 	latencyTraceRecords = map[int]latencyTraceRecord{}
+
+	pendingInputTime int64
+	pendingInputMu   sync.Mutex
 )
 
-func recordLatencyProbeFrame(frameTime time.Time) {
+func setLastInputReceivedAt(t int64) {
+	pendingInputMu.Lock()
+	defer pendingInputMu.Unlock()
+	pendingInputTime = t
+}
+
+func recordLatencyProbeFrame(frameAtMs int64) {
 	payload, err := os.ReadFile(latencyProbeStatePath)
 	if err != nil {
 		return
@@ -49,20 +51,25 @@ func recordLatencyProbeFrame(frameTime time.Time) {
 		return
 	}
 
-	frameAtMs := float64(frameTime.UnixNano()) / float64(time.Millisecond)
-
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record := latencyTraceRecords[state.Marker]
-	record.Marker = state.Marker
-	record.Color = state.Color
-	record.RequestedAtMs = state.RequestedAtMs
-	record.DrawnAtMs = state.DrawnAtMs
-	record.FirstMoveAtMs = state.FirstMoveAtMs
+	pendingInputMu.Lock()
+	inputAt := pendingInputTime
+	pendingInputMu.Unlock()
+
+	record, exists := latencyTraceRecords[state.Marker]
+	if !exists {
+		record.Marker = state.Marker
+		record.ServerTimeMs = inputAt
+		record.RequestedAtMs = state.RequestedAtMs
+		record.DrawnAtMs = state.DrawnAtMs
+	}
+
 	if record.FirstFrameBroadcastAtMs == 0 && frameAtMs >= state.DrawnAtMs {
 		record.FirstFrameBroadcastAtMs = frameAtMs
 	}
+
 	latencyTraceRecords[state.Marker] = record
 
 	const maxTraceRecords = 64
@@ -77,31 +84,26 @@ func recordLatencyProbeFrame(frameTime time.Time) {
 }
 
 func snapshotLatencyTrace(markerStr string) (latencyTraceRecord, bool) {
+	targetMarker, _ := strconv.Atoi(markerStr)
+
 	latencyTraceMu.RLock()
 	defer latencyTraceMu.RUnlock()
 
-	var record latencyTraceRecord
-	var ok bool
-
-	if markerStr != "" {
-		marker, err := strconv.Atoi(markerStr)
-		if err != nil {
-			return latencyTraceRecord{}, false
-		}
-		record, ok = latencyTraceRecords[marker]
-	} else {
-		var bestMarker int
-		for marker, r := range latencyTraceRecords {
-			if !ok || marker > bestMarker {
-				bestMarker = marker
-				record = r
-				ok = true
-			}
-		}
+	if targetMarker > 0 {
+		r, ok := latencyTraceRecords[targetMarker]
+		return r, ok
 	}
 
-	if ok {
-		record.ServerTimeMs = float64(time.Now().UnixNano()) / float64(time.Millisecond)
+	// If no marker specified, return the latest
+	var bestMarker int
+	var record latencyTraceRecord
+	var ok bool
+	for marker, r := range latencyTraceRecords {
+		if !ok || marker > bestMarker {
+			bestMarker = marker
+			record = r
+			ok = true
+		}
 	}
 	return record, ok
 }

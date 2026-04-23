@@ -1,7 +1,5 @@
 package client
 
-import "time"
-
 type WindowRenderer interface {
 	Renderer
 	Run() error
@@ -31,9 +29,11 @@ type NativeRendererOptions struct {
 	Width        int
 	Height       int
 	AutoStart    bool
+	Fullscreen   bool
 	ProbeLatency bool
 	DebugCursor  bool
 }
+
 type NativeWindowLifecycle struct {
 	Backend                 string
 	WindowID                uint64
@@ -46,6 +46,7 @@ type NativeWindowLifecycle struct {
 	Event                   string
 	Flags                   uint32
 	HasFocus                bool
+	PointerInside           bool
 	HasSurface              bool
 	Desktop                 int
 	RenderLoopStarted       bool
@@ -56,21 +57,37 @@ type NativeWindowLifecycle struct {
 }
 
 type NativeFramePresented struct {
-	Width           int
-	Height          int
-	PacketTimestamp uint32
-	Brightness      int
-	ReceiveAt       time.Time
-	DecodeReadyAt   time.Time
-	PresentationAt  time.Time
+	Width                 int
+	Height                int
+	PacketTimestamp       uint32
+	Brightness            int
+	ProbeMarker           int
+	ReceiveAt             int64
+	DecodeReadyAt         int64
+	PresentationAt        int64
+	PresentationSource    string
+	CompositorPresentedAt int64
 }
 
 type LatencyBreakdown struct {
-	PacketTimestamp uint32 `json:"packetTimestamp"`
-	Brightness      int    `json:"brightness"`
-	ReceiveAt       int64  `json:"receiveAt"`
-	DecodeReadyAt   int64  `json:"decodeReadyAt"`
-	PresentationAt  int64  `json:"presentationAt"`
+	PacketTimestamp       uint32 `json:"packetTimestamp"`
+	Brightness            int    `json:"brightness"`
+	ProbeMarker           int    `json:"probeMarker,omitempty"`
+	ReceiveAt             int64  `json:"receiveAt"`
+	DecodeReadyAt         int64  `json:"decodeReadyAt"`
+	PresentationAt        int64  `json:"presentationAt"`
+	CompositorPresentedAt int64  `json:"compositorPresentedAt,omitempty"`
+	PresentationSource    string `json:"presentationSource,omitempty"`
+}
+
+type LocalInputSample struct {
+	Type   string  `json:"type"`
+	Action string  `json:"action,omitempty"`
+	Button int     `json:"button,omitempty"`
+	Key    string  `json:"key,omitempty"`
+	X      float64 `json:"x,omitempty"`
+	Y      float64 `json:"y,omitempty"`
+	AtMs   int64   `json:"atMs"`
 }
 
 type OverlayColor struct {

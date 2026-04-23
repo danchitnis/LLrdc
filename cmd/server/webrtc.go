@@ -186,15 +186,15 @@ func initWebRTC() {
 }
 
 func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string) {
+	// If zero buffering is requested and we are in low-latency mode, write directly.
+	if WebRTCBufferSize <= 0 && WebRTCLowLatency {
+		writeFrameToTrack(WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec})
+		return
+	}
+
 	limit := WebRTCBufferSize
 	if limit < 1 {
 		limit = 1
-	}
-
-	// If zero buffering is requested and we are in low-latency mode, write directly.
-	if limit <= 0 && WebRTCLowLatency {
-		writeFrameToTrack(WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec})
-		return
 	}
 
 	newFrame := WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec}

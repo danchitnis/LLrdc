@@ -412,7 +412,7 @@ func llrdc_present_callback(idPtr unsafe.Pointer, width C.int, height C.int, ts 
 	if r == nil {
 		return
 	}
-	now := time.Now()
+	now := benchmarkClockNowMs()
 	r.emitPresent(NativeFramePresented{
 		Width:           int(width),
 		Height:          int(height),

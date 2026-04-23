@@ -28,6 +28,7 @@ func main() {
 	windowTitle := flag.String("title", "LLrdc Native Client", "Native client window title")
 	windowWidth := flag.Int("width", 1280, "Initial native client window width")
 	windowHeight := flag.Int("height", 720, "Initial native client window height")
+	fullscreen := flag.Bool("fullscreen", false, "Start the native client in fullscreen mode")
 	headless := flag.Bool("headless", false, "Run without creating a native window")
 	showStats := flag.Bool("stats", false, "Show stats overlay on the screen")
 	defaultAutoStart := runtime.GOOS == "darwin"
@@ -60,6 +61,7 @@ func main() {
 			Width:        *windowWidth,
 			Height:       *windowHeight,
 			AutoStart:    *autoStart,
+			Fullscreen:   *fullscreen,
 			ProbeLatency: *latencyProbe,
 			DebugCursor:  *debugCursor,
 		})

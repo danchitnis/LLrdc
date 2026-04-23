@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -173,6 +174,12 @@ func startHTTPServer() {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
 
+	http.HandleFunc("/timez", func(w http.ResponseWriter, r *http.Request) {
+		now := benchmarkClockNowMs()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, "{\"serverTimeMs\": %d}\n", now)
+	})
+
 	http.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		payload, err := marshalReadinessStatus()
 		if err != nil {
@@ -261,13 +268,13 @@ func broadcastJSON(msg interface{}) {
 
 func broadcastVideoFrame(frame []byte, streamID uint32, codec string) {
 	captureTime := time.Now()
-	recordLatencyProbeFrame(captureTime)
+	recordLatencyProbeFrame(benchmarkClockNowMs())
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
 	webrtcCopy := make([]byte, len(frame))
 	copy(webrtcCopy, frame)
 	WriteWebRTCFrame(webrtcCopy, streamID, captureTime, codec)
 
-	timestamp := float64(captureTime.UnixNano()) / float64(time.Millisecond)
+	timestamp := float64(benchmarkClockNowMs())
 	header := make([]byte, 9)
 	header[0] = 1 // Video Type
 	binary.BigEndian.PutUint64(header[1:], math.Float64bits(timestamp))
@@ -294,6 +301,9 @@ func broadcastConfig(restarted bool) {
 
 func handleInputMessage(msg map[string]interface{}) {
 	msgType, _ := msg["type"].(string)
+	if msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "key" || msgType == "wheel" {
+		setLastInputReceivedAt(benchmarkClockNowMs())
+	}
 
 	switch msgType {
 	case "keydown", "keyup", "key":

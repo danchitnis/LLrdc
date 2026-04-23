@@ -152,34 +152,10 @@ ctl.!default {
 		gdkScale = 1
 	}
 
-	// Native labwc autostart script - Reverted to EXACT stable content
-	autostart := fmt.Sprintf(`#!/bin/sh
-set -eu
-
-READY_FILE="%s"
-rm -f "$READY_FILE"
-
-wait_for_cmd() {
-  attempts="$1"
-  shift
-  i=0
-  while ! "$@" >/dev/null 2>&1; do
-    i=$((i + 1))
-    if [ "$i" -ge "$attempts" ]; then
-      return 1
-    fi
-    sleep 0.2
-  done
-}
-
-# NOTE: randr and scaling are handled by Go server using native wlr-randr --scale
-
-# Set Wayland native backend for GTK/XFCE
-export GDK_BACKEND=wayland
-
-# Enforce standard icon sizes; compositor scale handles high DPI natively
-xfconf-query -c xfce4-desktop -p /desktop-icons/icon-size -n -t int -s 48 --create
-
+	minimal := os.Getenv("LLRDC_MINIMAL_WAYLAND") == "1"
+	xfceAutostart := ""
+	if !minimal {
+		xfceAutostart = fmt.Sprintf(`
 # Launch XFCE Components
 xfsettingsd &
 xfce4-panel &
@@ -188,7 +164,6 @@ xfdesktop &
 wait_for_cmd 100 pgrep -x xfsettingsd
 wait_for_cmd 100 pgrep -x xfce4-panel
 wait_for_cmd 100 pgrep -x xfdesktop
-wait_for_cmd 100 xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids
 
 # Ensure the PulseAudio panel plugin exists in the default XFCE panel.
 python3 - <<'PY'
@@ -267,9 +242,37 @@ xfdesktop --reload
 
 # swaybg is more reliable for Wayland backgrounds on labwc
 swaybg -o HEADLESS-1 -i "%s" -m stretch &
+`, gdkScale, bgFile, bgFile)
+	}
+
+	autostart := fmt.Sprintf(`#!/bin/sh
+set -eu
+
+READY_FILE="%s"
+rm -f "$READY_FILE"
+
+wait_for_cmd() {
+  attempts="$1"
+  shift
+  i=0
+  while ! "$@" >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ "$i" -ge "$attempts" ]; then
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+
+# NOTE: randr and scaling are handled by Go server using native wlr-randr --scale
+
+# Set Wayland native backend for GTK/XFCE
+export GDK_BACKEND=wayland
+
+%s
 
 touch "$READY_FILE"
-`, desktopReadyMarker, gdkScale, bgFile, bgFile)
+`, desktopReadyMarker, xfceAutostart)
 	_ = os.WriteFile(filepath.Join(configDir, "autostart"), []byte(autostart), 0755)
 
 	// Start labwc standalone (it will use the global DBUS session)
