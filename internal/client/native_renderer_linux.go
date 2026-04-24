@@ -157,6 +157,7 @@ type NativeRenderer struct {
 	fullscreen   bool
 	probeLatency bool
 	debugCursor  bool
+	lowLatency   bool
 
 	mu                      sync.RWMutex
 	runStarted              bool
@@ -169,6 +170,7 @@ type NativeRenderer struct {
 	streamResets            chan string
 	resizeRequests          chan nativeResizeRequest
 	snapshotRequests        chan chan nativeSnapshotResult
+	vsyncRequests           chan bool
 	stopCh                  chan struct{}
 	doneCh                  chan struct{}
 
@@ -180,17 +182,19 @@ type NativeRenderer struct {
 }
 
 type nativeVideoSample struct {
-	codec           string
-	data            []byte
-	packetTimestamp uint32
-	receiveAt       int64
+	codec             string
+	data              []byte
+	packetTimestamp   uint32
+	firstPacketReadAt int64
+	receiveAt         int64
 }
 
 type nativeDecodedSample struct {
-	frame           decodedFrame
-	packetTimestamp uint32
-	receiveAt       int64
-	decodeReadyAt   int64
+	frame             decodedFrame
+	packetTimestamp   uint32
+	firstPacketReadAt int64
+	receiveAt         int64
+	decodeReadyAt     int64
 }
 
 type vp8Decoder struct {
@@ -238,6 +242,7 @@ func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
 		streamResets:            make(chan string, 1),
 		resizeRequests:          make(chan nativeResizeRequest, 4),
 		snapshotRequests:        make(chan chan nativeSnapshotResult, 2),
+		vsyncRequests:           make(chan bool, 2),
 		stopCh:                  make(chan struct{}),
 		doneCh:                  make(chan struct{}),
 	}, nil
@@ -277,6 +282,29 @@ func (r *NativeRenderer) SetDebugCursor(enabled bool) {
 	r.mu.Lock()
 	r.debugCursor = enabled
 	r.mu.Unlock()
+}
+
+func (r *NativeRenderer) SetLowLatency(enabled bool) {
+	r.mu.Lock()
+	changed := r.lowLatency != enabled
+	r.lowLatency = enabled
+	r.mu.Unlock()
+	if !changed {
+		return
+	}
+
+	select {
+	case r.vsyncRequests <- !enabled:
+	default:
+		select {
+		case <-r.vsyncRequests:
+		default:
+		}
+		select {
+		case r.vsyncRequests <- !enabled:
+		default:
+		}
+	}
 }
 
 func (r *NativeRenderer) SetWindowSize(width, height int) error {
@@ -339,12 +367,36 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 }
 
 func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
-	sample := nativeVideoSample{
-		codec:           codec,
-		data:            append([]byte(nil), frame...),
-		packetTimestamp: packetTimestamp,
-		receiveAt:       benchmarkClockNowMs(),
+	return r.handleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, benchmarkClockNowMs())
+}
+
+func (r *NativeRenderer) handleVideoFrameWithTiming(codec string, frame []byte, packetTimestamp uint32, firstPacketReadAt int64, receiveAt int64) error {
+	if receiveAt <= 0 {
+		receiveAt = benchmarkClockNowMs()
 	}
+	if firstPacketReadAt <= 0 {
+		firstPacketReadAt = receiveAt
+	}
+	sample := nativeVideoSample{
+		codec:             codec,
+		data:              append([]byte(nil), frame...),
+		packetTimestamp:   packetTimestamp,
+		firstPacketReadAt: firstPacketReadAt,
+		receiveAt:         receiveAt,
+	}
+	r.mu.RLock()
+	lowLatency := r.lowLatency
+	r.mu.RUnlock()
+	if lowLatency {
+		for len(r.samples) >= 1 {
+			select {
+			case <-r.samples:
+			default:
+				goto enqueueSample
+			}
+		}
+	}
+enqueueSample:
 	select {
 	case r.samples <- sample:
 		return nil
@@ -489,8 +541,38 @@ func (r *NativeRenderer) processWindowRequests(window *sdl.Window, renderer *sdl
 		case response := <-r.snapshotRequests:
 			body, err := captureRendererPNG(renderer)
 			response <- nativeSnapshotResult{body: body, err: err}
+		case enabled := <-r.vsyncRequests:
+			if err := renderer.RenderSetVSync(enabled); err != nil {
+				log.Printf("failed to set SDL renderer vsync=%t: %v", enabled, err)
+			}
 		default:
 			return
+		}
+	}
+}
+
+func enqueueDecodedFrame(ch chan nativeDecodedSample, sample nativeDecodedSample, lowLatency bool) {
+	if lowLatency {
+		for len(ch) >= 1 {
+			select {
+			case <-ch:
+			default:
+				goto enqueueDecoded
+			}
+		}
+	}
+
+enqueueDecoded:
+	select {
+	case ch <- sample:
+	default:
+		select {
+		case <-ch:
+		default:
+		}
+		select {
+		case ch <- sample:
+		default:
 		}
 	}
 }
@@ -625,7 +707,15 @@ func (r *NativeRenderer) Run() error {
 		}
 	}
 
-	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
+	r.mu.RLock()
+	initialLowLatency := r.lowLatency
+	r.mu.RUnlock()
+	rendererFlags := uint32(sdl.RENDERER_ACCELERATED)
+	if !initialLowLatency {
+		rendererFlags |= sdl.RENDERER_PRESENTVSYNC
+	}
+
+	renderer, err := sdl.CreateRenderer(window, -1, rendererFlags)
 	if err != nil {
 		renderer, err = sdl.CreateRenderer(window, -1, sdl.RENDERER_SOFTWARE)
 		if err != nil {
@@ -793,15 +883,16 @@ func (r *NativeRenderer) Run() error {
 						continue
 					}
 					if frame.width > 0 && frame.height > 0 {
-						select {
-						case decodedFrames <- nativeDecodedSample{
-							frame:           frame,
-							packetTimestamp: sample.packetTimestamp,
-							receiveAt:       sample.receiveAt,
-							decodeReadyAt:   benchmarkClockNowMs(),
-						}:
-						default:
-						}
+						r.mu.RLock()
+						lowLatency := r.lowLatency
+						r.mu.RUnlock()
+						enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
+							frame:             frame,
+							packetTimestamp:   sample.packetTimestamp,
+							firstPacketReadAt: sample.firstPacketReadAt,
+							receiveAt:         sample.receiveAt,
+							decodeReadyAt:     benchmarkClockNowMs(),
+						}, lowLatency)
 					}
 				} else {
 					if av == nil {
@@ -823,15 +914,16 @@ func (r *NativeRenderer) Run() error {
 						continue
 					}
 					if frame.width > 0 && frame.height > 0 {
-						select {
-						case decodedFrames <- nativeDecodedSample{
-							frame:           frame,
-							packetTimestamp: sample.packetTimestamp,
-							receiveAt:       sample.receiveAt,
-							decodeReadyAt:   benchmarkClockNowMs(),
-						}:
-						default:
-						}
+						r.mu.RLock()
+						lowLatency := r.lowLatency
+						r.mu.RUnlock()
+						enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
+							frame:             frame,
+							packetTimestamp:   sample.packetTimestamp,
+							firstPacketReadAt: sample.firstPacketReadAt,
+							receiveAt:         sample.receiveAt,
+							decodeReadyAt:     benchmarkClockNowMs(),
+						}, lowLatency)
 					}
 				}
 			}
@@ -1108,6 +1200,7 @@ func (r *NativeRenderer) Run() error {
 				PacketTimestamp:    decoded.packetTimestamp,
 				Brightness:         brightness,
 				ProbeMarker:        probeMarker,
+				FirstPacketReadAt:  decoded.firstPacketReadAt,
 				ReceiveAt:          decoded.receiveAt,
 				DecodeReadyAt:      decoded.decodeReadyAt,
 				PresentationAt:     presentedAt,

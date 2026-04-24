@@ -320,6 +320,23 @@ func TestRollingPresentedFPSReturnsZeroWithoutEnoughRecentSamples(t *testing.T) 
 	}
 }
 
+func TestRollingPresentedFPSHandlesMonotonicPresentationClock(t *testing.T) {
+	t.Parallel()
+
+	now := time.UnixMilli(1_700_000_000_000)
+	samples := []LatencyBreakdown{
+		{PresentationAt: 9_934},
+		{PresentationAt: 9_950},
+		{PresentationAt: 9_967},
+		{PresentationAt: 9_984},
+		{PresentationAt: 10_000},
+	}
+
+	if fps := rollingPresentedFPS(now, samples); fps < 4 || fps > 6 {
+		t.Fatalf("expected rolling fps near 5 with monotonic presentation clock, got %d", fps)
+	}
+}
+
 func TestRollingVideoMbpsUsesRecentWindow(t *testing.T) {
 	t.Parallel()
 

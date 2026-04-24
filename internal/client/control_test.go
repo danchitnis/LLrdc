@@ -67,6 +67,41 @@ func TestControlServerLatencyEndpointWithoutSamples(t *testing.T) {
 	}
 }
 
+func TestControlServerLatencyEndpointIncludesTimingBreakdown(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	session.RecordPresentedFrame(NativeFramePresented{
+		Width:             1280,
+		Height:            720,
+		PacketTimestamp:   123,
+		ProbeMarker:       7,
+		FirstPacketReadAt: 1000,
+		ReceiveAt:         1007,
+		DecodeReadyAt:     1012,
+		PresentationAt:    1020,
+	})
+	server := NewControlServer("127.0.0.1:0", session, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/latencyz/latest", nil)
+	rec := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected /latencyz/latest status: got %d want %d", rec.Code, http.StatusOK)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal /latencyz/latest response: %v", err)
+	}
+	if got, _ := payload["firstPacketReadAt"].(float64); got != 1000 {
+		t.Fatalf("unexpected firstPacketReadAt: got %#v want 1000", payload["firstPacketReadAt"])
+	}
+	if got, _ := payload["receiveAt"].(float64); got != 1007 {
+		t.Fatalf("unexpected receiveAt: got %#v want 1007", payload["receiveAt"])
+	}
+}
+
 func TestControlServerReadyIncludesWindowLifecycleState(t *testing.T) {
 	t.Parallel()
 

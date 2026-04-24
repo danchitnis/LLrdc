@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
+	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
@@ -384,6 +385,9 @@ func (s *Session) Connect(serverURL string) error {
 	}
 
 	lowLatency, _ := initMsg["webrtc_low_latency"].(bool)
+	if toggler, ok := s.renderer.(LowLatencyRenderer); ok {
+		toggler.SetLowLatency(lowLatency)
+	}
 
 	i := &interceptor.Registry{}
 	if !lowLatency {
@@ -559,7 +563,7 @@ func (s *Session) Connect(serverURL string) error {
 			if resetter, ok := s.renderer.(VideoStreamResetter); ok {
 				resetter.ResetVideoStream(codec)
 			}
-			go s.consumeVideoTrack(pc, track)
+			go s.consumeVideoTrack(pc, track, lowLatency)
 			return
 		}
 		go s.consumeAudioTrack(track)
@@ -747,6 +751,7 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 		PacketTimestamp:    event.PacketTimestamp,
 		Brightness:         event.Brightness,
 		ProbeMarker:        event.ProbeMarker,
+		FirstPacketReadAt:  event.FirstPacketReadAt,
 		ReceiveAt:          event.ReceiveAt,
 		DecodeReadyAt:      event.DecodeReadyAt,
 		PresentationAt:     event.PresentationAt,
@@ -759,6 +764,7 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 		"packetTimestamp":       sample.PacketTimestamp,
 		"brightness":            sample.Brightness,
 		"probeMarker":           sample.ProbeMarker,
+		"firstPacketReadAt":     sample.FirstPacketReadAt,
 		"receiveAt":             sample.ReceiveAt,
 		"decodeReadyAt":         sample.DecodeReadyAt,
 		"presentationAt":        sample.PresentationAt,
@@ -1013,18 +1019,126 @@ func (s *Session) consumeBinaryVideoMessage(raw []byte) {
 	})
 }
 
-func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.TrackRemote) {
-	codecName := strings.ToLower(track.Codec().MimeType)
-	var builder *samplebuilder.SampleBuilder
+func videoSampleBuilderConfig(lowLatency bool) (uint16, time.Duration) {
+	if lowLatency {
+		return 8, 12 * time.Millisecond
+	}
+	return 256, 0
+}
+
+func newVideoSampleBuilder(codecName string, lowLatency bool) *samplebuilder.SampleBuilder {
+	maxLate, maxDelay := videoSampleBuilderConfig(lowLatency)
+	opts := make([]samplebuilder.Option, 0, 1)
+	if maxDelay > 0 {
+		opts = append(opts, samplebuilder.WithMaxTimeDelay(maxDelay))
+	}
 
 	if strings.Contains(codecName, "vp8") {
-		// Default samplebuilder for VP8
-		builder = samplebuilder.New(256, &codecs.VP8Packet{}, 90000)
-	} else if strings.Contains(codecName, "h264") {
-		builder = samplebuilder.New(256, &codecs.H264Packet{}, 90000)
-	} else if strings.Contains(codecName, "h265") || strings.Contains(codecName, "hevc") {
-		builder = samplebuilder.New(256, &codecs.H265Packet{}, 90000)
+		return samplebuilder.New(maxLate, &codecs.VP8Packet{}, 90000, opts...)
 	}
+	if strings.Contains(codecName, "h264") {
+		return samplebuilder.New(maxLate, &codecs.H264Packet{}, 90000, opts...)
+	}
+	if strings.Contains(codecName, "h265") || strings.Contains(codecName, "hevc") {
+		return samplebuilder.New(maxLate, &codecs.H265Packet{}, 90000, opts...)
+	}
+	return nil
+}
+
+type timedVideoFrameHandler interface {
+	handleVideoFrameWithTiming(codec string, frame []byte, packetTimestamp uint32, firstPacketReadAt int64, receiveAt int64) error
+}
+
+type vp8ULLFrame struct {
+	data              []byte
+	packetTimestamp   uint32
+	firstPacketReadAt int64
+}
+
+type vp8ULLAssembler struct {
+	active            bool
+	timestamp         uint32
+	nextSequence      uint16
+	firstPacketReadAt int64
+	frame             []byte
+}
+
+func (a *vp8ULLAssembler) reset() {
+	a.active = false
+	a.timestamp = 0
+	a.nextSequence = 0
+	a.firstPacketReadAt = 0
+	a.frame = nil
+}
+
+func (a *vp8ULLAssembler) start(packet *rtp.Packet, firstPacketReadAt int64, payload []byte) {
+	a.active = true
+	a.timestamp = packet.Timestamp
+	a.nextSequence = packet.SequenceNumber + 1
+	a.firstPacketReadAt = firstPacketReadAt
+	a.frame = append(a.frame[:0], payload...)
+}
+
+func (a *vp8ULLAssembler) push(packet *rtp.Packet, packetReadAt int64) (frame vp8ULLFrame, ready bool, dropped bool, err error) {
+	packetizer := &codecs.VP8Packet{}
+
+	if a.active && (packet.Timestamp != a.timestamp || packet.SequenceNumber != a.nextSequence) {
+		dropped = len(a.frame) > 0
+		a.reset()
+	}
+
+	if !packetizer.IsPartitionHead(packet.Payload) {
+		if !a.active {
+			return frame, false, dropped, fmt.Errorf("vp8 low-latency frame missing partition head")
+		}
+	}
+
+	payload, err := packetizer.Unmarshal(packet.Payload)
+	if err != nil {
+		a.reset()
+		return frame, false, true, err
+	}
+
+	if !a.active {
+		a.start(packet, packetReadAt, payload)
+	} else {
+		a.nextSequence = packet.SequenceNumber + 1
+		a.frame = append(a.frame, payload...)
+	}
+
+	if !packet.Marker {
+		return frame, false, dropped, nil
+	}
+
+	frame = vp8ULLFrame{
+		data:              append([]byte(nil), a.frame...),
+		packetTimestamp:   a.timestamp,
+		firstPacketReadAt: a.firstPacketReadAt,
+	}
+	a.reset()
+	return frame, true, dropped, nil
+}
+
+func shouldUseVP8ULLAssembler(codecName string, lowLatency bool) bool {
+	return lowLatency && strings.Contains(codecName, "vp8")
+}
+
+func (s *Session) requestVideoKeyframe() {
+	s.renderer.RequestKeyframe()
+	select {
+	case s.keyframeRequests <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.TrackRemote, lowLatency bool) {
+	codecName := strings.ToLower(track.Codec().MimeType)
+	useVP8ULLAssembler := shouldUseVP8ULLAssembler(codecName, lowLatency)
+	builder := newVideoSampleBuilder(codecName, lowLatency)
+	if useVP8ULLAssembler {
+		builder = nil
+	}
+	var vp8Assembler vp8ULLAssembler
 	stopKeyframeRequests := make(chan struct{})
 	var stopKeyframeOnce sync.Once
 	stopKeyframe := func() {
@@ -1032,7 +1146,7 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 			close(stopKeyframeRequests)
 		})
 	}
-	if builder != nil && pc != nil {
+	if pc != nil {
 		go requestInitialKeyframes(pc, uint32(track.SSRC()), stopKeyframeRequests)
 
 		go func() {
@@ -1050,6 +1164,7 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 		}()
 	}
 	defer stopKeyframe()
+	firstPacketReadAtByTimestamp := make(map[uint32]int64)
 
 	for {
 		packet, _, err := track.ReadRTP()
@@ -1067,9 +1182,44 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 		s.mu.Unlock()
 
 		if builder == nil {
+			if !useVP8ULLAssembler {
+				continue
+			}
+			packetReadAt := benchmarkClockNowMs()
+			frame, ready, dropped, err := vp8Assembler.push(packet, packetReadAt)
+			if dropped || err != nil {
+				s.requestVideoKeyframe()
+			}
+			if err != nil || !ready {
+				continue
+			}
+
+			s.mu.Lock()
+			s.stats.VideoFrames++
+			s.state.LastVideoFrameAt = time.Now()
+			s.mu.Unlock()
+			if shouldStopInitialKeyframeRequests(track.Codec().MimeType, frame.data) {
+				stopKeyframe()
+			}
+
+			if timedRenderer, ok := s.renderer.(timedVideoFrameHandler); ok {
+				if err := timedRenderer.handleVideoFrameWithTiming(track.Codec().MimeType, frame.data, frame.packetTimestamp, frame.firstPacketReadAt, packetReadAt); err != nil {
+					s.setError(err)
+				}
+			} else if err := s.renderer.HandleVideoFrame(track.Codec().MimeType, frame.data, frame.packetTimestamp); err != nil {
+				s.setError(err)
+			}
+
+			s.emit(EventFrame, map[string]any{
+				"codec":           track.Codec().MimeType,
+				"packetTimestamp": frame.packetTimestamp,
+				"size":            len(frame.data),
+				"droppedPackets":  map[bool]int{false: 0, true: 1}[dropped],
+			})
 			continue
 		}
 
+		firstPacketReadAtByTimestamp[packet.Timestamp] = minPositiveTime(firstPacketReadAtByTimestamp[packet.Timestamp], benchmarkClockNowMs())
 		builder.Push(packet)
 		for sample := builder.Pop(); sample != nil; sample = builder.Pop() {
 			s.mu.Lock()
@@ -1080,7 +1230,14 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 				stopKeyframe()
 			}
 
-			if err := s.renderer.HandleVideoFrame(track.Codec().MimeType, sample.Data, sample.PacketTimestamp); err != nil {
+			firstPacketReadAt := firstPacketReadAtByTimestamp[sample.PacketTimestamp]
+			delete(firstPacketReadAtByTimestamp, sample.PacketTimestamp)
+			sampleReadyAt := benchmarkClockNowMs()
+			if timedRenderer, ok := s.renderer.(timedVideoFrameHandler); ok {
+				if err := timedRenderer.handleVideoFrameWithTiming(track.Codec().MimeType, sample.Data, sample.PacketTimestamp, firstPacketReadAt, sampleReadyAt); err != nil {
+					s.setError(err)
+				}
+			} else if err := s.renderer.HandleVideoFrame(track.Codec().MimeType, sample.Data, sample.PacketTimestamp); err != nil {
 				s.setError(err)
 			}
 
@@ -1100,6 +1257,16 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 			})
 		}
 	}
+}
+
+func minPositiveTime(current int64, candidate int64) int64 {
+	if current <= 0 {
+		return candidate
+	}
+	if candidate <= 0 || candidate > current {
+		return current
+	}
+	return candidate
 }
 
 func shouldStopInitialKeyframeRequests(codec string, frame []byte) bool {

@@ -78,6 +78,58 @@ func TestSDLScancodeToDOM(t *testing.T) {
 	}
 }
 
+func TestHandleVideoFrameLowLatencyKeepsNewestSample(t *testing.T) {
+	t.Parallel()
+
+	renderer, err := NewNativeRenderer(NativeRendererOptions{})
+	if err != nil {
+		t.Fatalf("NewNativeRenderer returned error: %v", err)
+	}
+	defer renderer.Close()
+
+	nativeRenderer, ok := renderer.(*NativeRenderer)
+	if !ok {
+		t.Fatalf("unexpected renderer type %T", renderer)
+	}
+
+	nativeRenderer.SetLowLatency(true)
+	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x01}, 1, 100, 110); err != nil {
+		t.Fatalf("first handleVideoFrameWithTiming returned error: %v", err)
+	}
+	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x02}, 2, 200, 210); err != nil {
+		t.Fatalf("second handleVideoFrameWithTiming returned error: %v", err)
+	}
+
+	if got := len(nativeRenderer.samples); got != 1 {
+		t.Fatalf("unexpected sample queue length: got %d want 1", got)
+	}
+
+	sample := <-nativeRenderer.samples
+	if sample.packetTimestamp != 2 {
+		t.Fatalf("unexpected queued packet timestamp: got %d want 2", sample.packetTimestamp)
+	}
+	if sample.firstPacketReadAt != 200 || sample.receiveAt != 210 {
+		t.Fatalf("unexpected queued timing: %+v", sample)
+	}
+}
+
+func TestEnqueueDecodedFrameLowLatencyKeepsNewest(t *testing.T) {
+	t.Parallel()
+
+	decodedFrames := make(chan nativeDecodedSample, 2)
+	enqueueDecodedFrame(decodedFrames, nativeDecodedSample{packetTimestamp: 1}, true)
+	enqueueDecodedFrame(decodedFrames, nativeDecodedSample{packetTimestamp: 2}, true)
+
+	if got := len(decodedFrames); got != 1 {
+		t.Fatalf("unexpected decoded queue length: got %d want 1", got)
+	}
+
+	decoded := <-decodedFrames
+	if decoded.packetTimestamp != 2 {
+		t.Fatalf("unexpected decoded frame timestamp: got %d want 2", decoded.packetTimestamp)
+	}
+}
+
 func TestNativeRendererInputs(t *testing.T) {
 	// This test requires a headed environment or a virtual framebuffer (XVFB)
 	// because it initializes SDL video and creating a window.

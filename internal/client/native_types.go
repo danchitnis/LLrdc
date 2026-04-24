@@ -20,6 +20,10 @@ type VideoStreamResetter interface {
 	ResetVideoStream(codec string)
 }
 
+type LowLatencyRenderer interface {
+	SetLowLatency(enabled bool)
+}
+
 type WebSocketVideoFallbackProvider interface {
 	SupportsWebSocketVideoFallback() bool
 }
@@ -62,6 +66,7 @@ type NativeFramePresented struct {
 	PacketTimestamp       uint32
 	Brightness            int
 	ProbeMarker           int
+	FirstPacketReadAt     int64
 	ReceiveAt             int64
 	DecodeReadyAt         int64
 	PresentationAt        int64
@@ -73,6 +78,7 @@ type LatencyBreakdown struct {
 	PacketTimestamp       uint32 `json:"packetTimestamp"`
 	Brightness            int    `json:"brightness"`
 	ProbeMarker           int    `json:"probeMarker,omitempty"`
+	FirstPacketReadAt     int64  `json:"firstPacketReadAt,omitempty"`
 	ReceiveAt             int64  `json:"receiveAt"`
 	DecodeReadyAt         int64  `json:"decodeReadyAt"`
 	PresentationAt        int64  `json:"presentationAt"`

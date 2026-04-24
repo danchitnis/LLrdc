@@ -1452,11 +1452,29 @@ func rollingLatencyMs(now time.Time, samples []LatencyBreakdown) float64 {
 	return sum / float64(count)
 }
 
+func latencySampleReferenceMs(now time.Time, samples []LatencyBreakdown) int64 {
+	nowMs := now.UnixMilli()
+	if len(samples) == 0 {
+		return nowMs
+	}
+
+	last := samples[len(samples)-1].PresentationAt
+	if last <= 0 {
+		return nowMs
+	}
+
+	const maxExpectedClockSkewMs = int64(60 * 60 * 1000)
+	if delta := nowMs - last; delta > maxExpectedClockSkewMs || delta < -maxExpectedClockSkewMs {
+		return last
+	}
+	return nowMs
+}
+
 func latencySamplesInWindow(now time.Time, samples []LatencyBreakdown) []LatencyBreakdown {
 	if len(samples) == 0 {
 		return nil
 	}
-	cutoff := now.UnixMilli() - statsMetricWindowMs
+	cutoff := latencySampleReferenceMs(now, samples) - statsMetricWindowMs
 	start := 0
 	for start < len(samples) && samples[start].PresentationAt <= cutoff {
 		start++

@@ -208,13 +208,13 @@ collect_results() {
   local client_state
   client_state="$(read_client_state)"
   cat >"${RESULTS_TSV}" <<'EOF'
-marker	control_req	render	encode	transit	client	total
+marker	control_req	render	encode	network	assemble	client	total
 EOF
   {
     echo "--------------------------------------------------------------------------------------------------------------------------"
     echo " Native Linux Latency Bench (Control API -> Native Present, Monotonic Clock)"
     echo "--------------------------------------------------------------------------------------------------------------------------"
-    echo " Marker | Ctrl->Req | Render | Encode | Transit | Client | Total E2E | Present"
+    echo " Marker | Ctrl->Req | Render | Encode | Network | Assemble | Client | Total E2E | Present"
     echo "--------------------------------------------------------------------------------------------------------------------------"
   } | tee "${REPORT_TXT}"
   for marker in "${MEASURED_MARKERS[@]}"; do
@@ -242,33 +242,35 @@ EOF
       exit 1
     fi
     
-    local c_rec c_pre
+    local c_pkt c_rec c_pre
+    c_pkt=$(printf '%s' "${sample}" | jq -r 'if (.firstPacketReadAt // 0) > 0 then .firstPacketReadAt else (.receiveAt // 0) end')
     c_rec=$(printf '%s' "${sample}" | jq -r '.receiveAt // 0')
     c_pre=$(printf '%s' "${sample}" | jq -r 'if (.compositorPresentedAt // 0) > 0 then .compositorPresentedAt else .presentationAt end')
 
-    if (( s_t0 <= 0 || s_t1 <= 0 || s_t2 <= 0 || s_t3 <= 0 || c_rec <= 0 || c_pre <= 0 )); then
+    if (( s_t0 <= 0 || s_t1 <= 0 || s_t2 <= 0 || s_t3 <= 0 || c_pkt <= 0 || c_rec <= 0 || c_pre <= 0 )); then
       echo "❌ Invalid zero timestamp for marker ${marker}" >&2
       exit 1
     fi
-    if ! (( s_t0 <= s_t1 && s_t1 <= s_t2 && s_t2 <= s_t3 && s_t3 <= c_rec && c_rec <= c_pre )); then
+    if ! (( s_t0 <= s_t1 && s_t1 <= s_t2 && s_t2 <= s_t3 && s_t3 <= c_pkt && c_pkt <= c_rec && c_rec <= c_pre )); then
       echo "❌ Non-monotonic latency trace for marker ${marker}" >&2
-      echo "    T0=${s_t0} T1=${s_t1} T2=${s_t2} T3=${s_t3} Rec=${c_rec} Pre=${c_pre}" >&2
+      echo "    T0=${s_t0} T1=${s_t1} T2=${s_t2} T3=${s_t3} Pkt=${c_pkt} Rec=${c_rec} Pre=${c_pre}" >&2
       exit 1
     fi
 
-    local control_req render encode transit client total
+    local control_req render encode network assemble client total
     control_req=$((s_t1 - s_t0))
     render=$((s_t2 - s_t1))
     encode=$((s_t3 - s_t2))
-    transit=$((c_rec - s_t3))
+    network=$((c_pkt - s_t3))
+    assemble=$((c_rec - c_pkt))
     client=$((c_pre - c_rec))
     total=$((c_pre - s_t0))
 
-    printf " %6s | %9d | %6d | %6d | %7d | %6d | %9d | %s\n" \
-      "${marker}" "${control_req}" "${render}" "${encode}" "${transit}" "${client}" "${total}" \
+    printf " %6s | %9d | %6d | %6d | %7d | %8d | %6d | %9d | %s\n" \
+      "${marker}" "${control_req}" "${render}" "${encode}" "${network}" "${assemble}" "${client}" "${total}" \
       "$(printf '%s' "${sample}" | jq -r '.presentationSource // "render_present"')" | tee -a "${REPORT_TXT}"
     
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${marker}" "${control_req}" "${render}" "${encode}" "${transit}" "${client}" "${total}" >>"${RESULTS_TSV}"
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "${marker}" "${control_req}" "${render}" "${encode}" "${network}" "${assemble}" "${client}" "${total}" >>"${RESULTS_TSV}"
   done
 }
 

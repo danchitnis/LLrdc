@@ -268,7 +268,6 @@ func broadcastJSON(msg interface{}) {
 
 func broadcastVideoFrame(frame []byte, streamID uint32, codec string) {
 	captureTime := time.Now()
-	recordLatencyProbeFrame(benchmarkClockNowMs())
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
 	webrtcCopy := make([]byte, len(frame))
 	copy(webrtcCopy, frame)

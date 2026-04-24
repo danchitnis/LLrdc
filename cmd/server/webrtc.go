@@ -130,6 +130,8 @@ func writeFrameToTrack(frame WebRTCFrame) {
 	}
 	lastCaptureTime = frame.CaptureTime
 
+	recordLatencyProbeFrame(benchmarkClockNowMs())
+
 	// Send the current frame immediately
 	err := vt.WriteSample(media.Sample{
 		Data:     frame.Data,

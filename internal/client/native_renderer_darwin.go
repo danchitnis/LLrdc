@@ -165,6 +165,8 @@ func (r *NativeRenderer) SetDebugCursor(enabled bool) {
 	C.llrdc_set_debug_cursor(C.int(boolToInt(enabled)))
 }
 
+func (r *NativeRenderer) SetLowLatency(_ bool) {}
+
 func (r *NativeRenderer) SetWindowSize(width, height int) error {
 	if width <= 0 || height <= 0 {
 		return fmt.Errorf("invalid window size %dx%d", width, height)
@@ -413,11 +415,12 @@ func llrdc_present_callback(idPtr unsafe.Pointer, width C.int, height C.int, ts 
 	}
 	now := benchmarkClockNowMs()
 	r.emitPresent(NativeFramePresented{
-		Width:           int(width),
-		Height:          int(height),
-		PacketTimestamp: uint32(ts),
-		ReceiveAt:       now,
-		DecodeReadyAt:   now,
-		PresentationAt:  now,
+		Width:             int(width),
+		Height:            int(height),
+		PacketTimestamp:   uint32(ts),
+		FirstPacketReadAt: now,
+		ReceiveAt:         now,
+		DecodeReadyAt:     now,
+		PresentationAt:    now,
 	})
 }
