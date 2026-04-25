@@ -96,9 +96,7 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     const isGpu = codec.includes('nvenc') || codec.includes('qsv');
     const displayCodec = codec.replace('_nvenc', '').replace('_qsv', '');
     const gpuTag = isGpu ? ' 🚀 GPU' : '';
-    
-    const transportInfo = isWebRtcActive ? `[WebRTC ${displayCodec}${gpuTag}]` : `[WebCodecs ${displayCodec}${gpuTag}]`;
-    const resInfo = (width > 0 && height > 0) ? ` | Res: ${width}x${height}` : '';
+    const transport = isWebRtcActive ? 'WebRTC' : 'WebCodecs';
     
     // Change color based on latency
     let color = '#4f4'; // Green
@@ -118,7 +116,7 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     
     // Condensed labels
     const displayRes = (width > 0 && height > 0) ? `${width}x${height} | ` : '';
-    let statsText = `[${displayCodec}${gpuTag}] ${displayRes}${fps} FPS | Lat: ${Math.round(latencyMonitor)}ms | Ping: ${Math.round(networkLatency)}ms | BW: ${bandwidthMbps.toFixed(1)}Mb | CPU: ${Math.round(serverFfmpegCpu)}%`;
+    let statsText = `[${transport} ${displayCodec}${gpuTag}] [${displayCodec}${gpuTag}] ${displayRes}FPS: ${fps} | Lat: ${Math.round(latencyMonitor)}ms | Ping: ${Math.round(networkLatency)}ms | BW: ${bandwidthMbps.toFixed(1)}Mb | CPU: ${Math.round(serverFfmpegCpu)}%`;
     
     if (acceleratorMode === 'intel') {
         statsText += ` | Enc: ${Math.round(serverIntelGpuUtil)}%`;

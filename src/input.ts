@@ -9,7 +9,6 @@ export function setupInput(sendMsg: (data: string) => void) {
         }
     };
 
-    let pointerOverCanvas = false;
     let pressedButton: number | null = null;
 
     const isWithinDisplayContainer = (e: MouseEvent): boolean => {
@@ -63,8 +62,6 @@ export function setupInput(sendMsg: (data: string) => void) {
 
     const forwardMouseMove = (e: MouseEvent) => {
         const withinDisplay = isWithinDisplayContainer(e);
-        pointerOverCanvas = withinDisplay;
-
         if (!withinDisplay && pressedButton === null) {
             return;
         }
@@ -80,11 +77,7 @@ export function setupInput(sendMsg: (data: string) => void) {
     };
 
     overlayEl.addEventListener('mouseenter', () => {
-        pointerOverCanvas = true;
         focusOverlay();
-    });
-    overlayEl.addEventListener('mouseleave', () => {
-        pointerOverCanvas = false;
     });
     window.addEventListener('mousemove', forwardMouseMove, true);
 
@@ -94,7 +87,6 @@ export function setupInput(sendMsg: (data: string) => void) {
 
     overlayEl.addEventListener('mousedown', (e: MouseEvent) => {
         pressedButton = e.button;
-        pointerOverCanvas = true;
         focusOverlay();
         const pos = getNormalizedPos(e);
         if (pos) {

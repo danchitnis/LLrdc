@@ -13,12 +13,20 @@ IMAGE_TAG="${IMAGE_TAG:-latest}"
 DOCKERFILE="Dockerfile"
 ENABLE_INTEL="false"
 BUILD_VARIANT="cpu"
+USE_DRY_RUN="false"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "${SCRIPT_DIR}/scripts/docker/common.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --intel)
       ENABLE_INTEL="true"
       BUILD_VARIANT="intel"
+      shift
+      ;;
+    --dry-run)
+      USE_DRY_RUN="true"
       shift
       ;;
     --tag)
@@ -42,19 +50,27 @@ if [ "${ENABLE_INTEL}" = "true" ] && [ "${IMAGE_TAG_EXPLICIT}" = "false" ]; then
   IMAGE_TAG="intel"
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 echo "▶ Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "  Dockerfile: ${DOCKERFILE}"
 echo "  Context: ${SCRIPT_DIR}"
 echo "  Variant: ${BUILD_VARIANT}"
 
-docker build \
-  -f "${DOCKERFILE}" \
-  --build-arg UID=$(id -u) \
-  --build-arg ENABLE_INTEL="${ENABLE_INTEL}" \
-  --build-arg BUILD_VARIANT="${BUILD_VARIANT}" \
-  --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
+DOCKER_BUILD_CMD=(
+  docker build
+  -f "${DOCKERFILE}"
+  --build-arg "UID=$(id -u)"
+  --build-arg "ENABLE_INTEL=${ENABLE_INTEL}"
+  --build-arg "BUILD_VARIANT=${BUILD_VARIANT}"
+  --tag "${IMAGE_NAME}:${IMAGE_TAG}"
   "${SCRIPT_DIR}"
+)
+
+if [ "$USE_DRY_RUN" = "true" ]; then
+  echo "Dry run command:"
+  print_command "${DOCKER_BUILD_CMD[@]}"
+  exit 0
+fi
+
+"${DOCKER_BUILD_CMD[@]}"
 
 echo "✅ Build complete: ${IMAGE_NAME}:${IMAGE_TAG}"

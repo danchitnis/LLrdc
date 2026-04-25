@@ -1,10 +1,14 @@
-import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, configBtn, configDropdown, targetTypeRadios, qualitySlider, qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, overlayEl, configTabBtns, cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, directBufferStatusEl, clientGpuCheckbox, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode, videoEl, sharpnessLayerEl, sharpnessCtx } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, cpuEffortSlider, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode, videoEl } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
 import { setupInput } from './input';
 import { BrowserClientSession } from './client/session';
 import type { ConfigMessage } from './client/types';
+import { normalizeCodecFamily } from './client/protocol';
+import { updateDirectBufferUi } from './direct-buffer-ui';
+import { handleDisplayEffectMessage } from './display-effects';
+import { updateHybridSlidersState, wireConfigControls } from './config-controls';
 
 export { };
 
@@ -41,367 +45,144 @@ setupInput((data) => {
 });
 
 let configDebounceTimer: number | null = null;
+let deferredConfigTimer: number | null = null;
 let currentHdpi = 100;
 let hasReceivedInitialConfig = false;
 let pendingHdpi: number | null = null;
 let pendingMaxRes: number | null = null;
 
-function updateDirectBufferUi(msg: Record<string, unknown>) {
-    const captureMode = typeof msg.captureMode === 'string' ? msg.captureMode : 'compat';
-    const directRequested = msg.directBufferRequested === true;
-    const directSupported = msg.directBufferSupported === true;
-    const directActive = msg.directBufferActive === true;
-    const directReason = typeof msg.directBufferReason === 'string' ? msg.directBufferReason : '';
-
-    if (directBufferStatusEl) {
-        if (!directRequested || captureMode !== 'direct') {
-            directBufferStatusEl.textContent = 'Compat mode';
-        } else if (directActive) {
-            directBufferStatusEl.textContent = 'Active';
-        } else if (directSupported) {
-            directBufferStatusEl.textContent = 'Supported, waiting for hardware capture';
-        } else {
-            directBufferStatusEl.textContent = 'Unavailable';
-        }
-        directBufferStatusEl.title = directReason || 'Read-only startup status for DMA-BUF direct capture';
-    }
-
-    if (videoCodecSelect) {
-        Array.from(videoCodecSelect.options).forEach(option => {
-            if (captureMode === 'direct') {
-                const isHardware = option.value.endsWith('_nvenc') || option.value.endsWith('_qsv') || option.value.endsWith('_vaapi');
-                option.disabled = !isHardware;
-            } else {
-                option.disabled = false;
-            }
-        });
-    }
-
-    if (chromaCheckbox) {
-        if (captureMode === 'direct') {
-            chromaCheckbox.checked = false;
-            chromaCheckbox.disabled = true;
-            if (chromaCheckbox.parentElement) {
-                chromaCheckbox.parentElement.style.opacity = '0.5';
-                chromaCheckbox.parentElement.title = 'Direct capture mode currently requires YUV 4:2:0';
-            }
-        } else if (chromaCheckbox.parentElement) {
-            chromaCheckbox.parentElement.style.opacity = '1';
-            chromaCheckbox.parentElement.title = 'Improve text clarity by avoiding chroma subsampling (H.264/H.265/AV1 only)';
-        }
-    }
-}
-
 function sendConfig() {
     if (isReinitializingWebRTC) {
+        if (deferredConfigTimer) {
+            window.clearTimeout(deferredConfigTimer);
+        }
+        deferredConfigTimer = window.setTimeout(() => {
+            deferredConfigTimer = null;
+            sendConfig();
+        }, 250);
         return;
+    }
+    if (deferredConfigTimer) {
+        window.clearTimeout(deferredConfigTimer);
+        deferredConfigTimer = null;
     }
     if (configDebounceTimer) {
         clearTimeout(configDebounceTimer);
     }
+
+    const config = buildConfigMessage();
     
     configDebounceTimer = window.setTimeout(() => {
-        let target = 'bandwidth';
-        for (const radio of targetTypeRadios) {
-            if (radio.checked) {
-                target = radio.value;
-                break;
-            }
-        }
-
-        const config: ConfigMessage = { type: 'config' };
-        if (target === 'bandwidth') {
-            config.bandwidth = parseInt(bandwidthSelect.value, 10);
-        } else {
-            config.quality = parseInt(qualitySlider.value, 10);
-        }
-        config.framerate = parseInt(framerateSelect.value, 10);
-        if (hdpiSelect) {
-            config.hdpi = parseInt(hdpiSelect.value, 10);
-        }
-        if (maxResSelect) {
-            config.max_res = parseInt(maxResSelect.value, 10);
-        }
-        if (vbrCheckbox) {
-            config.vbr = vbrCheckbox.checked;
-        }
-        if (vbrThresholdSlider) {
-            config.vbr_threshold = parseInt(vbrThresholdSlider.value, 10);
-        }
-        if (damageTrackingCheckbox) {
-            config.damageTracking = damageTrackingCheckbox.checked;
-        }
-        if (mpdecimateCheckbox) {
-            config.mpdecimate = mpdecimateCheckbox.checked;
-        }
-        if (keyframeIntervalSelect) {
-            config.keyframe_interval = parseInt(keyframeIntervalSelect.value, 10);
-        }
-        if (cpuEffortSlider) {
-            config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
-        }
-        if (cpuThreadsSelect) {
-            config.cpu_threads = parseInt(cpuThreadsSelect.value, 10);
-        }
-        if (desktopMouseCheckbox) {
-            config.enable_desktop_mouse = desktopMouseCheckbox.checked;
-        }
-
-        if (chromaCheckbox) {
-            config.chroma = chromaCheckbox.checked ? '444' : '420';
-        }
-
-        if (hybridCheckbox) {
-            config.enable_hybrid = hybridCheckbox.checked;
-        }
-
-        if (settleSlider) {
-            config.settle_time = parseInt(settleSlider.value, 10);
-        }
-
-        if (tileSizeSlider) {
-            config.tile_size = parseInt(tileSizeSlider.value, 10);
-        }
-
-        if (videoCodecSelect) {
-            config.videoCodec = videoCodecSelect.value;
-        }
-
-        if (enableAudioCheckbox) {
-            config.enable_audio = enableAudioCheckbox.checked;
-        }
-
-        if (audioBitrateSelect) {
-            config.audio_bitrate = audioBitrateSelect.value;
-        }
-
-        if (webrtcBufferSlider) {
-            config.webrtc_buffer = parseInt(webrtcBufferSlider.value, 10);
-        }
-
-        if (nvencLatencyCheckbox) {
-            config.nvenc_latency = nvencLatencyCheckbox.checked;
-        }
-
-        if (webrtcLowLatencyCheckbox) {
-            config.webrtc_low_latency = webrtcLowLatencyCheckbox.checked;
-        }
-
-        if (activityHzSlider) {
-            config.activity_hz = parseInt(activityHzSlider.value, 10);
-        }
-
-        if (activityTimeoutSlider) {
-            config.activity_timeout = parseInt(activityTimeoutSlider.value, 10);
-        }
-
         session.sendConfig(config);
         configDebounceTimer = null;
     }, 100);
 }
 
-if (configBtn && configDropdown) {
-    configBtn.addEventListener('click', () => {
-        configDropdown.classList.toggle('hidden');
-    });
-}
-
-for (const radio of targetTypeRadios) {
-    radio.addEventListener('change', () => {
-        const isBandwidth = radio.value === 'bandwidth';
-        bandwidthSelect.disabled = !isBandwidth;
-        if (vbrCheckbox) vbrCheckbox.disabled = !isBandwidth;
-        qualitySlider.disabled = isBandwidth;
-        sendConfig();
-    });
-}
-
-if (bandwidthSelect) {
-    bandwidthSelect.addEventListener('change', sendConfig);
-}
-
-if (vbrCheckbox) {
-    vbrCheckbox.addEventListener('change', () => {
-        if (vbrThresholdGroup) vbrThresholdGroup.style.display = vbrCheckbox.checked ? 'flex' : 'none';
-        sendConfig();
-    });
-}
-
-if (vbrThresholdSlider && vbrThresholdValue) {
-    vbrThresholdSlider.addEventListener('input', (e) => {
-        vbrThresholdValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    vbrThresholdSlider.addEventListener('change', sendConfig);
-}
-
-if (damageTrackingCheckbox) {
-    damageTrackingCheckbox.addEventListener('change', sendConfig);
-}
-
-if (mpdecimateCheckbox) {
-    mpdecimateCheckbox.addEventListener('change', sendConfig);
-}
-
-function updateHybridSlidersState() {
-    if (hybridCheckbox) {
-        if (settleSlider) settleSlider.disabled = !hybridCheckbox.checked;
-        if (tileSizeSlider) tileSizeSlider.disabled = !hybridCheckbox.checked;
-    }
-}
-
-if (hybridCheckbox) {
-    hybridCheckbox.addEventListener('change', () => {
-        updateHybridSlidersState();
-        sendConfig();
-    });
-    updateHybridSlidersState();
-}
-
-if (settleSlider && settleValue) {
-    settleSlider.addEventListener('input', (e) => {
-        settleValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    settleSlider.addEventListener('change', sendConfig);
-}
-
-if (tileSizeSlider && tileSizeValue) {
-    tileSizeSlider.addEventListener('input', (e) => {
-        tileSizeValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    tileSizeSlider.addEventListener('change', sendConfig);
-}
-
-if (chromaCheckbox) {
-    chromaCheckbox.addEventListener('change', sendConfig);
-}
-
-if (keyframeIntervalSelect) {
-    keyframeIntervalSelect.addEventListener('change', sendConfig);
-}
-
-if (qualitySlider && qualityValue) {
-    qualitySlider.addEventListener('input', (e) => {
-        qualityValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    qualitySlider.addEventListener('change', sendConfig);
-}
-
-if (framerateSelect) {
-    framerateSelect.addEventListener('change', sendConfig);
-}
-
-if (hdpiSelect) {
-    hdpiSelect.addEventListener('change', () => {
-        pendingHdpi = parseInt(hdpiSelect.value, 10);
-        sendConfig();
-    });
-}
-
-if (maxResSelect) {
-    maxResSelect.addEventListener('change', () => {
-        pendingMaxRes = parseInt(maxResSelect.value, 10);
-        sendConfig();
-        scheduleResize();
-    });
-}
-
-if (configTabBtns) {
-    configTabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            // Remove active class from all buttons and content
-            configTabBtns.forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.config-tab-content').forEach(c => {
-                (c as HTMLElement).style.display = 'none';
-                c.classList.remove('active');
-            });
-
-            // Add active class to clicked button and target content
-            btn.classList.add('active');
-            const targetId = btn.getAttribute('data-tab');
-            if (targetId) {
-                const targetContent = document.getElementById(targetId);
-                if (targetContent) {
-                    targetContent.style.display = 'flex';
-                    targetContent.classList.add('active');
-                }
-            }
-        });
-    });
-}
-
-if (cpuEffortSlider && cpuEffortValue) {
-    cpuEffortSlider.addEventListener('input', (e) => {
-        cpuEffortValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    cpuEffortSlider.addEventListener('change', sendConfig);
-}
-
-if (cpuThreadsSelect) {
-    cpuThreadsSelect.addEventListener('change', sendConfig);
-}
-
-if (webrtcBufferSlider && webrtcBufferValue) {
-    webrtcBufferSlider.addEventListener('input', (e) => {
-        webrtcBufferValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    webrtcBufferSlider.addEventListener('change', sendConfig);
-}
-
-if (nvencLatencyCheckbox) {
-    nvencLatencyCheckbox.addEventListener('change', sendConfig);
-}
-
-if (webrtcLowLatencyCheckbox) {
-    webrtcLowLatencyCheckbox.addEventListener('change', sendConfig);
-}
-
-if (desktopMouseCheckbox) {
-    desktopMouseCheckbox.addEventListener('change', sendConfig);
-}
-
-if (activityHzSlider && activityHzValue) {
-    activityHzSlider.addEventListener('input', (e) => {
-        activityHzValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    activityHzSlider.addEventListener('change', sendConfig);
-}
-
-if (activityTimeoutSlider && activityTimeoutValue) {
-    activityTimeoutSlider.addEventListener('input', (e) => {
-        activityTimeoutValue.textContent = (e.target as HTMLInputElement).value;
-    });
-    activityTimeoutSlider.addEventListener('change', sendConfig);
-}
-
-if (clipboardCheckbox) {
-    clipboardCheckbox.addEventListener('change', () => {
-
-    });
-}
-
-if (enableAudioCheckbox) {
-    enableAudioCheckbox.addEventListener('change', sendConfig);
-}
-
-if (audioBitrateSelect) {
-    audioBitrateSelect.addEventListener('change', sendConfig);
-}
-
-if (videoCodecSelect) {
-    videoCodecSelect.addEventListener('change', () => {
-        if (cpuEffortSlider) {
-            cpuEffortSlider.disabled = videoCodecSelect.value !== 'vp8';
+function buildConfigMessage(): ConfigMessage {
+    let target = 'bandwidth';
+    for (const radio of targetTypeRadios) {
+        if (radio.checked) {
+            target = radio.value;
+            break;
         }
-        sendConfig();
-    });
+    }
+
+    const config: ConfigMessage = { type: 'config' };
+    if (target === 'bandwidth') {
+        config.bandwidth = parseInt(bandwidthSelect.value, 10);
+    } else {
+        config.quality = parseInt(qualitySlider.value, 10);
+    }
+    config.framerate = parseInt(framerateSelect.value, 10);
+    if (hdpiSelect) {
+        config.hdpi = parseInt(hdpiSelect.value, 10);
+    }
+    if (maxResSelect) {
+        config.max_res = parseInt(maxResSelect.value, 10);
+    }
+    if (vbrCheckbox) {
+        config.vbr = vbrCheckbox.checked;
+    }
+    if (vbrThresholdSlider) {
+        config.vbr_threshold = parseInt(vbrThresholdSlider.value, 10);
+    }
+    if (damageTrackingCheckbox) {
+        config.damageTracking = damageTrackingCheckbox.checked;
+    }
+    if (mpdecimateCheckbox) {
+        config.mpdecimate = mpdecimateCheckbox.checked;
+    }
+    if (keyframeIntervalSelect) {
+        config.keyframe_interval = parseInt(keyframeIntervalSelect.value, 10);
+    }
+    if (cpuEffortSlider) {
+        config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
+    }
+    if (cpuThreadsSelect) {
+        config.cpu_threads = parseInt(cpuThreadsSelect.value, 10);
+    }
+    if (desktopMouseCheckbox) {
+        config.enable_desktop_mouse = desktopMouseCheckbox.checked;
+    }
+
+    if (chromaCheckbox) {
+        config.chroma = chromaCheckbox.checked ? '444' : '420';
+    }
+
+    if (hybridCheckbox) {
+        config.enable_hybrid = hybridCheckbox.checked;
+    }
+
+    if (settleSlider) {
+        config.settle_time = parseInt(settleSlider.value, 10);
+    }
+
+    if (tileSizeSlider) {
+        config.tile_size = parseInt(tileSizeSlider.value, 10);
+    }
+
+    if (videoCodecSelect) {
+        config.videoCodec = videoCodecSelect.value;
+    }
+
+    if (enableAudioCheckbox) {
+        config.enable_audio = enableAudioCheckbox.checked;
+    }
+
+    if (audioBitrateSelect) {
+        config.audio_bitrate = audioBitrateSelect.value;
+    }
+
+    if (webrtcBufferSlider) {
+        config.webrtc_buffer = parseInt(webrtcBufferSlider.value, 10);
+    }
+
+    if (nvencLatencyCheckbox) {
+        config.nvenc_latency = nvencLatencyCheckbox.checked;
+    }
+
+    if (webrtcLowLatencyCheckbox) {
+        config.webrtc_low_latency = webrtcLowLatencyCheckbox.checked;
+    }
+
+    if (activityHzSlider) {
+        config.activity_hz = parseInt(activityHzSlider.value, 10);
+    }
+
+    if (activityTimeoutSlider) {
+        config.activity_timeout = parseInt(activityTimeoutSlider.value, 10);
+    }
+
+    return config;
 }
 
-if (clientGpuCheckbox) {
-    clientGpuCheckbox.addEventListener('change', () => {
-        webcodecs.initDecoder();
-        sendConfig();
-    });
-}
+wireConfigControls({
+    sendConfig,
+    scheduleResize,
+    reinitDecoder: () => webcodecs.initDecoder(),
+    setPendingHdpi: (value) => { pendingHdpi = value; },
+    setPendingMaxRes: (value) => { pendingMaxRes = value; },
+});
 
 let lastResizeWidth = 0;
 let lastResizeHeight = 0;
@@ -490,28 +271,10 @@ window.addEventListener('load', () => {
     window.addEventListener('keydown', unmuteVideo, { once: true });
 });
 
-export function clearLosslessCanvas(x?: number, y?: number, w?: number, h?: number) {
-    if (sharpnessCtx && sharpnessLayerEl) {
-        if (x !== undefined && y !== undefined && w !== undefined && h !== undefined) {
-            sharpnessCtx.clearRect(x, y, w, h);
-        } else {
-            sharpnessCtx.clearRect(0, 0, sharpnessLayerEl.width, sharpnessLayerEl.height);
-        }
-    }
-}
-
 let gpuOptionsList: HTMLOptionElement[] = [];
 
 if (codecGpuOpts) {
     gpuOptionsList = Array.from(codecGpuOpts);
-}
-
-function normalizeCodecFamily(codec: string): string {
-    if (!codec) return 'vp8';
-    if (codec.startsWith('h264')) return 'h264';
-    if (codec.startsWith('h265')) return 'h265';
-    if (codec.startsWith('av1')) return 'av1';
-    return codec;
 }
 
 function handleJsonMessage(msg: Record<string, unknown>) {
@@ -783,63 +546,8 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         if (typeof msg.intelGpuUtil === 'number') {
             setServerIntelGpuUtil(msg.intelGpuUtil);
         }
-    } else if (msg.type === 'lossless_patch') {
-        if (sharpnessCtx && msg.data && typeof msg.data === 'string' && typeof msg.x === 'number' && typeof msg.y === 'number') {
-            const img = new Image();
-            img.onload = () => {
-                sharpnessCtx!.drawImage(img, msg.x as number, msg.y as number);
-            };
-            img.src = msg.data;
-        }
-    } else if (msg.type === 'clear_lossless') {
-        if (msg.rects && Array.isArray(msg.rects)) {
-            for (const rect of msg.rects) {
-                clearLosslessCanvas(rect.x as number, rect.y as number, rect.w as number, rect.h as number);
-            }
-        } else {
-            clearLosslessCanvas(msg.x as number | undefined, msg.y as number | undefined, msg.w as number | undefined, msg.h as number | undefined);
-        }
-    } else if (msg.type === 'cursor_shape') {
-        if (overlayEl && typeof msg.dataURL === 'string' && typeof msg.xhot === 'number' && typeof msg.yhot === 'number') {
-            const dataURL = msg.dataURL;
-            const xhot = msg.xhot;
-            const yhot = msg.yhot;
-            const img = new Image();
-            img.onload = () => {
-                const hdpiScale = currentHdpi / 100;
-                const baseWidth = img.width / hdpiScale;
-                const baseHeight = img.height / hdpiScale;
-                
-                const MIN_SIZE = 24;
-                let scale = 1 / hdpiScale;
-                
-                if (baseWidth > 0 && baseHeight > 0 && (baseWidth < MIN_SIZE || baseHeight < MIN_SIZE)) {
-                    const minScale = Math.max(MIN_SIZE / baseWidth, MIN_SIZE / baseHeight);
-                    scale = scale * minScale;
-                }
-
-                // Use a small epsilon to avoid precision issues
-                if (img.width > 0 && img.height > 0 && Math.abs(scale - 1.0) > 0.01) {
-                    const newWidth = Math.round(img.width * scale);
-                    const newHeight = Math.round(img.height * scale);
-                    const newXhot = Math.round(xhot * scale);
-                    const newYhot = Math.round(yhot * scale);
-
-                    const canvas = document.createElement('canvas');
-                    canvas.width = newWidth;
-                    canvas.height = newHeight;
-                    const ctx = canvas.getContext('2d');
-                    if (ctx) {
-                        ctx.imageSmoothingEnabled = true;
-                        ctx.drawImage(img, 0, 0, newWidth, newHeight);
-                        overlayEl.style.cursor = `url(${canvas.toDataURL('image/png')}) ${newXhot} ${newYhot}, auto`;
-                        return;
-                    }
-                }
-                overlayEl.style.cursor = `url(${dataURL}) ${xhot} ${yhot}, auto`;
-            };
-            img.src = dataURL;
-        }
+    } else if (handleDisplayEffectMessage(msg, currentHdpi)) {
+        return;
     }
 }
 

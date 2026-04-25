@@ -4,9 +4,8 @@ package main
 
 import (
 	"fmt"
-	"time"
-	"github.com/danchitnis/llrdc/internal/client"
 	"github.com/veandco/go-sdl2/sdl"
+	"time"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-import { log, statusEl, displayEl, sharpnessLayerEl, ctx, updateStatusText, clientGpuCheckbox, applySmoothingSettings } from './ui';
+import { log, statusEl, displayEl, sharpnessLayerEl, ctx, clientGpuCheckbox, applySmoothingSettings } from './ui';
 
 export class WebCodecsManager {
     public totalDecoded = 0;

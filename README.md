@@ -177,39 +177,32 @@ This runs the packaged client directly on the host in `--headless` mode to verif
 npm run client:verify-package
 ```
 
-### Docker Runtime Smoke Mode
-
 ### Test the Native Client
 
-The native client has Dockerized unit tests plus a windowed smoke test:
+The native Linux client test uses Dockerized native/cgo unit tests plus the latency benchmark. This is the authoritative Linux native lane because it packages the client, launches a dedicated Weston bench, connects to a real LLrdc server over WebRTC, drives deterministic input, and verifies measured native presentation latency.
 
 ```bash
 npm run client:test
 ```
 
 That command:
+- runs host-safe Go unit tests for `internal/client` and `cmd/client`
 - runs `go test -tags native ./internal/client ./cmd/client` in the Docker `test` stage
-- builds the runtime image
-- launches the windowed client against an in-container Xvfb display
-- verifies the control API comes up on `/statez`, `/readyz`, and `/latencyz/latest`
+- runs the native latency benchmark with WebRTC ULL enabled by default (`WEBRTC_LOW_LATENCY=true`, `WEBRTC_BUFFER_SIZE=0`, `LLRDC_VIDEO_CODEC=vp8`)
 
-There is also an end-to-end Docker test against the unchanged LLrdc server:
+The E2E alias uses the same benchmark-based path:
 
 ```bash
 npm run client:test:e2e
 ```
 
-That test starts the existing server container in `--test-pattern` mode, connects the native client to it over WebRTC on a private Docker network, and waits for `/statez` and `/statsz` to show an active stream with decoded video frames.
-
-For headed host-desktop validation on Linux:
+Run the benchmark directly when you want to tune sample count, codec, or ULL settings:
 
 ```bash
-npm run client:test:headed
 npm run client:benchmark:latency
 ```
 
-- `client:test:headed` is a Wayland-first visual smoke test. It packages the client, runs a short Wayland SDL capability probe, connects to a test-pattern server, and captures `/snapshotz` plus a compositor screenshot when supported.
-- `client:benchmark:latency` is the official native Linux latency lane. It packages the client, launches a dedicated Weston bench, drives deterministic pointer moves through the native client control API, and reports stage timings from control injection through native present using a monotonic clock plus probe-marker correlation.
+- `client:benchmark:latency` packages the client, launches a dedicated Weston bench, drives deterministic pointer moves through the native client control API, and reports stage timings from control injection through native present using a monotonic clock plus probe-marker correlation.
 
 ## Clipboard
 

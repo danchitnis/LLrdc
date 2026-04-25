@@ -1,5 +1,18 @@
-import { log, statusEl, videoEl, displayEl, sharpnessLayerEl, ctx, updateStatusText, applySmoothingSettings } from './ui';
+import { log, statusEl, videoEl, displayEl, sharpnessLayerEl, ctx, applySmoothingSettings } from './ui';
 import type { PresentedFrameMeta } from './client/types';
+
+interface LowLatencyReceiver {
+    playoutDelayHint?: number;
+    jitterBufferTarget?: number | null;
+}
+
+interface WebRTCDebugWindow extends Window {
+    __llrdcLatestFrameMeta?: PresentedFrameMeta;
+    audioStats?: {
+        hasAudioTrack: boolean;
+        bytesReceived: number;
+    };
+}
 
 export class WebRTCManager {
     public rtcPeer: RTCPeerConnection | null = null;
@@ -86,13 +99,13 @@ export class WebRTCManager {
         this.inputChannel.onopen = () => log('Input DataChannel Opened');
         this.inputChannel.onclose = () => log('Input DataChannel Closed');
 
-        (window as any).getStats = () => {
+        window.getStats = () => {
             return {
                 fps: this.fps,
-                bandwidth: this.bandwidthMbps,
                 bytesReceived: this.lastBytesReceived,
                 latency: this.webrtcLatency,
-                totalDecoded: this.lastTotalDecoded
+                totalDecoded: this.lastTotalDecoded,
+                webrtcFps: this.fps
             };
         };
 
@@ -107,8 +120,9 @@ export class WebRTCManager {
                 log('Connection state: ' + this.rtcPeer.connectionState);
                 if (this.rtcPeer.connectionState === 'connected') {
                     this.rtcPeer.getReceivers().forEach(receiver => {
-                        if ('playoutDelayHint' in receiver) (receiver as any).playoutDelayHint = 0;
-                        if ('jitterBufferTarget' in receiver) (receiver as any).jitterBufferTarget = 0;
+                        const lowLatencyReceiver = receiver as LowLatencyReceiver;
+                        if ('playoutDelayHint' in lowLatencyReceiver) lowLatencyReceiver.playoutDelayHint = 0;
+                        if ('jitterBufferTarget' in lowLatencyReceiver) lowLatencyReceiver.jitterBufferTarget = 0;
                     });
                 }
             }
@@ -118,8 +132,9 @@ export class WebRTCManager {
             log('WebRTC track received: ' + e.track.kind);
             
             // Apply low-latency hints immediately to the receiver
-            if ('playoutDelayHint' in e.receiver) (e.receiver as any).playoutDelayHint = 0;
-            if ('jitterBufferTarget' in e.receiver) (e.receiver as any).jitterBufferTarget = 0;
+            const lowLatencyReceiver = e.receiver as LowLatencyReceiver;
+            if ('playoutDelayHint' in lowLatencyReceiver) lowLatencyReceiver.playoutDelayHint = 0;
+            if ('jitterBufferTarget' in lowLatencyReceiver) lowLatencyReceiver.jitterBufferTarget = 0;
 
             let stream = videoEl.srcObject as MediaStream;
             if (!stream) {
@@ -207,7 +222,7 @@ export class WebRTCManager {
                     processingDurationMs: (metadata.processingDuration || 0) * 1000,
                     presentedFrames: metadata.presentedFrames
                 };
-                (window as any).__llrdcLatestFrameMeta = frameMeta;
+                (window as WebRTCDebugWindow).__llrdcLatestFrameMeta = frameMeta;
             } else {
                 if (videoEl.currentTime !== this.lastVideoFrameTime) {
                     this.lastVideoFrameTime = videoEl.currentTime;
@@ -269,7 +284,7 @@ export class WebRTCManager {
                 }
             });
 
-            (window as any).audioStats = {
+            (window as WebRTCDebugWindow).audioStats = {
                 hasAudioTrack: hasAudioTrack,
                 bytesReceived: audioBytes
             };
@@ -301,7 +316,7 @@ export class WebRTCManager {
 
             // FPS Calculation
             const isCanvasActive = (Date.now() - this.lastCanvasFrameTime) < 2000;
-            let currentFps = 0;
+            let currentFps: number;
             
             let decodedFps = 0;
             if (framesDecoded !== -1 && this.lastTotalDecoded !== -1) {

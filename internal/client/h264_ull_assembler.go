@@ -75,14 +75,14 @@ func (a *h264ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetR
 		a.start(packet, timing, packetReadAt, payload)
 	} else {
 		a.nextSequence = packet.SequenceNumber + 1
-		
+
 		// If this is a new NALU with the same timestamp (STAP-A or just multiple packets),
 		// we should ideally detect it. But since we split them in the server,
 		// we know that if it's NOT an FU-A fragment (or if it's the start of an FU-A),
 		// it's a new NALU.
 		// Pion's Unmarshal returns the NALU header for the first fragment/single packet.
 		// We can detect new NALUs by checking if it's not a mid-fragment.
-		
+
 		isNewNALU := true
 		if len(packet.Payload) > 0 {
 			naluType := packet.Payload[0] & 0x1f

@@ -26,7 +26,7 @@ The macOS native client uses hardware H.264 decoding. You **must** ensure the LL
 
 1. Start the server with the H.264 codec:
    ```bash
-   go run cmd/server/*.go -video-codec h264
+   go run ./cmd/server -video-codec h264
    ```
 
 2. Launch the client:

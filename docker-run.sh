@@ -11,6 +11,9 @@ fi
 IMAGE_NAME="${IMAGE_NAME:-danchitnis/llrdc}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-llrdc}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "${SCRIPT_DIR}/scripts/docker/common.sh"
 
 SERVER_PORT="${PORT:-8080}"
 SERVER_FPS="${FPS:-30}"
@@ -28,6 +31,7 @@ USE_NVIDIA="false"
 USE_INTEL="false"
 USE_DETACHED="false"
 USE_HOST_NET="false"
+USE_DRY_RUN="false"
 USE_DEBUG_FFMPEG="false"
 USE_DEBUG_INPUT="false"
 WEBRTC_INTERFACES_ENV=""
@@ -43,34 +47,12 @@ ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}"
 ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}"
 NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}"
 
-detect_image_variant() {
-  local image_ref="$1"
-  local variant
-  variant=$(docker image inspect --format '{{ index .Config.Labels "com.danchitnis.llrdc.build-variant" }}' "$image_ref" 2>/dev/null || true)
-  if [ "$variant" = "<no value>" ]; then
-    variant=""
-  fi
-  printf '%s' "$variant"
-}
-
-ensure_image_exists() {
-  local image_ref="$1"
-  local intel_requested="$2"
-  if docker image inspect "$image_ref" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  echo "❌ ERROR: Docker image ${image_ref} is not available locally."
-  if [ "$intel_requested" = "true" ]; then
-    echo "Build it with: ./docker-build.sh --intel"
-  else
-    echo "Build it with: ./docker-build.sh"
-  fi
-  exit 1
-}
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --dry-run)
+      USE_DRY_RUN="true"
+      shift
+      ;;
     -d|--detach)
       USE_DETACHED="true"
       shift
@@ -205,10 +187,12 @@ if [ "$USE_INTEL" = "true" ] && [ "$IMAGE_TAG_EXPLICIT" = "false" ]; then
 fi
 
 IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
-ensure_image_exists "${IMAGE_REF}" "${USE_INTEL}"
+if [ "$USE_DRY_RUN" = "false" ]; then
+  ensure_image_exists "${IMAGE_REF}" "${USE_INTEL}"
+fi
 IMAGE_VARIANT="$(detect_image_variant "${IMAGE_REF}")"
 
-if [ "$USE_INTEL" = "true" ]; then
+if [ "$USE_INTEL" = "true" ] && { [ "$USE_DRY_RUN" = "false" ] || [ -n "$IMAGE_VARIANT" ]; }; then
   case "${IMAGE_VARIANT}" in
     intel)
       ;;
@@ -266,7 +250,7 @@ fi
 
 if [ "$USE_NVIDIA" = "true" ]; then
   # Verify if Docker has NVIDIA runtime/toolkit support
-  if ! docker info 2>/dev/null | grep -qi "Runtimes.*nvidia"; then
+  if [ "$USE_DRY_RUN" = "false" ] && ! docker info 2>/dev/null | grep -qi "Runtimes.*nvidia"; then
     if ! docker info 2>/dev/null | grep -qi "nvidia"; then
       echo "❌ ERROR: Docker does not appear to support NVIDIA GPUs."
       echo "Please install the NVIDIA Container Toolkit and restart Docker."
@@ -354,46 +338,56 @@ if [ -e /dev/uinput ]; then
   UINPUT_ARGS="--device /dev/uinput:/dev/uinput"
 fi
 
-docker run \
-  $GPU_ARGS \
-  $DETACHED_ARGS \
-  $NETWORK_ARGS \
-  $UINPUT_ARGS \
-  --rm \
-  $INTERACTIVE_ARGS \
-  --name "${CONTAINER_NAME}" \
-  --shm-size 256m \
-  --cpuset-cpus "${CPU_LIST}" \
-  --ulimit rtprio=99 \
-  --cap-add=SYS_NICE \
-  --cap-add=SYS_ADMIN \
-  --env PORT="${SERVER_PORT}" \
-  --env FPS="${SERVER_FPS}" \
-  --env BANDWIDTH="${SERVER_BANDWIDTH}" \
-  --env VBR="${SERVER_VBR}" \
-  --env DAMAGE_TRACKING="${SERVER_DAMAGE_TRACKING}" \
-  --env VIDEO_CODEC="${SERVER_VIDEO_CODEC}" \
-  --env USE_NVIDIA="${USE_NVIDIA}" \
-  --env USE_INTEL="${USE_INTEL}" \
-  --env LIBVA_DRIVER_NAME="iHD" \
-  --env CAPTURE_MODE="${SERVER_CAPTURE_MODE}" \
-  --env TEST_PATTERN="${TEST_PATTERN:-}" \
-  --env WEBRTC_PUBLIC_IP="${WEBRTC_PUBLIC_IP:-}" \
-  --env WEBRTC_INTERFACES="${WEBRTC_INTERFACES_ENV}" \
-  --env WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}" \
-  --env WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}" \
-  --env WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}" \
-  --env ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}" \
-  --env ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}" \
-  --env CPU_EFFORT="${CPU_EFFORT:-}" \
-  --env NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}" \
-  --env ENABLE_AUDIO="${ENABLE_AUDIO:-false}" \
-  --env AUDIO_BITRATE="${AUDIO_BITRATE:-128k}" \
-  --env HDPI="${SERVER_HDPI}" \
-  --env RESOLUTION="${SERVER_RESOLUTION}" \
-  --env USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG}" \
-  --env USE_DEBUG_INPUT="${USE_DEBUG_INPUT}" \
-  --env RENDER_GID="${HOST_RENDER_GID}" \
-  --env VIDEO_GID="${HOST_VIDEO_GID}" \
-  --env HOST_UID=$(id -u) \
-  "${IMAGE_REF}"
+DOCKER_RUN_CMD=(docker run)
+append_words DOCKER_RUN_CMD "$GPU_ARGS"
+append_words DOCKER_RUN_CMD "$DETACHED_ARGS"
+append_words DOCKER_RUN_CMD "$NETWORK_ARGS"
+append_words DOCKER_RUN_CMD "$UINPUT_ARGS"
+DOCKER_RUN_CMD+=(
+  --rm
+  --name "${CONTAINER_NAME}"
+  --shm-size 256m
+  --cpuset-cpus "${CPU_LIST}"
+  --ulimit rtprio=99
+  --cap-add=SYS_NICE
+  --cap-add=SYS_ADMIN
+  --env "PORT=${SERVER_PORT}"
+  --env "FPS=${SERVER_FPS}"
+  --env "BANDWIDTH=${SERVER_BANDWIDTH}"
+  --env "VBR=${SERVER_VBR}"
+  --env "DAMAGE_TRACKING=${SERVER_DAMAGE_TRACKING}"
+  --env "VIDEO_CODEC=${SERVER_VIDEO_CODEC}"
+  --env "USE_NVIDIA=${USE_NVIDIA}"
+  --env "USE_INTEL=${USE_INTEL}"
+  --env "LIBVA_DRIVER_NAME=iHD"
+  --env "CAPTURE_MODE=${SERVER_CAPTURE_MODE}"
+  --env "TEST_PATTERN=${TEST_PATTERN:-}"
+  --env "WEBRTC_PUBLIC_IP=${WEBRTC_PUBLIC_IP:-}"
+  --env "WEBRTC_INTERFACES=${WEBRTC_INTERFACES_ENV}"
+  --env "WEBRTC_EXCLUDE_INTERFACES=${WEBRTC_EXCLUDE_INTERFACES:-}"
+  --env "WEBRTC_BUFFER_SIZE=${WEBRTC_BUFFER_SIZE:-}"
+  --env "WEBRTC_LOW_LATENCY=${WEBRTC_LOW_LATENCY:-}"
+  --env "ACTIVITY_PULSE_HZ=${ACTIVITY_PULSE_HZ:-}"
+  --env "ACTIVITY_TIMEOUT=${ACTIVITY_TIMEOUT:-}"
+  --env "CPU_EFFORT=${CPU_EFFORT:-}"
+  --env "NVENC_LATENCY_MODE=${NVENC_LATENCY_MODE:-}"
+  --env "ENABLE_AUDIO=${ENABLE_AUDIO:-false}"
+  --env "AUDIO_BITRATE=${AUDIO_BITRATE:-128k}"
+  --env "HDPI=${SERVER_HDPI}"
+  --env "RESOLUTION=${SERVER_RESOLUTION}"
+  --env "USE_DEBUG_FFMPEG=${USE_DEBUG_FFMPEG}"
+  --env "USE_DEBUG_INPUT=${USE_DEBUG_INPUT}"
+  --env "RENDER_GID=${HOST_RENDER_GID}"
+  --env "VIDEO_GID=${HOST_VIDEO_GID}"
+  --env "HOST_UID=$(id -u)"
+)
+append_words DOCKER_RUN_CMD "$INTERACTIVE_ARGS"
+DOCKER_RUN_CMD+=("${IMAGE_REF}")
+
+if [ "$USE_DRY_RUN" = "true" ]; then
+  echo "Dry run command:"
+  print_command "${DOCKER_RUN_CMD[@]}"
+  exit 0
+fi
+
+"${DOCKER_RUN_CMD[@]}"

@@ -4,6 +4,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server
 
 FROM node:22-alpine AS node-builder
@@ -109,12 +110,12 @@ RUN printf '%s\n' "${BUILD_VARIANT}" > /etc/llrdc-build-variant
 WORKDIR /app
 COPY --from=node-builder /app/public/ ./public/
 COPY --from=builder /app/llrdc /app/llrdc
-COPY cmd/server/wayland_input_client.c ./
+COPY tools/wayland/wayland_input_client.c ./
 COPY tools/direct_buffer_probe.c ./
 COPY tools/latency_probe.c ./tools/
 COPY tools/latency_probe_app.py ./tools/
-COPY cmd/server/wlr-virtual-pointer-unstable-v1.xml ./
-COPY cmd/server/virtual-keyboard-unstable-v1.xml ./
+COPY tools/wayland/wlr-virtual-pointer-unstable-v1.xml ./
+COPY tools/wayland/virtual-keyboard-unstable-v1.xml ./
 
 # Generate protocols and build helper
 RUN wayland-scanner client-header wlr-virtual-pointer-unstable-v1.xml wlr-virtual-pointer-unstable-v1-client-protocol.h \
