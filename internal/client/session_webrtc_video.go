@@ -152,11 +152,14 @@ func (s *Session) requestVideoKeyframe() {
 func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.TrackRemote, lowLatency bool) {
 	codecName := strings.ToLower(track.Codec().MimeType)
 	useVP8ULLAssembler := shouldUseVP8ULLAssembler(codecName, lowLatency)
+	useH264ULLAssembler := shouldUseH264ULLAssembler(codecName, lowLatency)
 	builder := newVideoSampleBuilder(codecName, lowLatency)
-	if useVP8ULLAssembler {
+	if useVP8ULLAssembler || useH264ULLAssembler {
 		builder = nil
 	}
 	var vp8Assembler vp8ULLAssembler
+	var h264Assembler h264ULLAssembler
+	h264Assembler.packetizer = &codecs.H264Packet{}
 	stopKeyframeRequests := make(chan struct{})
 	var stopKeyframeOnce sync.Once
 	stopKeyframe := func() {
@@ -203,7 +206,7 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 		s.mu.Unlock()
 
 		if builder == nil {
-			if !useVP8ULLAssembler {
+			if !useVP8ULLAssembler && !useH264ULLAssembler {
 				continue
 			}
 			timing := s.popRemotePacketTiming(uint32(track.SSRC()), packet.Timestamp, packet.SequenceNumber)
@@ -214,7 +217,36 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 			if timing.firstDecryptedPacketQueuedAt <= 0 {
 				timing.firstDecryptedPacketQueuedAt = timing.firstRemotePacketAt
 			}
-			frame, ready, dropped, err := vp8Assembler.push(packet, timing, packetReadAt)
+
+			var frameData []byte
+			var frameTimestamp uint32
+			var frameFirstSeq uint16
+			var frameFirstDecrypted int64
+			var frameFirstRemote int64
+			var frameFirstRead int64
+			var ready, dropped bool
+			var err error
+
+			if useVP8ULLAssembler {
+				var vFrame vp8ULLFrame
+				vFrame, ready, dropped, err = vp8Assembler.push(packet, timing, packetReadAt)
+				frameData = vFrame.data
+				frameTimestamp = vFrame.packetTimestamp
+				frameFirstSeq = vFrame.firstPacketSequenceNumber
+				frameFirstDecrypted = vFrame.firstDecryptedPacketQueuedAt
+				frameFirstRemote = vFrame.firstRemotePacketAt
+				frameFirstRead = vFrame.firstPacketReadAt
+			} else {
+				var hFrame h264ULLFrame
+				hFrame, ready, dropped, err = h264Assembler.push(packet, timing, packetReadAt)
+				frameData = hFrame.data
+				frameTimestamp = hFrame.packetTimestamp
+				frameFirstSeq = hFrame.firstPacketSequenceNumber
+				frameFirstDecrypted = hFrame.firstDecryptedPacketQueuedAt
+				frameFirstRemote = hFrame.firstRemotePacketAt
+				frameFirstRead = hFrame.firstPacketReadAt
+			}
+
 			if dropped || err != nil {
 				s.requestVideoKeyframe()
 			}
@@ -226,31 +258,31 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 			s.stats.VideoFrames++
 			s.state.LastVideoFrameAt = time.Now()
 			s.mu.Unlock()
-			if shouldStopInitialKeyframeRequests(track.Codec().MimeType, frame.data) {
+			if shouldStopInitialKeyframeRequests(track.Codec().MimeType, frameData) {
 				stopKeyframe()
 			}
 
 			if timedRenderer, ok := s.renderer.(timedVideoFrameHandler); ok {
 				if err := timedRenderer.handleVideoFrameWithTiming(
 					track.Codec().MimeType,
-					frame.data,
-					frame.packetTimestamp,
-					frame.firstPacketSequenceNumber,
-					frame.firstDecryptedPacketQueuedAt,
-					frame.firstRemotePacketAt,
-					frame.firstPacketReadAt,
+					frameData,
+					frameTimestamp,
+					frameFirstSeq,
+					frameFirstDecrypted,
+					frameFirstRemote,
+					frameFirstRead,
 					packetReadAt,
 				); err != nil {
 					s.setError(err)
 				}
-			} else if err := s.renderer.HandleVideoFrame(track.Codec().MimeType, frame.data, frame.packetTimestamp); err != nil {
+			} else if err := s.renderer.HandleVideoFrame(track.Codec().MimeType, frameData, frameTimestamp); err != nil {
 				s.setError(err)
 			}
 
 			s.emit(EventFrame, map[string]any{
 				"codec":           track.Codec().MimeType,
-				"packetTimestamp": frame.packetTimestamp,
-				"size":            len(frame.data),
+				"packetTimestamp": frameTimestamp,
+				"size":            len(frameData),
 				"droppedPackets":  map[bool]int{false: 0, true: 1}[dropped],
 			})
 			continue

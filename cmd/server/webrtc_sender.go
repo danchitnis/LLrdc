@@ -53,9 +53,14 @@ func initWebRTCTrack() {
 
 func newVideoFrameWriter(codec string, lowLatency bool) (videoFrameWriter, error) {
 	capability, codecFamily := videoTrackCapability(codec)
-	if lowLatency && codecFamily == "vp8" {
-		log.Printf("Initializing isolated WebRTC VP8 ULL RTP sender")
-		return newVP8ULLVideoWriter(capability, codecFamily)
+	if lowLatency {
+		if codecFamily == "vp8" {
+			log.Printf("Initializing isolated WebRTC VP8 ULL RTP sender")
+			return newVP8ULLVideoWriter(capability, codecFamily)
+		} else if codecFamily == "h264" {
+			log.Printf("Initializing isolated WebRTC H264 ULL RTP sender")
+			return newH264ULLVideoWriter(capability, codecFamily)
+		}
 	}
 	log.Printf("Initializing WebRTC sample-track sender for %s", capability.MimeType)
 	return newSampleVideoWriter(capability, codecFamily)

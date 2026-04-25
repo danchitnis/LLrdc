@@ -488,8 +488,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 					SetKeyframeInterval(keyframe)
 				}
-				if effortFloat, ok := configMsg["cpu_effort"].(float64); ok {
-					effort := int(effortFloat)
+				if codecStr, ok := configMsg["video_codec"].(string); ok {
+					if VideoCodec != codecStr {
+						restartRequested = true
+					}
+					SetVideoCodec(codecStr)
+				}
+				if cpuEffortFloat, ok := configMsg["cpu_effort"].(float64); ok {
+					effort := int(cpuEffortFloat)
 					if targetCpuEffort != effort {
 						restartRequested = true
 					}

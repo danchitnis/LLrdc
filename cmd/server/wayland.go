@@ -315,7 +315,7 @@ touch "$READY_FILE"
 		if !probeResult.ScreencopyAvailable || !probeResult.LinuxDMABUFAvailable {
 			reason := "Wayland compositor does not advertise both screencopy and linux-dmabuf"
 			markDirectBufferProbeResult(renderNode, false, reason, probeResult)
-			return fmt.Errorf(reason)
+			return fmt.Errorf("%s", reason)
 		}
 		markDirectBufferProbeResult(renderNode, true, "Direct-buffer probe passed; waiting for hardware capture", probeResult)
 		log.Printf("Direct-buffer probe passed (render node: %s, renderer: %s)", renderNode, compatibleRendererName())
