@@ -152,7 +152,7 @@ func joinNALUnits(nals [][]byte) []byte {
 	return frame
 }
 
-func splitH265AnnexB(reader io.Reader, onFrame func([]byte)) {
+func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	buffer := make([]byte, 0, 1024*1024)
 	temp := make([]byte, 16384)
 	pendingPrefix := make([][]byte, 0, 4)
@@ -163,7 +163,12 @@ func splitH265AnnexB(reader io.Reader, onFrame func([]byte)) {
 		if len(currentAU) == 0 {
 			return
 		}
-		onFrame(joinNALUnits(currentAU))
+		parsedAtMs := benchmarkClockNowMs()
+		onFrame(EncodedVideoFrame{
+			Data:         joinNALUnits(currentAU),
+			ParsedAtMs:   parsedAtMs,
+			LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
+		})
 		currentAU = currentAU[:0]
 		currentHasVCL = false
 	}

@@ -331,7 +331,7 @@ func SetAudioBitrate(bitrate string) {
 	}
 }
 
-func startStreaming(onFrame func([]byte, uint32, string)) {
+func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 	var lastStreamID uint32
 
 	cleanupTasks = append(cleanupTasks, func() {
@@ -590,7 +590,7 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 			doneCh := make(chan bool, 1)
 			go func() {
 				streamProducedFrame := false
-				onFrameWithCheck := func(frame []byte, sid uint32) {
+				onFrameWithCheck := func(frame EncodedVideoFrame, sid uint32) {
 					if sid != lastStreamID {
 						log.Printf("Stream ID change detected: %d -> %d. Triggering config reset.", lastStreamID, sid)
 						noteStreamFrame(sid)
@@ -605,20 +605,20 @@ func startStreaming(onFrame func([]byte, uint32, string)) {
 				}
 
 				if format == "ivf" {
-					splitIVF(stdout, func(frame []byte) {
+					splitIVF(stdout, func(frame EncodedVideoFrame) {
 						onFrameWithCheck(frame, currentStreamID)
 					})
 				} else if format == "h264" {
-					splitH264AnnexB(stdout, func(frame []byte) {
+					splitH264AnnexB(stdout, func(frame EncodedVideoFrame) {
 						onFrameWithCheck(frame, currentStreamID)
 					})
 				} else if format == "hevc" {
-					splitH265AnnexB(stdout, func(frame []byte) {
+					splitH265AnnexB(stdout, func(frame EncodedVideoFrame) {
 						onFrameWithCheck(frame, currentStreamID)
 					})
 				} else {
 					log.Printf("Unknown format: %s, defaulting to splitIVF", format)
-					splitIVF(stdout, func(frame []byte) {
+					splitIVF(stdout, func(frame EncodedVideoFrame) {
 						onFrameWithCheck(frame, currentStreamID)
 					})
 				}

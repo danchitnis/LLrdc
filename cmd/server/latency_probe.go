@@ -10,11 +10,22 @@ import (
 const latencyProbeStatePath = "/tmp/llrdc-latency-probe.json"
 
 type latencyTraceRecord struct {
-	Marker                  int   `json:"marker"`
-	ServerTimeMs            int64 `json:"serverTimeMs"`            // T0: Server received control input
-	RequestedAtMs           int64 `json:"requestedAtMs"`           // T1: Probe app detected motion
-	DrawnAtMs               int64 `json:"drawnAtMs"`               // T2: Probe app frame callback fired
-	FirstFrameBroadcastAtMs int64 `json:"firstFrameBroadcastAtMs"` // T3: Server broadcasted the first probe frame
+	Marker                              int    `json:"marker"`
+	ServerTimeMs                        int64  `json:"serverTimeMs"`            // T0: Server received control input
+	RequestedAtMs                       int64  `json:"requestedAtMs"`           // T1: Probe app detected motion
+	DrawnAtMs                           int64  `json:"drawnAtMs"`               // T2: Probe app frame callback fired
+	FirstFrameBroadcastAtMs             int64  `json:"firstFrameBroadcastAtMs"` // T3: Server broadcasted the first probe frame
+	FirstEncodedFrameParsedAtMs         int64  `json:"firstEncodedFrameParsedAtMs,omitempty"`
+	FirstEncodedFrameContainerTimestamp uint64 `json:"firstEncodedFrameContainerTimestamp,omitempty"`
+	FirstFrameDispatchAtMs              int64  `json:"firstFrameDispatchAtMs,omitempty"`
+	FrameSendStartAtMs                  int64  `json:"frameSendStartAtMs,omitempty"`
+	FirstPacketSequenceNumber           uint16 `json:"firstPacketSequenceNumber,omitempty"`
+	FirstPacketTimestamp                uint32 `json:"firstPacketTimestamp,omitempty"`
+	FirstPacketWriteAttemptAtMs         int64  `json:"firstPacketWriteAttemptAtMs,omitempty"`
+	FirstPacketWriteReturnAtMs          int64  `json:"firstPacketWriteReturnAtMs,omitempty"`
+	FirstPacketSocketWriteAtMs          int64  `json:"firstPacketSocketWriteAtMs,omitempty"`
+	FirstPacketWrittenAtMs              int64  `json:"firstPacketWrittenAtMs,omitempty"`
+	LastPacketWrittenAtMs               int64  `json:"lastPacketWrittenAtMs,omitempty"`
 }
 
 type latencyProbeStateFile struct {
@@ -29,7 +40,14 @@ var (
 
 	pendingInputTime int64
 	pendingInputMu   sync.Mutex
+
+	pendingSampleTraceMu sync.Mutex
+	pendingSampleTrace   *latencyProbeSendTrace
 )
+
+type latencyProbeSendTrace struct {
+	marker int
+}
 
 func setLastInputReceivedAt(t int64) {
 	pendingInputMu.Lock()
@@ -37,48 +55,31 @@ func setLastInputReceivedAt(t int64) {
 	pendingInputTime = t
 }
 
-func recordLatencyProbeFrame(frameAtMs int64) {
+func readLatencyProbeState() (latencyProbeStateFile, bool) {
 	payload, err := os.ReadFile(latencyProbeStatePath)
 	if err != nil {
-		return
+		return latencyProbeStateFile{}, false
 	}
 
 	var state latencyProbeStateFile
 	if err := json.Unmarshal(payload, &state); err != nil {
-		return
+		return latencyProbeStateFile{}, false
 	}
 	if state.Marker <= 0 || state.DrawnAtMs <= 0 {
+		return latencyProbeStateFile{}, false
+	}
+	return state, true
+}
+
+func pruneLatencyTraceRecordsLocked(currentMarker int) {
+	const maxTraceRecords = 64
+	if len(latencyTraceRecords) <= maxTraceRecords {
 		return
 	}
-
-	latencyTraceMu.Lock()
-	defer latencyTraceMu.Unlock()
-
-	pendingInputMu.Lock()
-	inputAt := pendingInputTime
-	pendingInputMu.Unlock()
-
-	record, exists := latencyTraceRecords[state.Marker]
-	if !exists {
-		record.Marker = state.Marker
-		record.ServerTimeMs = inputAt
-		record.RequestedAtMs = state.RequestedAtMs
-		record.DrawnAtMs = state.DrawnAtMs
-	}
-
-	if record.FirstFrameBroadcastAtMs == 0 && frameAtMs >= state.DrawnAtMs {
-		record.FirstFrameBroadcastAtMs = frameAtMs
-	}
-
-	latencyTraceRecords[state.Marker] = record
-
-	const maxTraceRecords = 64
-	if len(latencyTraceRecords) > maxTraceRecords {
-		cutoff := state.Marker - maxTraceRecords
-		for marker := range latencyTraceRecords {
-			if marker < cutoff {
-				delete(latencyTraceRecords, marker)
-			}
+	cutoff := currentMarker - maxTraceRecords
+	for marker := range latencyTraceRecords {
+		if marker < cutoff {
+			delete(latencyTraceRecords, marker)
 		}
 	}
 }

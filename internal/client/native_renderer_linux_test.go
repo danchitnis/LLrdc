@@ -93,10 +93,10 @@ func TestHandleVideoFrameLowLatencyKeepsNewestSample(t *testing.T) {
 	}
 
 	nativeRenderer.SetLowLatency(true)
-	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x01}, 1, 100, 110); err != nil {
+	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x01}, 1, 9, 80, 90, 100, 110); err != nil {
 		t.Fatalf("first handleVideoFrameWithTiming returned error: %v", err)
 	}
-	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x02}, 2, 200, 210); err != nil {
+	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x02}, 2, 19, 180, 190, 200, 210); err != nil {
 		t.Fatalf("second handleVideoFrameWithTiming returned error: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestHandleVideoFrameLowLatencyKeepsNewestSample(t *testing.T) {
 	if sample.packetTimestamp != 2 {
 		t.Fatalf("unexpected queued packet timestamp: got %d want 2", sample.packetTimestamp)
 	}
-	if sample.firstPacketReadAt != 200 || sample.receiveAt != 210 {
+	if sample.firstPacketSequenceNumber != 19 || sample.firstDecryptedPacketQueuedAt != 180 || sample.firstRemotePacketAt != 190 || sample.firstPacketReadAt != 200 || sample.receiveAt != 210 {
 		t.Fatalf("unexpected queued timing: %+v", sample)
 	}
 }

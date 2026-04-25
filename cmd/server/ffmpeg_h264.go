@@ -91,7 +91,7 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	return outputArgs
 }
 
-func splitH264AnnexB(reader io.Reader, onFrame func([]byte)) {
+func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	buffer := make([]byte, 0, 1024*1024)
 	temp := make([]byte, 16384)
 	marker4 := []byte{0x00, 0x00, 0x00, 0x01, 0x09}
@@ -120,7 +120,12 @@ func splitH264AnnexB(reader io.Reader, onFrame func([]byte)) {
 				if nextIdx != -1 {
 					frame := make([]byte, nextIdx)
 					copy(frame, buffer[:nextIdx])
-					onFrame(frame)
+					parsedAtMs := benchmarkClockNowMs()
+					onFrame(EncodedVideoFrame{
+						Data:         frame,
+						ParsedAtMs:   parsedAtMs,
+						LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
+					})
 					buffer = buffer[nextIdx:]
 				} else {
 					break
@@ -132,7 +137,12 @@ func splitH264AnnexB(reader io.Reader, onFrame func([]byte)) {
 				log.Printf("Error reading H264 stream: %v", err)
 			}
 			if len(buffer) > 0 {
-				onFrame(buffer)
+				parsedAtMs := benchmarkClockNowMs()
+				onFrame(EncodedVideoFrame{
+					Data:         append([]byte(nil), buffer...),
+					ParsedAtMs:   parsedAtMs,
+					LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
+				})
 			}
 			return
 		}

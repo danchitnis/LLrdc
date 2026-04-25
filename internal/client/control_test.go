@@ -72,14 +72,17 @@ func TestControlServerLatencyEndpointIncludesTimingBreakdown(t *testing.T) {
 
 	session := NewSession(nil)
 	session.RecordPresentedFrame(NativeFramePresented{
-		Width:             1280,
-		Height:            720,
-		PacketTimestamp:   123,
-		ProbeMarker:       7,
-		FirstPacketReadAt: 1000,
-		ReceiveAt:         1007,
-		DecodeReadyAt:     1012,
-		PresentationAt:    1020,
+		Width:                        1280,
+		Height:                       720,
+		PacketTimestamp:              123,
+		FirstPacketSequenceNumber:    17,
+		ProbeMarker:                  7,
+		FirstDecryptedPacketQueuedAt: 990,
+		FirstRemotePacketAt:          995,
+		FirstPacketReadAt:            1000,
+		ReceiveAt:                    1007,
+		DecodeReadyAt:                1012,
+		PresentationAt:               1020,
 	})
 	server := NewControlServer("127.0.0.1:0", session, nil)
 
@@ -93,6 +96,15 @@ func TestControlServerLatencyEndpointIncludesTimingBreakdown(t *testing.T) {
 	var payload map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal /latencyz/latest response: %v", err)
+	}
+	if got, _ := payload["firstPacketSequenceNumber"].(float64); got != 17 {
+		t.Fatalf("unexpected firstPacketSequenceNumber: got %#v want 17", payload["firstPacketSequenceNumber"])
+	}
+	if got, _ := payload["firstDecryptedPacketQueuedAt"].(float64); got != 990 {
+		t.Fatalf("unexpected firstDecryptedPacketQueuedAt: got %#v want 990", payload["firstDecryptedPacketQueuedAt"])
+	}
+	if got, _ := payload["firstRemotePacketAt"].(float64); got != 995 {
+		t.Fatalf("unexpected firstRemotePacketAt: got %#v want 995", payload["firstRemotePacketAt"])
 	}
 	if got, _ := payload["firstPacketReadAt"].(float64); got != 1000 {
 		t.Fatalf("unexpected firstPacketReadAt: got %#v want 1000", payload["firstPacketReadAt"])

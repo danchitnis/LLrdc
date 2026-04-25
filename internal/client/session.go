@@ -18,10 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
-	"github.com/pion/rtp"
-	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
-	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
 )
 
 type Renderer interface {
@@ -185,6 +182,9 @@ type Session struct {
 	closed       chan struct{}
 
 	keyframeRequests chan struct{}
+
+	remotePacketMu    sync.Mutex
+	remotePacketTimes map[packetTimingKey]packetTiming
 }
 
 func NewSession(renderer Renderer) *Session {
@@ -198,8 +198,9 @@ func NewSession(renderer Renderer) *Session {
 			WindowDesktop:      -1,
 			CurrentTrackCodecs: make(map[string]string),
 		},
-		closed:           make(chan struct{}),
-		keyframeRequests: make(chan struct{}, 1),
+		closed:            make(chan struct{}),
+		keyframeRequests:  make(chan struct{}, 1),
+		remotePacketTimes: make(map[packetTimingKey]packetTiming),
 	}
 }
 
@@ -398,6 +399,7 @@ func (s *Session) Connect(serverURL string) error {
 		}
 	} else {
 		log.Printf("WebRTC skipping interceptors for low-latency mode")
+		i.Add(newRemotePacketTimestampInterceptorFactory(benchmarkClockNowMs, s.recordRemotePacketAt))
 	}
 
 	se := webrtc.SettingEngine{}
@@ -405,6 +407,7 @@ func (s *Session) Connect(serverURL string) error {
 	se.DisableSRTCPReplayProtection(true)
 	if lowLatency {
 		se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
+		se.BufferFactory = newLatencyBufferFactory(benchmarkClockNowMs, s.recordDecryptedPacketAt)
 	}
 
 	api := webrtc.NewAPI(
@@ -503,6 +506,9 @@ func (s *Session) Connect(serverURL string) error {
 		ConnectedAt: time.Now(),
 	}
 	s.mu.Unlock()
+	s.remotePacketMu.Lock()
+	s.remotePacketTimes = make(map[packetTimingKey]packetTiming)
+	s.remotePacketMu.Unlock()
 	s.emit(EventStateChanged, map[string]any{
 		"connected": true,
 		"serverUrl": serverURL,
@@ -748,28 +754,34 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 	}
 
 	sample := LatencyBreakdown{
-		PacketTimestamp:    event.PacketTimestamp,
-		Brightness:         event.Brightness,
-		ProbeMarker:        event.ProbeMarker,
-		FirstPacketReadAt:  event.FirstPacketReadAt,
-		ReceiveAt:          event.ReceiveAt,
-		DecodeReadyAt:      event.DecodeReadyAt,
-		PresentationAt:     event.PresentationAt,
-		PresentationSource: event.PresentationSource,
+		PacketTimestamp:              event.PacketTimestamp,
+		FirstPacketSequenceNumber:    event.FirstPacketSequenceNumber,
+		Brightness:                   event.Brightness,
+		ProbeMarker:                  event.ProbeMarker,
+		FirstDecryptedPacketQueuedAt: event.FirstDecryptedPacketQueuedAt,
+		FirstRemotePacketAt:          event.FirstRemotePacketAt,
+		FirstPacketReadAt:            event.FirstPacketReadAt,
+		ReceiveAt:                    event.ReceiveAt,
+		DecodeReadyAt:                event.DecodeReadyAt,
+		PresentationAt:               event.PresentationAt,
+		PresentationSource:           event.PresentationSource,
 	}
 	if event.CompositorPresentedAt > 0 {
 		sample.CompositorPresentedAt = event.CompositorPresentedAt
 	}
 	s.state.LastLatencySample = map[string]any{
-		"packetTimestamp":       sample.PacketTimestamp,
-		"brightness":            sample.Brightness,
-		"probeMarker":           sample.ProbeMarker,
-		"firstPacketReadAt":     sample.FirstPacketReadAt,
-		"receiveAt":             sample.ReceiveAt,
-		"decodeReadyAt":         sample.DecodeReadyAt,
-		"presentationAt":        sample.PresentationAt,
-		"compositorPresentedAt": sample.CompositorPresentedAt,
-		"presentationSource":    sample.PresentationSource,
+		"packetTimestamp":              sample.PacketTimestamp,
+		"firstPacketSequenceNumber":    sample.FirstPacketSequenceNumber,
+		"brightness":                   sample.Brightness,
+		"probeMarker":                  sample.ProbeMarker,
+		"firstDecryptedPacketQueuedAt": sample.FirstDecryptedPacketQueuedAt,
+		"firstRemotePacketAt":          sample.FirstRemotePacketAt,
+		"firstPacketReadAt":            sample.FirstPacketReadAt,
+		"receiveAt":                    sample.ReceiveAt,
+		"decodeReadyAt":                sample.DecodeReadyAt,
+		"presentationAt":               sample.PresentationAt,
+		"compositorPresentedAt":        sample.CompositorPresentedAt,
+		"presentationSource":           sample.PresentationSource,
 	}
 	s.state.RecentLatencySamples = append(s.state.RecentLatencySamples, sample)
 	if len(s.state.RecentLatencySamples) > 300 {
@@ -1017,273 +1029,6 @@ func (s *Session) consumeBinaryVideoMessage(raw []byte) {
 		"size":            len(packet.chunkData),
 		"transport":       "websocket",
 	})
-}
-
-func videoSampleBuilderConfig(lowLatency bool) (uint16, time.Duration) {
-	if lowLatency {
-		return 8, 12 * time.Millisecond
-	}
-	return 256, 0
-}
-
-func newVideoSampleBuilder(codecName string, lowLatency bool) *samplebuilder.SampleBuilder {
-	maxLate, maxDelay := videoSampleBuilderConfig(lowLatency)
-	opts := make([]samplebuilder.Option, 0, 1)
-	if maxDelay > 0 {
-		opts = append(opts, samplebuilder.WithMaxTimeDelay(maxDelay))
-	}
-
-	if strings.Contains(codecName, "vp8") {
-		return samplebuilder.New(maxLate, &codecs.VP8Packet{}, 90000, opts...)
-	}
-	if strings.Contains(codecName, "h264") {
-		return samplebuilder.New(maxLate, &codecs.H264Packet{}, 90000, opts...)
-	}
-	if strings.Contains(codecName, "h265") || strings.Contains(codecName, "hevc") {
-		return samplebuilder.New(maxLate, &codecs.H265Packet{}, 90000, opts...)
-	}
-	return nil
-}
-
-type timedVideoFrameHandler interface {
-	handleVideoFrameWithTiming(codec string, frame []byte, packetTimestamp uint32, firstPacketReadAt int64, receiveAt int64) error
-}
-
-type vp8ULLFrame struct {
-	data              []byte
-	packetTimestamp   uint32
-	firstPacketReadAt int64
-}
-
-type vp8ULLAssembler struct {
-	active            bool
-	timestamp         uint32
-	nextSequence      uint16
-	firstPacketReadAt int64
-	frame             []byte
-}
-
-func (a *vp8ULLAssembler) reset() {
-	a.active = false
-	a.timestamp = 0
-	a.nextSequence = 0
-	a.firstPacketReadAt = 0
-	a.frame = nil
-}
-
-func (a *vp8ULLAssembler) start(packet *rtp.Packet, firstPacketReadAt int64, payload []byte) {
-	a.active = true
-	a.timestamp = packet.Timestamp
-	a.nextSequence = packet.SequenceNumber + 1
-	a.firstPacketReadAt = firstPacketReadAt
-	a.frame = append(a.frame[:0], payload...)
-}
-
-func (a *vp8ULLAssembler) push(packet *rtp.Packet, packetReadAt int64) (frame vp8ULLFrame, ready bool, dropped bool, err error) {
-	packetizer := &codecs.VP8Packet{}
-
-	if a.active && (packet.Timestamp != a.timestamp || packet.SequenceNumber != a.nextSequence) {
-		dropped = len(a.frame) > 0
-		a.reset()
-	}
-
-	if !packetizer.IsPartitionHead(packet.Payload) {
-		if !a.active {
-			return frame, false, dropped, fmt.Errorf("vp8 low-latency frame missing partition head")
-		}
-	}
-
-	payload, err := packetizer.Unmarshal(packet.Payload)
-	if err != nil {
-		a.reset()
-		return frame, false, true, err
-	}
-
-	if !a.active {
-		a.start(packet, packetReadAt, payload)
-	} else {
-		a.nextSequence = packet.SequenceNumber + 1
-		a.frame = append(a.frame, payload...)
-	}
-
-	if !packet.Marker {
-		return frame, false, dropped, nil
-	}
-
-	frame = vp8ULLFrame{
-		data:              append([]byte(nil), a.frame...),
-		packetTimestamp:   a.timestamp,
-		firstPacketReadAt: a.firstPacketReadAt,
-	}
-	a.reset()
-	return frame, true, dropped, nil
-}
-
-func shouldUseVP8ULLAssembler(codecName string, lowLatency bool) bool {
-	return lowLatency && strings.Contains(codecName, "vp8")
-}
-
-func (s *Session) requestVideoKeyframe() {
-	s.renderer.RequestKeyframe()
-	select {
-	case s.keyframeRequests <- struct{}{}:
-	default:
-	}
-}
-
-func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.TrackRemote, lowLatency bool) {
-	codecName := strings.ToLower(track.Codec().MimeType)
-	useVP8ULLAssembler := shouldUseVP8ULLAssembler(codecName, lowLatency)
-	builder := newVideoSampleBuilder(codecName, lowLatency)
-	if useVP8ULLAssembler {
-		builder = nil
-	}
-	var vp8Assembler vp8ULLAssembler
-	stopKeyframeRequests := make(chan struct{})
-	var stopKeyframeOnce sync.Once
-	stopKeyframe := func() {
-		stopKeyframeOnce.Do(func() {
-			close(stopKeyframeRequests)
-		})
-	}
-	if pc != nil {
-		go requestInitialKeyframes(pc, uint32(track.SSRC()), stopKeyframeRequests)
-
-		go func() {
-			for {
-				select {
-				case <-stopKeyframeRequests:
-					return
-				case <-s.keyframeRequests:
-					fmt.Printf("DEBUG: Sending PLI on video track (SSRC: %d) due to decode error or packet loss\n", track.SSRC())
-					_ = pc.WriteRTCP([]rtcp.Packet{
-						&rtcp.PictureLossIndication{MediaSSRC: uint32(track.SSRC())},
-					})
-				}
-			}
-		}()
-	}
-	defer stopKeyframe()
-	firstPacketReadAtByTimestamp := make(map[uint32]int64)
-
-	for {
-		packet, _, err := track.ReadRTP()
-		if err != nil {
-			s.setError(err)
-			return
-		}
-
-		s.mu.Lock()
-		now := time.Now()
-		s.stats.VideoPackets++
-		s.stats.VideoBytes += uint64(packet.MarshalSize())
-		s.state.LastVideoPacketAt = now
-		s.recordVideoByteSampleLocked(now, packet.MarshalSize())
-		s.mu.Unlock()
-
-		if builder == nil {
-			if !useVP8ULLAssembler {
-				continue
-			}
-			packetReadAt := benchmarkClockNowMs()
-			frame, ready, dropped, err := vp8Assembler.push(packet, packetReadAt)
-			if dropped || err != nil {
-				s.requestVideoKeyframe()
-			}
-			if err != nil || !ready {
-				continue
-			}
-
-			s.mu.Lock()
-			s.stats.VideoFrames++
-			s.state.LastVideoFrameAt = time.Now()
-			s.mu.Unlock()
-			if shouldStopInitialKeyframeRequests(track.Codec().MimeType, frame.data) {
-				stopKeyframe()
-			}
-
-			if timedRenderer, ok := s.renderer.(timedVideoFrameHandler); ok {
-				if err := timedRenderer.handleVideoFrameWithTiming(track.Codec().MimeType, frame.data, frame.packetTimestamp, frame.firstPacketReadAt, packetReadAt); err != nil {
-					s.setError(err)
-				}
-			} else if err := s.renderer.HandleVideoFrame(track.Codec().MimeType, frame.data, frame.packetTimestamp); err != nil {
-				s.setError(err)
-			}
-
-			s.emit(EventFrame, map[string]any{
-				"codec":           track.Codec().MimeType,
-				"packetTimestamp": frame.packetTimestamp,
-				"size":            len(frame.data),
-				"droppedPackets":  map[bool]int{false: 0, true: 1}[dropped],
-			})
-			continue
-		}
-
-		firstPacketReadAtByTimestamp[packet.Timestamp] = minPositiveTime(firstPacketReadAtByTimestamp[packet.Timestamp], benchmarkClockNowMs())
-		builder.Push(packet)
-		for sample := builder.Pop(); sample != nil; sample = builder.Pop() {
-			s.mu.Lock()
-			s.stats.VideoFrames++
-			s.state.LastVideoFrameAt = time.Now()
-			s.mu.Unlock()
-			if shouldStopInitialKeyframeRequests(track.Codec().MimeType, sample.Data) {
-				stopKeyframe()
-			}
-
-			firstPacketReadAt := firstPacketReadAtByTimestamp[sample.PacketTimestamp]
-			delete(firstPacketReadAtByTimestamp, sample.PacketTimestamp)
-			sampleReadyAt := benchmarkClockNowMs()
-			if timedRenderer, ok := s.renderer.(timedVideoFrameHandler); ok {
-				if err := timedRenderer.handleVideoFrameWithTiming(track.Codec().MimeType, sample.Data, sample.PacketTimestamp, firstPacketReadAt, sampleReadyAt); err != nil {
-					s.setError(err)
-				}
-			} else if err := s.renderer.HandleVideoFrame(track.Codec().MimeType, sample.Data, sample.PacketTimestamp); err != nil {
-				s.setError(err)
-			}
-
-			if sample.PrevDroppedPackets > 0 {
-				s.renderer.RequestKeyframe()
-				select {
-				case s.keyframeRequests <- struct{}{}:
-				default:
-				}
-			}
-
-			s.emit(EventFrame, map[string]any{
-				"codec":           track.Codec().MimeType,
-				"packetTimestamp": sample.PacketTimestamp,
-				"size":            len(sample.Data),
-				"droppedPackets":  sample.PrevDroppedPackets,
-			})
-		}
-	}
-}
-
-func minPositiveTime(current int64, candidate int64) int64 {
-	if current <= 0 {
-		return candidate
-	}
-	if candidate <= 0 || candidate > current {
-		return current
-	}
-	return candidate
-}
-
-func shouldStopInitialKeyframeRequests(codec string, frame []byte) bool {
-	codec = strings.ToLower(strings.TrimSpace(codec))
-	if strings.Contains(codec, "vp8") {
-		return isVP8KeyframePayload(frame)
-	} else if strings.Contains(codec, "h264") {
-		return isH264KeyframePayload(frame)
-	}
-	return len(frame) > 0
-}
-
-func isVP8KeyframePayload(data []byte) bool {
-	if len(data) == 0 {
-		return false
-	}
-	return data[0]&0x01 == 0
 }
 
 func isH264KeyframePayload(data []byte) bool {

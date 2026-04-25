@@ -266,19 +266,22 @@ func broadcastJSON(msg interface{}) {
 	}
 }
 
-func broadcastVideoFrame(frame []byte, streamID uint32, codec string) {
+func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string) {
 	captureTime := time.Now()
+	if frame.LatencyTrace != nil {
+		noteLatencyProbeFrameDispatch(frame.LatencyTrace, benchmarkClockNowMs())
+	}
 	// Copy frame for WebRTC delivery so we don't share memory with IVF reader
-	webrtcCopy := make([]byte, len(frame))
-	copy(webrtcCopy, frame)
-	WriteWebRTCFrame(webrtcCopy, streamID, captureTime, codec)
+	webrtcCopy := make([]byte, len(frame.Data))
+	copy(webrtcCopy, frame.Data)
+	WriteWebRTCFrame(webrtcCopy, streamID, captureTime, codec, frame.LatencyTrace)
 
 	timestamp := float64(benchmarkClockNowMs())
 	header := make([]byte, 9)
 	header[0] = 1 // Video Type
 	binary.BigEndian.PutUint64(header[1:], math.Float64bits(timestamp))
 
-	packet := append(header, frame...)
+	packet := append(header, frame.Data...)
 
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()

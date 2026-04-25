@@ -261,11 +261,11 @@ func TestVP8ULLAssemblerEmitsFrameOnMarker(t *testing.T) {
 	packet1 := &rtp.Packet{Header: rtp.Header{SequenceNumber: 1, Timestamp: 90, Marker: false}, Payload: testVP8Payload(true, 0x01)}
 	packet2 := &rtp.Packet{Header: rtp.Header{SequenceNumber: 2, Timestamp: 90, Marker: true}, Payload: testVP8Payload(false, 0x02)}
 
-	if _, ready, dropped, err := assembler.push(packet1, 1000); ready || dropped || err != nil {
+	if _, ready, dropped, err := assembler.push(packet1, packetTiming{firstPacketSequenceNumber: 1, firstDecryptedPacketQueuedAt: 980, firstRemotePacketAt: 990}, 1000); ready || dropped || err != nil {
 		t.Fatalf("unexpected first push result: ready=%t dropped=%t err=%v", ready, dropped, err)
 	}
 
-	frame, ready, dropped, err := assembler.push(packet2, 1010)
+	frame, ready, dropped, err := assembler.push(packet2, packetTiming{firstPacketSequenceNumber: 2, firstDecryptedPacketQueuedAt: 985, firstRemotePacketAt: 990}, 1010)
 	if err != nil {
 		t.Fatalf("unexpected second push error: %v", err)
 	}
@@ -277,6 +277,15 @@ func TestVP8ULLAssemblerEmitsFrameOnMarker(t *testing.T) {
 	}
 	if frame.packetTimestamp != 90 {
 		t.Fatalf("unexpected packet timestamp: got %d want 90", frame.packetTimestamp)
+	}
+	if frame.firstPacketSequenceNumber != 1 {
+		t.Fatalf("unexpected firstPacketSequenceNumber: got %d want 1", frame.firstPacketSequenceNumber)
+	}
+	if frame.firstDecryptedPacketQueuedAt != 980 {
+		t.Fatalf("unexpected firstDecryptedPacketQueuedAt: got %d want 980", frame.firstDecryptedPacketQueuedAt)
+	}
+	if frame.firstRemotePacketAt != 990 {
+		t.Fatalf("unexpected firstRemotePacketAt: got %d want 990", frame.firstRemotePacketAt)
 	}
 	if frame.firstPacketReadAt != 1000 {
 		t.Fatalf("unexpected firstPacketReadAt: got %d want 1000", frame.firstPacketReadAt)
@@ -294,15 +303,15 @@ func TestVP8ULLAssemblerDropsGapAndRecoversOnNextFrame(t *testing.T) {
 	packetGap := &rtp.Packet{Header: rtp.Header{SequenceNumber: 3, Timestamp: 90, Marker: true}, Payload: testVP8Payload(false, 0x03)}
 	packetNext := &rtp.Packet{Header: rtp.Header{SequenceNumber: 4, Timestamp: 180, Marker: true}, Payload: testVP8Payload(true, 0x04)}
 
-	if _, ready, dropped, err := assembler.push(packet1, 1000); ready || dropped || err != nil {
+	if _, ready, dropped, err := assembler.push(packet1, packetTiming{firstPacketSequenceNumber: 1, firstDecryptedPacketQueuedAt: 990, firstRemotePacketAt: 995}, 1000); ready || dropped || err != nil {
 		t.Fatalf("unexpected initial push result: ready=%t dropped=%t err=%v", ready, dropped, err)
 	}
 
-	if _, ready, dropped, err := assembler.push(packetGap, 1010); ready || !dropped || err == nil {
+	if _, ready, dropped, err := assembler.push(packetGap, packetTiming{firstPacketSequenceNumber: 3, firstDecryptedPacketQueuedAt: 1000, firstRemotePacketAt: 995}, 1010); ready || !dropped || err == nil {
 		t.Fatalf("expected gap push to drop partial frame and error, got ready=%t dropped=%t err=%v", ready, dropped, err)
 	}
 
-	frame, ready, dropped, err := assembler.push(packetNext, 1020)
+	frame, ready, dropped, err := assembler.push(packetNext, packetTiming{firstPacketSequenceNumber: 4, firstDecryptedPacketQueuedAt: 1010, firstRemotePacketAt: 1015}, 1020)
 	if err != nil {
 		t.Fatalf("unexpected recovery error: %v", err)
 	}
@@ -314,6 +323,15 @@ func TestVP8ULLAssemblerDropsGapAndRecoversOnNextFrame(t *testing.T) {
 	}
 	if frame.packetTimestamp != 180 {
 		t.Fatalf("unexpected recovered timestamp: got %d want 180", frame.packetTimestamp)
+	}
+	if frame.firstPacketSequenceNumber != 4 {
+		t.Fatalf("unexpected recovered firstPacketSequenceNumber: got %d want 4", frame.firstPacketSequenceNumber)
+	}
+	if frame.firstDecryptedPacketQueuedAt != 1010 {
+		t.Fatalf("unexpected recovered firstDecryptedPacketQueuedAt: got %d want 1010", frame.firstDecryptedPacketQueuedAt)
+	}
+	if frame.firstRemotePacketAt != 1015 {
+		t.Fatalf("unexpected recovered firstRemotePacketAt: got %d want 1015", frame.firstRemotePacketAt)
 	}
 	if frame.firstPacketReadAt != 1020 {
 		t.Fatalf("unexpected recovered firstPacketReadAt: got %d want 1020", frame.firstPacketReadAt)
@@ -330,11 +348,11 @@ func TestVP8ULLAssemblerDropsPreviousFrameOnTimestampChange(t *testing.T) {
 	packet1 := &rtp.Packet{Header: rtp.Header{SequenceNumber: 10, Timestamp: 900, Marker: false}, Payload: testVP8Payload(true, 0x0a)}
 	packet2 := &rtp.Packet{Header: rtp.Header{SequenceNumber: 11, Timestamp: 990, Marker: true}, Payload: testVP8Payload(true, 0x0b)}
 
-	if _, ready, dropped, err := assembler.push(packet1, 2000); ready || dropped || err != nil {
+	if _, ready, dropped, err := assembler.push(packet1, packetTiming{firstPacketSequenceNumber: 10, firstDecryptedPacketQueuedAt: 1980, firstRemotePacketAt: 1990}, 2000); ready || dropped || err != nil {
 		t.Fatalf("unexpected initial push result: ready=%t dropped=%t err=%v", ready, dropped, err)
 	}
 
-	frame, ready, dropped, err := assembler.push(packet2, 2010)
+	frame, ready, dropped, err := assembler.push(packet2, packetTiming{firstPacketSequenceNumber: 11, firstDecryptedPacketQueuedAt: 2000, firstRemotePacketAt: 2005}, 2010)
 	if err != nil {
 		t.Fatalf("unexpected timestamp change error: %v", err)
 	}
@@ -346,6 +364,15 @@ func TestVP8ULLAssemblerDropsPreviousFrameOnTimestampChange(t *testing.T) {
 	}
 	if frame.packetTimestamp != 990 {
 		t.Fatalf("unexpected packet timestamp: got %d want 990", frame.packetTimestamp)
+	}
+	if frame.firstPacketSequenceNumber != 11 {
+		t.Fatalf("unexpected firstPacketSequenceNumber: got %d want 11", frame.firstPacketSequenceNumber)
+	}
+	if frame.firstDecryptedPacketQueuedAt != 2000 {
+		t.Fatalf("unexpected firstDecryptedPacketQueuedAt: got %d want 2000", frame.firstDecryptedPacketQueuedAt)
+	}
+	if frame.firstRemotePacketAt != 2005 {
+		t.Fatalf("unexpected firstRemotePacketAt: got %d want 2005", frame.firstRemotePacketAt)
 	}
 	if frame.firstPacketReadAt != 2010 {
 		t.Fatalf("unexpected firstPacketReadAt: got %d want 2010", frame.firstPacketReadAt)

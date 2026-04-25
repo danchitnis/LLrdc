@@ -182,19 +182,25 @@ type NativeRenderer struct {
 }
 
 type nativeVideoSample struct {
-	codec             string
-	data              []byte
-	packetTimestamp   uint32
-	firstPacketReadAt int64
-	receiveAt         int64
+	codec                        string
+	data                         []byte
+	packetTimestamp              uint32
+	firstPacketSequenceNumber    uint16
+	firstDecryptedPacketQueuedAt int64
+	firstRemotePacketAt          int64
+	firstPacketReadAt            int64
+	receiveAt                    int64
 }
 
 type nativeDecodedSample struct {
-	frame             decodedFrame
-	packetTimestamp   uint32
-	firstPacketReadAt int64
-	receiveAt         int64
-	decodeReadyAt     int64
+	frame                        decodedFrame
+	packetTimestamp              uint32
+	firstPacketSequenceNumber    uint16
+	firstDecryptedPacketQueuedAt int64
+	firstRemotePacketAt          int64
+	firstPacketReadAt            int64
+	receiveAt                    int64
+	decodeReadyAt                int64
 }
 
 type vp8Decoder struct {
@@ -367,22 +373,46 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 }
 
 func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
-	return r.handleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, benchmarkClockNowMs())
+	return r.handleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, 0, 0, 0, benchmarkClockNowMs())
 }
 
-func (r *NativeRenderer) handleVideoFrameWithTiming(codec string, frame []byte, packetTimestamp uint32, firstPacketReadAt int64, receiveAt int64) error {
+func (r *NativeRenderer) handleVideoFrameWithTiming(
+	codec string,
+	frame []byte,
+	packetTimestamp uint32,
+	firstPacketSequenceNumber uint16,
+	firstDecryptedPacketQueuedAt int64,
+	firstRemotePacketAt int64,
+	firstPacketReadAt int64,
+	receiveAt int64,
+) error {
 	if receiveAt <= 0 {
 		receiveAt = benchmarkClockNowMs()
+	}
+	if firstDecryptedPacketQueuedAt <= 0 {
+		firstDecryptedPacketQueuedAt = firstRemotePacketAt
+	}
+	if firstRemotePacketAt <= 0 {
+		firstRemotePacketAt = firstPacketReadAt
 	}
 	if firstPacketReadAt <= 0 {
 		firstPacketReadAt = receiveAt
 	}
+	if firstDecryptedPacketQueuedAt <= 0 {
+		firstDecryptedPacketQueuedAt = firstPacketReadAt
+	}
+	if firstRemotePacketAt <= 0 {
+		firstRemotePacketAt = receiveAt
+	}
 	sample := nativeVideoSample{
-		codec:             codec,
-		data:              append([]byte(nil), frame...),
-		packetTimestamp:   packetTimestamp,
-		firstPacketReadAt: firstPacketReadAt,
-		receiveAt:         receiveAt,
+		codec:                        codec,
+		data:                         append([]byte(nil), frame...),
+		packetTimestamp:              packetTimestamp,
+		firstPacketSequenceNumber:    firstPacketSequenceNumber,
+		firstDecryptedPacketQueuedAt: firstDecryptedPacketQueuedAt,
+		firstRemotePacketAt:          firstRemotePacketAt,
+		firstPacketReadAt:            firstPacketReadAt,
+		receiveAt:                    receiveAt,
 	}
 	r.mu.RLock()
 	lowLatency := r.lowLatency
@@ -887,11 +917,14 @@ func (r *NativeRenderer) Run() error {
 						lowLatency := r.lowLatency
 						r.mu.RUnlock()
 						enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
-							frame:             frame,
-							packetTimestamp:   sample.packetTimestamp,
-							firstPacketReadAt: sample.firstPacketReadAt,
-							receiveAt:         sample.receiveAt,
-							decodeReadyAt:     benchmarkClockNowMs(),
+							frame:                        frame,
+							packetTimestamp:              sample.packetTimestamp,
+							firstPacketSequenceNumber:    sample.firstPacketSequenceNumber,
+							firstDecryptedPacketQueuedAt: sample.firstDecryptedPacketQueuedAt,
+							firstRemotePacketAt:          sample.firstRemotePacketAt,
+							firstPacketReadAt:            sample.firstPacketReadAt,
+							receiveAt:                    sample.receiveAt,
+							decodeReadyAt:                benchmarkClockNowMs(),
 						}, lowLatency)
 					}
 				} else {
@@ -918,11 +951,14 @@ func (r *NativeRenderer) Run() error {
 						lowLatency := r.lowLatency
 						r.mu.RUnlock()
 						enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
-							frame:             frame,
-							packetTimestamp:   sample.packetTimestamp,
-							firstPacketReadAt: sample.firstPacketReadAt,
-							receiveAt:         sample.receiveAt,
-							decodeReadyAt:     benchmarkClockNowMs(),
+							frame:                        frame,
+							packetTimestamp:              sample.packetTimestamp,
+							firstPacketSequenceNumber:    sample.firstPacketSequenceNumber,
+							firstDecryptedPacketQueuedAt: sample.firstDecryptedPacketQueuedAt,
+							firstRemotePacketAt:          sample.firstRemotePacketAt,
+							firstPacketReadAt:            sample.firstPacketReadAt,
+							receiveAt:                    sample.receiveAt,
+							decodeReadyAt:                benchmarkClockNowMs(),
 						}, lowLatency)
 					}
 				}
@@ -1195,16 +1231,19 @@ func (r *NativeRenderer) Run() error {
 			renderer.Present()
 			presentedAt := benchmarkClockNowMs()
 			r.emitPresent(NativeFramePresented{
-				Width:              int(decoded.frame.width),
-				Height:             int(decoded.frame.height),
-				PacketTimestamp:    decoded.packetTimestamp,
-				Brightness:         brightness,
-				ProbeMarker:        probeMarker,
-				FirstPacketReadAt:  decoded.firstPacketReadAt,
-				ReceiveAt:          decoded.receiveAt,
-				DecodeReadyAt:      decoded.decodeReadyAt,
-				PresentationAt:     presentedAt,
-				PresentationSource: "render_present",
+				Width:                        int(decoded.frame.width),
+				Height:                       int(decoded.frame.height),
+				PacketTimestamp:              decoded.packetTimestamp,
+				FirstPacketSequenceNumber:    decoded.firstPacketSequenceNumber,
+				Brightness:                   brightness,
+				ProbeMarker:                  probeMarker,
+				FirstDecryptedPacketQueuedAt: decoded.firstDecryptedPacketQueuedAt,
+				FirstRemotePacketAt:          decoded.firstRemotePacketAt,
+				FirstPacketReadAt:            decoded.firstPacketReadAt,
+				ReceiveAt:                    decoded.receiveAt,
+				DecodeReadyAt:                decoded.decodeReadyAt,
+				PresentationAt:               presentedAt,
+				PresentationSource:           "render_present",
 			})
 
 		case <-time.After(10 * time.Millisecond):

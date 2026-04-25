@@ -73,7 +73,7 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 	return outputArgs
 }
 
-func splitIVF(reader io.Reader, onFrame func([]byte)) {
+func splitIVF(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	// Scan for "DKIF"
 	headerData := make([]byte, 32)
 	found := false
@@ -111,12 +111,19 @@ func splitIVF(reader io.Reader, onFrame func([]byte)) {
 		}
 
 		frameSize := binary.LittleEndian.Uint32(frameHeader[0:4])
+		containerTimestamp := binary.LittleEndian.Uint64(frameHeader[4:12])
 		frameData := make([]byte, frameSize)
 		if _, err := io.ReadFull(reader, frameData); err != nil {
 			log.Printf("Error reading frame data: %v", err)
 			return
 		}
 
-		onFrame(frameData)
+		parsedAtMs := benchmarkClockNowMs()
+		onFrame(EncodedVideoFrame{
+			Data:               frameData,
+			ParsedAtMs:         parsedAtMs,
+			ContainerTimestamp: containerTimestamp,
+			LatencyTrace:       startLatencyProbeEncodedFrame(parsedAtMs, containerTimestamp),
+		})
 	}
 }

@@ -61,29 +61,35 @@ type NativeWindowLifecycle struct {
 }
 
 type NativeFramePresented struct {
-	Width                 int
-	Height                int
-	PacketTimestamp       uint32
-	Brightness            int
-	ProbeMarker           int
-	FirstPacketReadAt     int64
-	ReceiveAt             int64
-	DecodeReadyAt         int64
-	PresentationAt        int64
-	PresentationSource    string
-	CompositorPresentedAt int64
+	Width                        int
+	Height                       int
+	PacketTimestamp              uint32
+	FirstPacketSequenceNumber    uint16
+	Brightness                   int
+	ProbeMarker                  int
+	FirstDecryptedPacketQueuedAt int64
+	FirstRemotePacketAt          int64
+	FirstPacketReadAt            int64
+	ReceiveAt                    int64
+	DecodeReadyAt                int64
+	PresentationAt               int64
+	PresentationSource           string
+	CompositorPresentedAt        int64
 }
 
 type LatencyBreakdown struct {
-	PacketTimestamp       uint32 `json:"packetTimestamp"`
-	Brightness            int    `json:"brightness"`
-	ProbeMarker           int    `json:"probeMarker,omitempty"`
-	FirstPacketReadAt     int64  `json:"firstPacketReadAt,omitempty"`
-	ReceiveAt             int64  `json:"receiveAt"`
-	DecodeReadyAt         int64  `json:"decodeReadyAt"`
-	PresentationAt        int64  `json:"presentationAt"`
-	CompositorPresentedAt int64  `json:"compositorPresentedAt,omitempty"`
-	PresentationSource    string `json:"presentationSource,omitempty"`
+	PacketTimestamp              uint32 `json:"packetTimestamp"`
+	FirstPacketSequenceNumber    uint16 `json:"firstPacketSequenceNumber,omitempty"`
+	Brightness                   int    `json:"brightness"`
+	ProbeMarker                  int    `json:"probeMarker,omitempty"`
+	FirstDecryptedPacketQueuedAt int64  `json:"firstDecryptedPacketQueuedAt,omitempty"`
+	FirstRemotePacketAt          int64  `json:"firstRemotePacketAt,omitempty"`
+	FirstPacketReadAt            int64  `json:"firstPacketReadAt,omitempty"`
+	ReceiveAt                    int64  `json:"receiveAt"`
+	DecodeReadyAt                int64  `json:"decodeReadyAt"`
+	PresentationAt               int64  `json:"presentationAt"`
+	CompositorPresentedAt        int64  `json:"compositorPresentedAt,omitempty"`
+	PresentationSource           string `json:"presentationSource,omitempty"`
 }
 
 type LocalInputSample struct {
