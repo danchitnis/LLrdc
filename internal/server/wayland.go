@@ -156,6 +156,19 @@ ctl.!default {
 	xfceAutostart := ""
 	if !minimal {
 		xfceAutostart = fmt.Sprintf(`
+# Initialize XFCE configuration
+xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-xfce-dark" --create || true
+xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create || true
+xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create || true
+
+for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "%s" --create || true
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/image-style -n -t int -s 5 --create || true
+  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/color-style -n -t int -s 0 --create || true
+done
+
+xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create || true
+
 # Launch XFCE Components
 xfsettingsd &
 xfce4-panel &
@@ -226,24 +239,11 @@ if plugin_id not in panel1_ids:
 run("xfce4-panel -r")
 PY
 
-xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s "elementary-Xfce-darker" --create
-xfconf-query -c xsettings -p /Net/ThemeName -n -t string -s "Greybird" --create
-xfconf-query -c xsettings -p /Gdk/WindowScalingFactor -n -t int -s %d --create
-
-BG_FILE="%s"
-for m in monitor0 monitorHEADLESS-1 HEADLESS-1 default; do
-  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/last-image -n -t string -s "$BG_FILE" --create
-  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/image-style -n -t int -s 5 --create
-  xfconf-query -c xfce4-desktop -p /backdrop/screen0/$m/workspace0/color-style -n -t int -s 0 --create
-done
-
-xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s false --create
-
 xfdesktop --reload
 
 # swaybg is more reliable for Wayland backgrounds on labwc
-swaybg -o HEADLESS-1 -i "$BG_FILE" -m stretch &
-`, gdkScale, bgFile)
+swaybg -o HEADLESS-1 -i "%s" -m stretch &
+`, gdkScale, bgFile, bgFile)
 	}
 
 	autostart := fmt.Sprintf(`#!/bin/sh
@@ -264,8 +264,6 @@ wait_for_cmd() {
     sleep 0.2
   done
 }
-
-# NOTE: randr and scaling are handled by Go server using native wlr-randr --scale
 
 # Set Wayland native backend for GTK/XFCE
 export GDK_BACKEND=wayland

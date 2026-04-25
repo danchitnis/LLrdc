@@ -14,7 +14,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM ubuntu:25.04
+FROM ubuntu:26.04
 ARG ENABLE_INTEL=false
 ARG BUILD_VARIANT=cpu
 LABEL com.danchitnis.llrdc.build-variant="${BUILD_VARIANT}"
@@ -39,12 +39,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   pavucontrol \
   python3 \
   python3-tk \
+  glycin-loaders \
   adwaita-icon-theme-full \
   elementary-xfce-icon-theme \
   gnome-themes-extra \
   hicolor-icon-theme \
   libpulse0 \
   libegl1 \
+  shared-mime-info \
   libgbm1 \
   libdrm2 \
   pulseaudio \
@@ -127,6 +129,10 @@ RUN wayland-scanner client-header wlr-virtual-pointer-unstable-v1.xml wlr-virtua
     && gcc -o wayland_input_client wayland_input_client.c wlr-virtual-pointer-unstable-v1-client-protocol.c virtual-keyboard-unstable-v1-client-protocol.c $(pkg-config --cflags --libs wayland-client xkbcommon) \
     && gcc -O2 -o /usr/local/bin/direct_buffer_probe direct_buffer_probe.c $(pkg-config --cflags --libs wayland-client) \
     && gcc -O2 -o /usr/local/bin/latency_probe tools/latency_probe.c xdg-shell-client-protocol.c -I. $(pkg-config --cflags --libs wayland-client wayland-cursor)
+
+# Trick glycin into disabling sandboxing by pretending to be a Flatpak Devel environment.
+# This avoids the need for bwrap/unprivileged namespaces which are blocked by host kernels.
+RUN printf '[Instance]\nbuild=true\n\n[Application]\nname=org.llrdc.Devel\n' > /.flatpak-info
 
 RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/
