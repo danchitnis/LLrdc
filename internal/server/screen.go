@@ -13,10 +13,7 @@ var screenHeight atomic.Int64
 var maxScreenWidth atomic.Int64
 var maxScreenHeight atomic.Int64
 
-func initScreenSize(maxW, maxH int) {
-	maxScreenWidth.Store(int64(maxW))
-	maxScreenHeight.Store(int64(maxH))
-
+func UpdateScreenSizeFromInitialRes() {
 	initialW := 1920
 	initialH := 1080
 
@@ -36,43 +33,16 @@ func initScreenSize(maxW, maxH int) {
 		}
 	}
 
-	if initialW > maxW {
-		initialW = maxW
-	}
-	if initialH > maxH {
-		initialH = maxH
-	}
-
-	setScreenSize(initialW, initialH)
+	forceSetScreenSize(initialW, initialH)
 }
 
-func setScreenSize(width, height int) {
-	// Ensure 8-pixel alignment for maximum encoder compatibility
-	width = (width / 8) * 8
-	height = (height / 8) * 8
-
-	if width < minScreenWidth {
-		width = minScreenWidth
-	}
-	if height < minScreenHeight {
-		height = minScreenHeight
-	}
-	maxW := int(maxScreenWidth.Load())
-	maxH := int(maxScreenHeight.Load())
-	if maxW > 0 && width > maxW {
-		width = maxW
-	}
-	if maxH > 0 && height > maxH {
-		height = maxH
-	}
-	screenWidth.Store(int64(width))
-	screenHeight.Store(int64(height))
+func initScreenSize(maxW, maxH int) {
+	maxScreenWidth.Store(int64(maxW))
+	maxScreenHeight.Store(int64(maxH))
+	UpdateScreenSizeFromInitialRes()
 }
 
-func SetScreenSize(width, height int) bool {
-	if width <= 0 || height <= 0 {
-		return false
-	}
+func forceSetScreenSize(width, height int) bool {
 	// Ensure 8-pixel alignment for maximum encoder compatibility
 	width = (width / 8) * 8
 	height = (height / 8) * 8
@@ -102,6 +72,18 @@ func SetScreenSize(width, height int) bool {
 	screenWidth.Store(int64(width))
 	screenHeight.Store(int64(height))
 	return true
+}
+
+func SetScreenSize(width, height int) bool {
+	if width <= 0 || height <= 0 {
+		return false
+	}
+
+	if InitialRes > 0 {
+		return false // Ignore client resizes when a fixed resolution is active
+	}
+
+	return forceSetScreenSize(width, height)
 }
 
 func GetScreenSize() (int, int) {

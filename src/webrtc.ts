@@ -39,6 +39,7 @@ export class WebRTCManager {
     private hasSentWebrtcReady = false;
     private statsInterval: ReturnType<typeof setInterval> | null = null;
     private iceCandidatesBuffer: RTCIceCandidateInit[] = [];
+    private canvasLoopGeneration = 0;
 
     constructor(sendWs: (data: string) => void, getNetworkLatencyVal: () => number, getLatencyMonitor: () => number, onPresentedFrame?: (frame: PresentedFrameMeta) => void) {
         console.log('[WebRTCManager] Constructor called');
@@ -60,8 +61,24 @@ export class WebRTCManager {
         document.body.addEventListener('keydown', unmuteHandler);
     }
 
+    public resetStats() {
+        this.fps = 0;
+        this.lastTotalDecoded = -1;
+        this.lastStatsTime = 0;
+        this.lastBytesReceived = 0;
+        this.bandwidthMbps = 0;
+        this.frameCount = 0;
+        this.lastFPSUpdate = Date.now();
+        this.lastVideoFrameTime = 0;
+        this.lastCanvasFrameTime = 0;
+        this.smoothedBandwidth = 0;
+        this.smoothedFps = 0;
+        this.webrtcLatency = 0;
+    }
+
     public initWebRTC() {
         if (this.statsInterval) clearInterval(this.statsInterval);
+        this.canvasLoopGeneration++;
 
         if (this.rtcPeer) {
             this.rtcPeer.close();
@@ -73,13 +90,7 @@ export class WebRTCManager {
         }
         
         this.isWebRtcActive = false;
-        this.lastTotalDecoded = -1;
-        this.lastStatsTime = 0;
-        this.lastBytesReceived = 0;
-        this.bandwidthMbps = 0;
-        this.frameCount = 0;
-        this.lastVideoFrameTime = 0;
-        this.lastCanvasFrameTime = 0;
+        this.resetStats();
         this.hasSentWebrtcReady = false;
         
         const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -159,11 +170,11 @@ export class WebRTCManager {
             this.isWebRtcActive = true;
             videoEl.play().then(() => {
                 log('WebRTC Video/Audio playing');
-                this.startVideoCanvasLoop(0);
+                this.startVideoCanvasLoop(this.canvasLoopGeneration, 0);
             }).catch((err: unknown) => {
                 log('Media play error: ' + (err as Error).message);
                 // Still active even if play() was interrupted, as stats will still flow
-                this.startVideoCanvasLoop(0);
+                this.startVideoCanvasLoop(this.canvasLoopGeneration, 0);
             });
         };
 
@@ -203,8 +214,8 @@ export class WebRTCManager {
         });
     }
 
-    private startVideoCanvasLoop = (now: DOMHighResTimeStamp, metadata?: VideoFrameCallbackMetadata) => {
-        if (!this.isWebRtcActive) return;
+    private startVideoCanvasLoop = (generation: number, now: DOMHighResTimeStamp, metadata?: VideoFrameCallbackMetadata) => {
+        if (generation !== this.canvasLoopGeneration || !this.isWebRtcActive) return;
         if (ctx && videoEl.videoWidth > 0) {
             this.lastCanvasFrameTime = Date.now();
 
@@ -247,9 +258,9 @@ export class WebRTCManager {
         }
 
         if (videoEl.requestVideoFrameCallback) {
-            videoEl.requestVideoFrameCallback(this.startVideoCanvasLoop);
+            videoEl.requestVideoFrameCallback((nextNow, nextMetadata) => this.startVideoCanvasLoop(generation, nextNow, nextMetadata));
         } else {
-            requestAnimationFrame((now) => this.startVideoCanvasLoop(now));
+            requestAnimationFrame((nextNow) => this.startVideoCanvasLoop(generation, nextNow));
         }
     }
 
@@ -319,23 +330,25 @@ export class WebRTCManager {
             let currentFps: number;
             
             let decodedFps = 0;
+            let hasDecodedFps = false;
             if (framesDecoded !== -1 && this.lastTotalDecoded !== -1) {
                 const decodedDelta = framesDecoded - this.lastTotalDecoded;
                 decodedFps = (decodedDelta * 1000) / deltaMs;
+                hasDecodedFps = true;
             }
             if (framesDecoded !== -1) {
                 this.lastTotalDecoded = framesDecoded;
             }
 
-            if (isCanvasActive) {
+            if (hasDecodedFps) {
+                currentFps = decodedFps;
+                this.frameCount = 0;
+                this.lastFPSUpdate = now;
+            } else if (isCanvasActive) {
                 const timeSinceLastFPS = now - this.lastFPSUpdate;
                 currentFps = (this.frameCount * 1000) / timeSinceLastFPS;
                 this.frameCount = 0;
                 this.lastFPSUpdate = now;
-
-                if (currentFps < 5 && decodedFps > 5) {
-                    currentFps = decodedFps;
-                }
             } else {
                 currentFps = decodedFps;
             }

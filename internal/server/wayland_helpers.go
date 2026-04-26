@@ -65,16 +65,27 @@ func applyHdpiSettings(env []string) {
 }
 
 func resizeDisplay(width, height int) error {
-	mode := fmt.Sprintf("%dx%d", width, height)
-	scale := 1.0
+	waylandScale := 1.0
 	if HDPI > 100 {
-		scale = float64(HDPI) / 100.0
+		waylandScale = float64(HDPI) / 100.0
 	}
-	log.Printf("Resizing Wayland display (HEADLESS-1) to %s with scale %f", mode, scale)
+
+	modeStr := fmt.Sprintf("%dx%d", width, height)
+	scaleStr := fmt.Sprintf("%.6f", waylandScale)
+	log.Printf("Resizing Wayland display (HEADLESS-1) to %s with scale %s", modeStr, scaleStr)
 	env := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
-	if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--custom-mode", fmt.Sprintf("%s@60", mode), "--scale", fmt.Sprintf("%f", scale)}, env); err != nil {
-		return fmt.Errorf("wlr-randr failed: %v", err)
+
+	args := []string{"--output", "HEADLESS-1", "--mode", modeStr, "--scale", scaleStr}
+	if err := runWithEnv("wlr-randr", args, env); err != nil {
+		log.Printf("Warning: wlr-randr --mode failed: %v. Trying --custom-mode.", err)
+		args = []string{"--output", "HEADLESS-1", "--custom-mode", modeStr + "@60", "--scale", scaleStr}
+		if err := runWithEnv("wlr-randr", args, env); err != nil {
+			log.Printf("Error: wlr-randr --custom-mode also failed: %v", err)
+			return err
+		}
 	}
+
+	time.Sleep(100 * time.Millisecond)
 	return nil
 }
 

@@ -251,6 +251,12 @@ function scheduleResize() {
     }, 100);
 }
 
+function forceResize() {
+    lastResizeWidth = 0;
+    lastResizeHeight = 0;
+    scheduleResize();
+}
+
 triggerResizeUpdate = scheduleResize;
 
 if (displayContainerEl && 'ResizeObserver' in window) {
@@ -304,7 +310,11 @@ function handleJsonMessage(msg: Record<string, unknown>) {
 
         if (msg.framerate !== undefined && typeof msg.framerate === 'number') {
             log(`Server framerate: ${msg.framerate} FPS`);
+            const previousFramerate = window.serverFfmpegFps;
             window.serverFfmpegFps = msg.framerate;
+            if (previousFramerate !== undefined && previousFramerate !== msg.framerate) {
+                webrtc.resetStats();
+            }
             if (framerateSelect) {
                 framerateSelect.value = msg.framerate.toString();
             }
@@ -328,6 +338,9 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             } else {
                 maxResSelect.value = msg.max_res.toString();
                 pendingMaxRes = null;
+                if (msg.max_res === 0) {
+                    forceResize();
+                }
             }
         }
 

@@ -215,6 +215,11 @@ export class BrowserClientSession {
             return;
         }
 
+        if (msg.type === 'reconnect_hint') {
+            this.webrtc.initWebRTC();
+            return;
+        }
+
         this.events.emit('serverMessage', msg);
     }
 

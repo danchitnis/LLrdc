@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady } from './helpers';
+import { readClientStats, waitForServerReady } from './helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-framerate-test';
 const PORT = '8084';
@@ -26,6 +26,7 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
   });
 
   test('should toggle framerate and verify it', async ({ page }) => {
+    test.setTimeout(90000);
     await page.setViewportSize({ width: 1280, height: 819 });
     await page.goto(`http://localhost:${PORT}`);
 
@@ -61,12 +62,28 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
       timeout: 20000,
     }).toContain('Received framerate config: 15 fps');
 
-    // Verify UI shows lower FPS
+    await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+      timeout: 20000,
+    }).toMatch(/Framerate: 15|Using video filter: fps=15|-r 15\b/);
+
     await expect.poll(async () => {
-        const text = await statusEl.textContent() || '';
-        const match = text.match(/FPS: (\d+)/);
-        return match ? parseInt(match[1], 10) : 0;
-    }, { timeout: 15000 }).toBeLessThan(25);
+      const stats = await readClientStats(page);
+      console.log(`Browser-reported FPS after 15 FPS switch: ${stats.fps}`);
+      return stats.fps > 5 && stats.fps < 25;
+    }, { timeout: 30000 }).toBe(true);
+
+    // Verify decoded browser frames reflect the new server framerate.
+    await expect.poll(async () => {
+      const before = await readClientStats(page);
+      const start = Date.now();
+      await page.waitForTimeout(4000);
+      const after = await readClientStats(page);
+      const elapsedMs = Date.now() - start;
+      const deltaDecoded = after.totalDecoded - before.totalDecoded;
+      const decodedFps = (deltaDecoded * 1000) / elapsedMs;
+      console.log(`Measured decoded FPS after 15 FPS switch: ${decodedFps.toFixed(1)} (${deltaDecoded} frames)`);
+      return deltaDecoded >= 5 && decodedFps > 5 && decodedFps < 25;
+    }, { timeout: 30000 }).toBe(true);
 
     // Verify it still says WebRTC and decoding continues
     await expect(statusEl).toHaveText(/WebRTC/i);

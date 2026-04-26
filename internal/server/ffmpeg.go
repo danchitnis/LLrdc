@@ -437,11 +437,11 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				if !targetDamageTracking {
 					args = append(args, "-D") // Disable damage tracking to continuously emit frames
 				}
-
 				args = append(args,
 					"-c", codec,
 					"-m", format,
 					"-r", fmt.Sprintf("%d", FPS),
+					"-B", fmt.Sprintf("%d", FPS),
 				)
 
 				if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {

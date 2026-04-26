@@ -301,6 +301,30 @@ func broadcastConfig(restarted bool) {
 	broadcastJSON(configPayload(restarted))
 }
 
+func applyDisplayChange(previousStreamID uint32, width, height int, reason string) {
+	if TestPattern {
+		RestartForResize()
+		return
+	}
+
+	log.Printf("Applying display change for %s: %dx%d", reason, width, height)
+	PauseStreaming()
+	if err := resizeDisplay(width, height); err != nil {
+		log.Printf("Display resize failed for %s: %v", reason, err)
+	}
+
+	if err := waitForDisplayState(width, height, 5*time.Second); err != nil {
+		log.Printf("Display change did not reach requested state for %s: %v", reason, err)
+	}
+
+	ResumeStreaming()
+	PrimeFrameGeneration(0, 5, 100*time.Millisecond)
+	if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
+		log.Printf("Display-changed stream did not become ready in time for %s: %v", reason, err)
+		PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+	}
+}
+
 func handleInputMessage(msg map[string]interface{}) {
 	msgType, _ := msg["type"].(string)
 	if msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "key" || msgType == "wheel" {
@@ -426,16 +450,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			go func(configMsg map[string]interface{}) {
 				log.Printf("Received config message: %v", configMsg)
 				restartRequested := false
-				displayChanged := false
+				displayResizeRequested := false
+				displayChangeReason := "config update"
 				previousStreamID := getCurrentFFmpegStreamID()
 
 				if hdpiFloat, ok := configMsg["hdpi"].(float64); ok {
 					hdpi := int(hdpiFloat)
-					log.Printf("Received HDPI config: %d%%", hdpi)
 					if HDPI != hdpi {
+						log.Printf("Received HDPI config: %d%%", hdpi)
 						HDPI = hdpi
 						applyHdpiSettings(os.Environ())
-						displayChanged = true
+						displayResizeRequested = true
+						displayChangeReason = "HDPI update"
 					}
 				}
 				if maxResFloat, ok := configMsg["max_res"].(float64); ok {
@@ -443,6 +469,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					if InitialRes != maxRes {
 						log.Printf("Received max resolution config: %dp", maxRes)
 						InitialRes = maxRes
+						if InitialRes > 0 {
+							UpdateScreenSizeFromInitialRes()
+							displayResizeRequested = true
+							displayChangeReason = "fixed resolution update"
+						}
 					}
 				}
 				if vCodec, ok := configMsg["videoCodec"].(string); ok {
@@ -586,12 +617,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					SetFramerate(fps)
 				}
 
-				if displayChanged {
+				if displayResizeRequested {
 					width, height := GetScreenSize()
-					if err := waitForDisplayState(width, height, 5*time.Second); err != nil {
-						log.Printf("Timed out waiting for HDPI display update: %v", err)
-					}
-					TriggerPing()
+					applyDisplayChange(previousStreamID, width, height, displayChangeReason)
+					previousStreamID = getCurrentFFmpegStreamID()
 				}
 
 				if restartRequested {
@@ -621,30 +650,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					// Get the actual clamped size
 					clampedW, clampedH := GetScreenSize()
 					log.Printf("Received resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
-					if !TestPattern {
-						previousStreamID := getCurrentFFmpegStreamID()
-						go func() {
-							PauseStreaming()
-							if err := resizeDisplay(clampedW, clampedH); err != nil {
-								log.Printf("Resize failed: %v", err)
-							}
-
-							if err := waitForDisplayState(clampedW, clampedH, 5*time.Second); err != nil {
-								log.Printf("Resize did not reach requested display state: %v", err)
-							}
-
-							ResumeStreaming()
-							PrimeFrameGeneration(0, 5, 100*time.Millisecond)
-							if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
-								log.Printf("Resized stream did not become ready in time: %v", err)
-								PrimeFrameGeneration(0, 10, 100*time.Millisecond)
-							}
-							broadcastConfig(true)
-						}()
-					} else {
-						RestartForResize()
+					previousStreamID := getCurrentFFmpegStreamID()
+					go func() {
+						applyDisplayChange(previousStreamID, clampedW, clampedH, "client resize")
 						broadcastConfig(true)
-					}
+					}()
 				}
 			}
 		case "webrtc_ready":
