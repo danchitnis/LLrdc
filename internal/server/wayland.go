@@ -145,7 +145,7 @@ ctl.!default {
 
 	bgFile := Wallpaper
 	if bgFile == "" {
-		bgFile = "/usr/share/backgrounds/xfce/xfce-blue.jpg"
+		bgFile = "/usr/share/backgrounds/xfce/xfce-x.svg"
 	}
 
 	scale := 1.0
