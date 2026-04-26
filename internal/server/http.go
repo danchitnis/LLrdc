@@ -477,7 +477,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if vCodec, ok := configMsg["videoCodec"].(string); ok {
-					if VideoCodec != vCodec {
+					resolvedCodec := resolveRequestedVideoCodec(vCodec)
+					if VideoCodec != resolvedCodec {
 						restartRequested = true
 					}
 					SetVideoCodec(vCodec)
@@ -520,7 +521,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					SetKeyframeInterval(keyframe)
 				}
 				if codecStr, ok := configMsg["video_codec"].(string); ok {
-					if VideoCodec != codecStr {
+					resolvedCodec := resolveRequestedVideoCodec(codecStr)
+					if VideoCodec != resolvedCodec {
 						restartRequested = true
 					}
 					SetVideoCodec(codecStr)

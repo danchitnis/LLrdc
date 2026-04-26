@@ -5,6 +5,7 @@ import { fetchReadyz, getContainerImage, waitForServerReady, waitForStreamingFra
 const PORT = 8250 + Math.floor(Math.random() * 500);
 const SERVER_URL = `http://localhost:${PORT}`;
 const CONTAINER_NAME = `llrdc-wayland-intel-direct-${PORT}`;
+const ARC_A380_RENDER_NODE = '/dev/dri/renderD129';
 
 function killPort(port: number) {
     try {
@@ -45,7 +46,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
     });
 
     test('should activate direct-buffer mode with Intel QSV and stream frames', async ({ page }) => {
-        test.setTimeout(120000);
+        test.setTimeout(180000);
 
         await expect.poll(async () => {
             return await fetchReadyz(SERVER_URL);
@@ -60,6 +61,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
                 supported: true,
                 active: true,
                 captureMode: 'direct',
+                renderNode: ARC_A380_RENDER_NODE,
             },
             useIntel: true,
         });
@@ -70,6 +72,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
         }).toContain('Direct-buffer probe passed');
 
         const logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
+        expect(logs).toContain(`Direct-buffer probe passed (render node: ${ARC_A380_RENDER_NODE}`);
         expect(logs).toContain('hardware capture is active');
 
         await page.goto(SERVER_URL);
@@ -79,5 +82,17 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
         await expect(page.locator('#status')).toContainText(/\[h264 🚀 GPU\]/, { timeout: 45000 });
 
         await waitForStreamingFrames(page, 'Wait for decoded frames on the direct-buffer H.264 path');
+
+        await page.evaluate(() => {
+            const select = document.getElementById('video-codec-select') as HTMLSelectElement | null;
+            if (select) {
+                select.value = 'av1_qsv';
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+
+        await expect(page.locator('#status')).toContainText(/\[av1 🚀 GPU\]/, { timeout: 45000 });
+        await expect(page.locator('#direct-buffer-status')).toHaveText(/Active/, { timeout: 30000 });
+        await waitForStreamingFrames(page, 'Wait for decoded frames after switching direct-buffer Intel path to AV1');
     });
 });

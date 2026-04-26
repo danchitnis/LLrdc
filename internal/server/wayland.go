@@ -28,6 +28,12 @@ func configureWaylandRuntime(runDir string) (string, error) {
 		os.Unsetenv("WLR_RENDERER")
 		os.Setenv("WLR_RENDER_DRM_DEVICE", renderNode)
 		log.Printf("Direct capture mode requested; using render node %s", renderNode)
+	} else if currentAcceleratorMode() == acceleratorIntel {
+		renderNode = resolveIntelRenderNode()
+		os.Unsetenv("WLR_RENDERER")
+		os.Setenv("WLR_RENDER_DRM_DEVICE", renderNode)
+		markDirectBufferProbeResult("", false, "Direct buffer disabled in compat mode", directBufferProbeResult{})
+		log.Printf("Intel compat mode requested; using render node %s", renderNode)
 	} else {
 		os.Setenv("WLR_RENDERER", "pixman")
 		os.Unsetenv("WLR_RENDER_DRM_DEVICE")

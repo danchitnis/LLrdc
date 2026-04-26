@@ -97,6 +97,11 @@ func SetVideoCodec(codec string) {
 		log.Printf("Invalid video codec: %s", codec)
 		return
 	}
+	requestedCodec := codec
+	codec = resolveRequestedVideoCodec(codec)
+	if requestedCodec != codec {
+		log.Printf("Mapping requested codec %s to %s for Intel acceleration", requestedCodec, codec)
+	}
 	if UseIntel && codec == "h265_qsv" && !H265QSVAvailable {
 		if CaptureMode == CaptureModeDirect {
 			log.Printf("Ignoring codec change to %s: Intel H.265 direct encode is not supported on the current FFmpeg/driver stack", codec)
@@ -123,6 +128,13 @@ func SetVideoCodec(codec string) {
 	initWebRTCTrack() // Re-create track
 
 	killFFmpegWithTimestamp()
+}
+
+func resolveRequestedVideoCodec(codec string) string {
+	if UseIntel && codec == "av1" && AV1QSVAvailable {
+		return "av1_qsv"
+	}
+	return codec
 }
 
 func SetKeyframeInterval(interval int) {

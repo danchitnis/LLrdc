@@ -68,9 +68,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN if [ "${ENABLE_INTEL}" = "true" ]; then \
     apt-get update \
-    && apt-get install -y --no-install-recommends software-properties-common \
-    && add-apt-repository -y ppa:kobuk-team/intel-graphics \
-    && apt-get update \
     && apt-get install -y --no-install-recommends \
       intel-gpu-tools \
       intel-media-va-driver-non-free \
@@ -81,7 +78,6 @@ RUN if [ "${ENABLE_INTEL}" = "true" ]; then \
       libva-drm2 \
       libva2 \
       vainfo \
-    && apt-get purge -y --auto-remove software-properties-common \
     && rm -rf /var/lib/apt/lists/*; \
   else \
     rm -rf /var/lib/apt/lists/*; \

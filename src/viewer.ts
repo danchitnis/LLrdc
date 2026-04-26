@@ -552,6 +552,9 @@ function handleJsonMessage(msg: Record<string, unknown>) {
         webrtc.handleAnswer(msg.sdp as RTCSessionDescriptionInit);
     } else if (msg.type === 'webrtc_ice' && msg.candidate) {
         webrtc.handleIce(msg.candidate as RTCIceCandidateInit);
+    } else if (msg.type === 'reconnect_hint') {
+        log('Server requested WebRTC reconnect');
+        webrtc.initWebRTC();
     } else if (msg.type === 'stats') {
         if (typeof msg.ffmpegCpu === 'number') {
             setServerFfmpegCpu(msg.ffmpegCpu);

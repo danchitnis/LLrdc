@@ -40,6 +40,8 @@ WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
 SERVER_HDPI="${HDPI:-0}"
 HOST_RENDER_GID="${RENDER_GID:-}"
 HOST_VIDEO_GID="${VIDEO_GID:-}"
+PREFERRED_INTEL_RENDER_NODE="/dev/dri/renderD129"
+FALLBACK_INTEL_RENDER_NODE="/dev/dri/renderD128"
 
 WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}"
 WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}"
@@ -237,11 +239,19 @@ if [ "$USE_INTEL" = "true" ]; then
         GPU_ARGS="$GPU_ARGS --device $node:$node"
       fi
     done
-    if [ -z "$HOST_RENDER_GID" ] && [ -e /dev/dri/renderD128 ]; then
-      HOST_RENDER_GID=$(stat -c '%g' /dev/dri/renderD128)
+    if [ -z "$HOST_RENDER_GID" ]; then
+      if [ -e "$PREFERRED_INTEL_RENDER_NODE" ]; then
+        HOST_RENDER_GID=$(stat -c '%g' "$PREFERRED_INTEL_RENDER_NODE")
+      elif [ -e "$FALLBACK_INTEL_RENDER_NODE" ]; then
+        HOST_RENDER_GID=$(stat -c '%g' "$FALLBACK_INTEL_RENDER_NODE")
+      fi
     fi
-    if [ -z "$HOST_VIDEO_GID" ] && [ -e /dev/dri/card0 ]; then
-      HOST_VIDEO_GID=$(stat -c '%g' /dev/dri/card0)
+    if [ -z "$HOST_VIDEO_GID" ]; then
+      if [ -e /dev/dri/by-path/pci-0000:03:00.0-card ]; then
+        HOST_VIDEO_GID=$(stat -Lc '%g' /dev/dri/by-path/pci-0000:03:00.0-card)
+      elif [ -e /dev/dri/card0 ]; then
+        HOST_VIDEO_GID=$(stat -c '%g' /dev/dri/card0)
+      fi
     fi
   else
     echo "Warning: /dev/dri not found, but Intel GPU was requested."

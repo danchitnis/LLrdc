@@ -111,12 +111,12 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
         await expect(status).toContainText(/h264_qsv|h264/i, { timeout: 45000 });
         await verifyStreaming(page, 'Initial H.264 QSV');
 
-        // 2. Change Codec: H.264 QSV -> AV1 QSV
-        console.log('Transitioning to AV1 QSV via reload...');
+        // 2. Change Codec: H.264 QSV -> AV1. Intel runs should promote plain AV1 to AV1 QSV.
+        console.log('Transitioning to AV1 via reload...');
         await page.evaluate(() => {
             const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
             if (sel) {
-                sel.value = 'av1_qsv';
+                sel.value = 'av1';
                 sel.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
@@ -125,6 +125,7 @@ test.describe('Wayland Intel QSV GPU Acceleration', () => {
         await page.click('body');
 
         await expect(status).toContainText(/av1_qsv|av1/i, { timeout: 45000 });
+        await expect(page.locator('#video-codec-select')).toHaveValue('av1_qsv');
         await verifyStreaming(page, 'AV1 QSV after reload');
 
         // 3. Change Codec: AV1 QSV -> H.265 CPU fallback

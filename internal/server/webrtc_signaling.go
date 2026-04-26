@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -22,6 +23,18 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 		if *pc != nil {
 			log.Println("Closing previous PeerConnection")
 			(*pc).Close()
+		}
+
+		codecFamily := normalizeCodecFamily(VideoCodec)
+		if !remoteOfferSupportsCodec(sdp.SDP, codecFamily) {
+			fallbackCodec := fallbackCodecForRemoteOffer()
+			log.Printf("Remote WebRTC offer does not support %s for requested codec %s; falling back to %s", codecFamily, VideoCodec, fallbackCodec)
+			if fallbackCodec != VideoCodec {
+				SetVideoCodec(fallbackCodec)
+				broadcastConfig(true)
+			}
+			_ = writeJSON(map[string]interface{}{"type": "reconnect_hint"})
+			return
 		}
 
 		log.Println("Creating new PeerConnection")
@@ -82,6 +95,13 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 
 		if err := (*pc).SetLocalDescription(answer); err != nil {
 			log.Printf("SetLocalDescription error: %v", err)
+			fallbackCodec := fallbackCodecForRemoteOffer()
+			if fallbackCodec != VideoCodec {
+				log.Printf("Falling back to %s after WebRTC local description failure", fallbackCodec)
+				SetVideoCodec(fallbackCodec)
+				broadcastConfig(true)
+			}
+			_ = writeJSON(map[string]interface{}{"type": "reconnect_hint"})
 			return
 		}
 
@@ -116,6 +136,34 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 	} else {
 		log.Println("webrtc_offer missing 'sdp' map")
 	}
+}
+
+func remoteOfferSupportsCodec(sdp string, codecFamily string) bool {
+	codecFamily = normalizeCodecFamily(codecFamily)
+	lowerSDP := strings.ToLower(sdp)
+
+	switch codecFamily {
+	case "vp8":
+		return strings.Contains(lowerSDP, " vp8/90000")
+	case "h264":
+		return strings.Contains(lowerSDP, " h264/90000")
+	case "h265":
+		return strings.Contains(lowerSDP, " h265/90000") || strings.Contains(lowerSDP, " hevc/90000")
+	case "av1":
+		return strings.Contains(lowerSDP, " av1/90000")
+	default:
+		return true
+	}
+}
+
+func fallbackCodecForRemoteOffer() string {
+	if UseIntel && QSVAvailable {
+		return "h264_qsv"
+	}
+	if UseNVIDIA {
+		return "h264_nvenc"
+	}
+	return "h264"
 }
 
 func handleWebRTCICE(msg map[string]interface{}, pc *webrtc.PeerConnection) {
