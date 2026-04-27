@@ -18,6 +18,7 @@ export class WebRTCManager {
     public rtcPeer: RTCPeerConnection | null = null;
     public inputChannel: RTCDataChannel | null = null;
     public isWebRtcActive = false;
+    public lowLatencyMode = false;
     public fps = 0;
     public videoCodec = 'vp8';
 
@@ -35,7 +36,9 @@ export class WebRTCManager {
     public bandwidthMbps = 0;
     private smoothedBandwidth = 0;
     private smoothedFps = 0;
-    private webrtcLatency = 0;
+    public webrtcLatency = 0;
+    public jitterBufferDelay = 0;
+    public jitterBufferTarget = 0;
     private hasSentWebrtcReady = false;
     private statsInterval: ReturnType<typeof setInterval> | null = null;
     private iceCandidatesBuffer: RTCIceCandidateInit[] = [];
@@ -74,6 +77,27 @@ export class WebRTCManager {
         this.smoothedBandwidth = 0;
         this.smoothedFps = 0;
         this.webrtcLatency = 0;
+        this.jitterBufferDelay = 0;
+        this.jitterBufferTarget = 0;
+    }
+
+    private applyLowLatencyHints(receiver: LowLatencyReceiver) {
+        if (this.lowLatencyMode) {
+            log('Applying low-latency hints to receiver');
+            if ('playoutDelayHint' in receiver) (receiver as any).playoutDelayHint = 0;
+            if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = 0;
+        } else {
+            log('Standard mode: skipping low-latency hints');
+            // Revert to defaults if possible, though mostly they will stay at browser defaults
+            if ('playoutDelayHint' in receiver) delete (receiver as any).playoutDelayHint;
+            if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = null;
+        }
+    }
+
+    public refreshLowLatencyHints() {
+        this.rtcPeer?.getReceivers().forEach(receiver => {
+            this.applyLowLatencyHints(receiver as LowLatencyReceiver);
+        });
     }
 
     public initWebRTC() {
@@ -116,7 +140,9 @@ export class WebRTCManager {
                 bytesReceived: this.lastBytesReceived,
                 latency: this.webrtcLatency,
                 totalDecoded: this.lastTotalDecoded,
-                webrtcFps: this.fps
+                webrtcFps: this.fps,
+                jitterBufferDelay: this.jitterBufferDelay,
+                jitterBufferTarget: this.jitterBufferTarget
             };
         };
 
@@ -131,9 +157,7 @@ export class WebRTCManager {
                 log('Connection state: ' + this.rtcPeer.connectionState);
                 if (this.rtcPeer.connectionState === 'connected') {
                     this.rtcPeer.getReceivers().forEach(receiver => {
-                        const lowLatencyReceiver = receiver as LowLatencyReceiver;
-                        if ('playoutDelayHint' in lowLatencyReceiver) lowLatencyReceiver.playoutDelayHint = 0;
-                        if ('jitterBufferTarget' in lowLatencyReceiver) lowLatencyReceiver.jitterBufferTarget = 0;
+                        this.applyLowLatencyHints(receiver as LowLatencyReceiver);
                     });
                 }
             }
@@ -143,9 +167,7 @@ export class WebRTCManager {
             log('WebRTC track received: ' + e.track.kind);
             
             // Apply low-latency hints immediately to the receiver
-            const lowLatencyReceiver = e.receiver as LowLatencyReceiver;
-            if ('playoutDelayHint' in lowLatencyReceiver) lowLatencyReceiver.playoutDelayHint = 0;
-            if ('jitterBufferTarget' in lowLatencyReceiver) lowLatencyReceiver.jitterBufferTarget = 0;
+            this.applyLowLatencyHints(e.receiver as LowLatencyReceiver);
 
             let stream = videoEl.srcObject as MediaStream;
             if (!stream) {
@@ -222,16 +244,22 @@ export class WebRTCManager {
             let frameMeta: PresentedFrameMeta | null = null;
             if (metadata) {
                 this.frameCount++;
+                const browserMetadata = metadata as VideoFrameCallbackMetadata & {
+                    captureTime?: number;
+                    receiveTime?: number;
+                    rtpTimestamp?: number;
+                };
                 
                 // Expose high-precision latency metadata for benchmarks
                 frameMeta = {
                     callbackAtMs: performance.timeOrigin + now,
                     presentationAtMs: performance.timeOrigin + metadata.presentationTime,
                     expectedDisplayAtMs: performance.timeOrigin + metadata.expectedDisplayTime,
-                    captureAtMs: performance.timeOrigin + ((metadata as VideoFrameCallbackMetadata & { captureTime?: number }).captureTime || 0),
-                    receiveAtMs: performance.timeOrigin + ((metadata as VideoFrameCallbackMetadata & { receiveTime?: number }).receiveTime || metadata.presentationTime),
+                    captureAtMs: typeof browserMetadata.captureTime === 'number' ? performance.timeOrigin + browserMetadata.captureTime : null,
+                    receiveAtMs: typeof browserMetadata.receiveTime === 'number' ? performance.timeOrigin + browserMetadata.receiveTime : null,
                     processingDurationMs: (metadata.processingDuration || 0) * 1000,
-                    presentedFrames: metadata.presentedFrames
+                    presentedFrames: metadata.presentedFrames,
+                    rtpTimestamp: browserMetadata.rtpTimestamp
                 };
                 (window as WebRTCDebugWindow).__llrdcLatestFrameMeta = frameMeta;
             } else {
@@ -284,6 +312,12 @@ export class WebRTCManager {
                         bytesReceived = report.bytesReceived || 0;
                         if (report.framesDecoded !== undefined) {
                             framesDecoded = report.framesDecoded;
+                        }
+                        if (report.jitterBufferDelay !== undefined && report.jitterBufferEmittedCount !== undefined && report.jitterBufferEmittedCount > 0) {
+                            this.jitterBufferDelay = (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000;
+                        }
+                        if (report.jitterBufferTarget !== undefined) {
+                            this.jitterBufferTarget = report.jitterBufferTarget * 1000;
                         }
                     } else if (kind === 'audio') {
                         hasAudioTrack = true;

@@ -42,6 +42,7 @@ export interface PresentedFrameMeta {
     receiveAtMs: number | null;
     processingDurationMs: number | null;
     presentedFrames: number | null;
+    rtpTimestamp?: number;
 }
 
 export interface BrowserClientState {

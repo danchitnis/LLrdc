@@ -6,6 +6,17 @@ import { detectKeyFrame, parseBinaryVideoPacket } from './protocol';
 import { updateStatusText, videoEl, displayEl } from '../ui';
 import type { BrowserClientState, ConfigMessage, PresentedFrameMeta } from './types';
 
+interface BrowserStats {
+    fps: number;
+    latency: number;
+    totalDecoded: number;
+    webrtcFps: number;
+    bytesReceived: number;
+    jitterBufferDelay?: number;
+    jitterBufferTarget?: number;
+    webrtcLowLatency?: boolean;
+}
+
 export interface BrowserClientEvents {
     connected: undefined;
     disconnected: undefined;
@@ -16,7 +27,7 @@ export interface BrowserClientEvents {
 
 interface BrowserClientApi {
     getState: () => BrowserClientState;
-    getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; bytesReceived: number; };
+    getStats: () => BrowserStats;
     getPresentedFrames: () => PresentedFrameMeta[];
     clearPresentedFrames: () => void;
     sendConfig: (config: ConfigMessage) => void;
@@ -28,7 +39,7 @@ declare global {
     interface Window {
         __llrdcClient?: BrowserClientApi;
         __llrdcLatestFrameMeta?: PresentedFrameMeta;
-        getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; bytesReceived: number; };
+        getStats: () => BrowserStats;
         hasReceivedKeyFrame: boolean;
         rtcPeer: RTCPeerConnection | null;
         hardwareAccelerationAvailable: boolean;
@@ -154,6 +165,9 @@ export class BrowserClientSession {
             totalDecoded: useWebRtc ? webrtcTotal : webcodecsTotal,
             webrtcFps: this.webrtc.fps,
             bytesReceived: useWebRtc ? this.webrtc.lastBytesReceived : this.network.totalBytesReceived,
+            jitterBufferDelay: this.webrtc.jitterBufferDelay,
+            jitterBufferTarget: this.webrtc.jitterBufferTarget,
+            webrtcLowLatency: this.webrtc.lowLatencyMode,
         };
     }
 

@@ -14,7 +14,7 @@ export { };
 
 declare global {
     interface Window {
-        getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; bytesReceived: number; };
+        getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; bytesReceived: number; jitterBufferDelay?: number; jitterBufferTarget?: number; webrtcLowLatency?: boolean; };
         hasReceivedKeyFrame: boolean;
         rtcPeer: RTCPeerConnection | null;
         hardwareAccelerationAvailable: boolean;
@@ -531,8 +531,12 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             nvencLatencyCheckbox.checked = msg.nvenc_latency as boolean;
         }
 
-        if (msg.webrtc_low_latency !== undefined && msg.webrtc_low_latency !== null && webrtcLowLatencyCheckbox) {
-            webrtcLowLatencyCheckbox.checked = msg.webrtc_low_latency as boolean;
+        if (msg.webrtc_low_latency !== undefined && msg.webrtc_low_latency !== null) {
+            webrtc.lowLatencyMode = msg.webrtc_low_latency as boolean;
+            webrtc.refreshLowLatencyHints();
+            if (webrtcLowLatencyCheckbox) {
+                webrtcLowLatencyCheckbox.checked = webrtc.lowLatencyMode;
+            }
         }
 
         if (msg.activity_hz !== undefined && msg.activity_hz !== null && activityHzSlider && activityHzValue) {
