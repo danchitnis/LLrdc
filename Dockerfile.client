@@ -1,8 +1,54 @@
 # syntax=docker/dockerfile:1.7
-FROM golang:1.24-bookworm AS builder
+FROM ubuntu:24.04 AS ffmpeg-builder
+ENV DEBIAN_FRONTEND=noninteractive
+ARG FFMPEG_VERSION=8.1
+ARG FFMPEG_SOURCE_SHA256=
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    yasm \
+    nasm \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ffmpeg-src
+RUN curl -fsSLo /tmp/ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" && \
+    if [ -n "${FFMPEG_SOURCE_SHA256}" ]; then \
+      echo "${FFMPEG_SOURCE_SHA256}  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
+    fi && \
+    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=1 && \
+    rm /tmp/ffmpeg.tar.xz
+
+RUN ./configure \
+    --prefix=/usr/local \
+    --enable-shared \
+    --disable-static \
+    --disable-programs \
+    --disable-doc \
+    --disable-everything \
+    --disable-avdevice \
+    --disable-avfilter \
+    --disable-avformat \
+    --disable-swresample \
+    --disable-swscale \
+    --enable-avcodec \
+    --enable-avutil \
+    --enable-decoder=h264 \
+    --enable-decoder=vp8 \
+    --enable-parser=h264 \
+    --enable-parser=vp8 \
+    --enable-pic \
+    --extra-cflags="-O3" && \
+    make -j$(nproc) && \
+    make install
+
+FROM ubuntu:24.04 AS builder
 WORKDIR /app
 ARG GO_BUILD_TAGS=native
 ARG CLIENT_BUILD_ID=dev
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -10,10 +56,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     build-essential \
     pkg-config \
     libsdl2-dev \
-    libvpx-dev \
-    libavcodec-dev \
-    libavutil-dev \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://go.dev/dl/go1.24.0.linux-amd64.tar.gz | tar -C /usr/local -xz
+ENV PATH=$PATH:/usr/local/go/bin
+
+# Copy custom built FFmpeg
+COPY --from=ffmpeg-builder /usr/local/include /usr/local/include
+COPY --from=ffmpeg-builder /usr/local/lib /usr/local/lib
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -39,20 +93,22 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     CGO_ENABLED=1 go build -tags "${GO_BUILD_TAGS}" -buildvcs=false \
     -o /out/linux-mouse-probe ./cmd/linux-mouse-probe
 
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
-    xauth \
     libsdl2-2.0-0 \
-    libvpx7 \
-    libavcodec59 \
-    libavutil57 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ffmpeg-builder /usr/local/lib/libavcodec.so* /usr/local/lib/
+COPY --from=ffmpeg-builder /usr/local/lib/libavutil.so* /usr/local/lib/
+RUN ldconfig
 
 COPY --from=build /out/llrdc-client /usr/local/bin/llrdc-client
 COPY --from=build /out/linux-uinput-bench /usr/local/bin/linux-uinput-bench
 COPY --from=build /out/linux-mouse-probe /usr/local/bin/linux-mouse-probe
+
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
 EXPOSE 18080
 ENTRYPOINT ["/usr/local/bin/llrdc-client"]

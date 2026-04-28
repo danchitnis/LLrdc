@@ -7,7 +7,7 @@ LLrdc (Low Latency remote desktop) is an entirely web-based, low-latency remote 
 - **XFCE4 Desktop in Docker**: Runs a full Ubuntu 24.04 and XFCE4 desktop environment inside a reproducible Docker container.
 - **Web-Based Client**: Access your desktop entirely via a modern web browser—no client software required.
 - **High-Performance Streaming**: Leverages WebRTC for ultra-low latency video streaming, with fallback to WebCodecs/WebSockets. Uses variable bitrate (bitrate drops on static screens) with an optional peak bandwidth cap.
-- **Native Go Client**: Includes a Docker-built Linux native client using Go, SDL2, and libvpx with no Chromium, WebView, or WebKit dependency.
+- **Native Go Client**: Includes a Docker-built Linux native client using Go, SDL2, and FFmpeg decode libraries with no Chromium, WebView, or WebKit dependency.
 
 
 
@@ -164,9 +164,9 @@ Important flags:
 - `--headless`: Disables the window; intended only for debugging, not normal native-client use.
 
 Display backend behavior:
-- Native Wayland is preferred automatically when a Wayland socket is available.
-- X11/Xwayland remains available with `SDL_VIDEODRIVER=x11`.
-- X11 is selected automatically only when Wayland is unavailable and `DISPLAY` is present.
+- Native Linux client runtime is Wayland-only.
+- The host must provide `XDG_RUNTIME_DIR` and a `WAYLAND_DISPLAY` socket.
+- `WAYLAND_DISPLAY` defaults to `wayland-0` when unset.
 - No Chromium, WebView, or WebKit is used in any path.
 
 ### Verify the Packaged Host Runtime

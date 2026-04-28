@@ -38,7 +38,7 @@ Environment overrides:
   LLRDC_CLIENT_WIDTH=1280
   LLRDC_CLIENT_HEIGHT=720
   LLRDC_CLIENT_TITLE="LLrdc Native Client"
-  SDL_VIDEODRIVER=x11|wayland
+  WAYLAND_DISPLAY=wayland-0
   PACKAGE_NAME=llrdc-client-linux-amd64
 EOF
 }

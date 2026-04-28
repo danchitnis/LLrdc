@@ -5,15 +5,43 @@ set -euo pipefail
 IMAGE_NAME="${CLIENT_IMAGE_NAME:-llrdc-client:native}"
 PACKAGE_ROOT="${PACKAGE_ROOT:-dist}"
 IMAGE_PLATFORM="${CLIENT_IMAGE_PLATFORM:-linux/amd64}"
-# Libraries we expect to be provided by the host's native environment (X11, Wayland, SDL, core C runtime, and Desktop Environment libs like GLib/Pango/Cairo)
-SKIP_LIBS_REGEX='^(ld-linux-x86-64\.so\.2|libc\.so\.6|libm\.so\.6|libpthread\.so\.0|libdl\.so\.2|librt\.so\.1|libresolv\.so\.2|libgcc_s\.so\.1|libstdc\+\+\.so\.6|libX.*|libwayland.*|libxcb.*|libxkbcommon.*|libdbus-1\.so\.3|libexpat\.so\.1|libffi\.so\.8|libGL.*|libvulkan.*|libSDL2.*|libglib.*|libgobject.*|libgio.*|libgmodule.*|libpango.*|libcairo.*|libharfbuzz.*|libfontconfig.*|libfreetype.*|libdecor.*|libasound.*|libpulse.*)$'
+FFMPEG_RELEASE_BASE="${FFMPEG_RELEASE_BASE:-https://ffmpeg.org/releases}"
+FFMPEG_VERSION="${FFMPEG_VERSION:-auto}"
+GLIBC_MAX_VERSION="${GLIBC_MAX_VERSION:-2.39}"
+BUNDLED_LIBS_REGEX='^libav(codec|util|swresample)\.so(\..*)?$'
+FORBIDDEN_BUNDLED_LIBS_REGEX='^(libvpx|libX|libxcb|libwayland|libSDL2|libasound|libpulse|libGL|libEGL|libdrm|libgbm|libsystemd|libapparmor|libcap)(\.|$)'
+
+resolve_ffmpeg_version() {
+  if [[ "${FFMPEG_VERSION}" != "auto" ]]; then
+    printf '%s\n' "${FFMPEG_VERSION}"
+    return 0
+  fi
+  local releases
+  releases="$(curl -fsSL "${FFMPEG_RELEASE_BASE}/" | grep -oE 'ffmpeg-[0-9]+(\.[0-9]+)*\.tar\.xz' || true)"
+  printf '%s\n' "${releases}" \
+    | sed -E 's/^ffmpeg-//; s/\.tar\.xz$//' \
+    | sort -Vu \
+    | tail -1
+}
+
+RESOLVED_FFMPEG_VERSION="$(resolve_ffmpeg_version)"
+if [[ -z "${RESOLVED_FFMPEG_VERSION}" ]]; then
+  echo "Failed to resolve FFmpeg release version" >&2
+  exit 1
+fi
+FFMPEG_SOURCE_URL="${FFMPEG_RELEASE_BASE}/ffmpeg-${RESOLVED_FFMPEG_VERSION}.tar.xz"
+FFMPEG_SOURCE_SHA256="${FFMPEG_SOURCE_SHA256:-$(curl -fsSL "${FFMPEG_SOURCE_URL}" | sha256sum | awk '{print $1}')}"
 
 BUILD_ID="${CLIENT_BUILD_ID:-$(
 
   {
-    find cmd internal -type f -print0
-    printf '%s\0' Dockerfile.client go.mod go.sum scripts/package-native-client.sh
-  } | xargs -0 sha256sum | sort | sha256sum | cut -c1-16
+    {
+      find cmd internal -type f -print0
+      printf '%s\0' Dockerfile.client go.mod go.sum scripts/package-native-client.sh
+    } | xargs -0 sha256sum
+    printf '%s  %s\n' "${RESOLVED_FFMPEG_VERSION}" "FFMPEG_VERSION"
+    printf '%s  %s\n' "${FFMPEG_SOURCE_SHA256}" "FFMPEG_SOURCE_SHA256"
+  } | sort | sha256sum | cut -c1-16
 )}"
 
 FORCE_REBUILD=0
@@ -51,6 +79,8 @@ fi
 DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}" docker build \
   --platform "${IMAGE_PLATFORM}" \
   --build-arg "CLIENT_BUILD_ID=${BUILD_ID}" \
+  --build-arg "FFMPEG_VERSION=${RESOLVED_FFMPEG_VERSION}" \
+  --build-arg "FFMPEG_SOURCE_SHA256=${FFMPEG_SOURCE_SHA256}" \
   -f Dockerfile.client \
   -t "${IMAGE_NAME}" .
 
@@ -90,13 +120,40 @@ while IFS=$'\t' read -r original_path resolved_path; do
   [[ -n "${original_path}" ]] || continue
   [[ -n "${resolved_path}" ]] || continue
   soname="$(basename "${original_path}")"
-  if [[ "${soname}" =~ ${SKIP_LIBS_REGEX} ]]; then
-    printf '%s -> host runtime\n' "${original_path}" >>"${MANIFEST_FILE}"
+  if [[ ! "${soname}" =~ ${BUNDLED_LIBS_REGEX} ]]; then
     continue
   fi
   docker cp "${CONTAINER_ID}:${resolved_path}" "${PACKAGE_DIR}/lib/${soname}"
   printf '%s -> lib/%s (from %s)\n' "${original_path}" "${soname}" "${resolved_path}" >>"${MANIFEST_FILE}"
 done <"${LIB_LIST_FILE}"
+
+if find "${PACKAGE_DIR}/lib" -maxdepth 1 -type f -printf '%f\n' | grep -Eq "${FORBIDDEN_BUNDLED_LIBS_REGEX}"; then
+  echo "Package contains forbidden host/runtime libraries:" >&2
+  find "${PACKAGE_DIR}/lib" -maxdepth 1 -type f -printf '%f\n' | grep -E "${FORBIDDEN_BUNDLED_LIBS_REGEX}" >&2
+  exit 1
+fi
+
+if readelf -d "${PACKAGE_DIR}/bin/llrdc-client.bin" | grep -q 'Shared library: \[libvpx'; then
+  echo "Native client unexpectedly links libvpx; VP8 should decode through FFmpeg/libavcodec" >&2
+  exit 1
+fi
+
+max_glibc_required() {
+  { readelf --version-info "$@" 2>/dev/null | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)*' || true; } \
+    | sed 's/^GLIBC_//' \
+    | sort -Vu \
+    | tail -1
+}
+
+while IFS= read -r artifact; do
+  required="$(max_glibc_required "${artifact}")"
+  [[ -n "${required}" ]] || continue
+  highest="$(printf '%s\n%s\n' "${required}" "${GLIBC_MAX_VERSION}" | sort -Vu | tail -1)"
+  if [[ "${highest}" != "${GLIBC_MAX_VERSION}" ]]; then
+    echo "${artifact} requires GLIBC_${required}, above supported GLIBC_${GLIBC_MAX_VERSION}" >&2
+    exit 1
+  fi
+done < <(find "${PACKAGE_DIR}/bin" "${PACKAGE_DIR}/lib" -type f \( -name '*.bin' -o -name '*.so*' \) -print)
 
 cat >"${PACKAGE_DIR}/bin/llrdc-client" <<'EOF'
 #!/usr/bin/env bash
@@ -108,21 +165,21 @@ ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 LIB_DIR="${ROOT_DIR}/lib"
 BIN_PATH="${SCRIPT_DIR}/llrdc-client.bin"
 
-if [[ -z "${SDL_VIDEODRIVER:-}" ]]; then
-  if [[ "${XDG_SESSION_TYPE:-}" == "wayland" && -n "${WAYLAND_DISPLAY:-}" ]]; then
-    export SDL_VIDEODRIVER=wayland
-  elif [[ "${XDG_SESSION_TYPE:-}" == "wayland" && -n "${DISPLAY:-}" ]]; then
-    export SDL_VIDEODRIVER=x11
-  elif [[ -n "${DISPLAY:-}" ]]; then
-    export SDL_VIDEODRIVER=x11
+headless=0
+for arg in "$@"; do
+  if [[ "${arg}" == "--headless" ]]; then
+    headless=1
+    break
   fi
-fi
+done
 
-if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" && -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]]; then
-  :
-elif [[ "${SDL_VIDEODRIVER:-}" == "wayland" ]]; then
-  echo "Wayland requested but the display socket was not found at ${XDG_RUNTIME_DIR:-<unset>}/${WAYLAND_DISPLAY:-<unset>}" >&2
-  exit 1
+if [[ "${headless}" -eq 0 ]]; then
+  export SDL_VIDEODRIVER=wayland
+  export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+  if [[ -z "${XDG_RUNTIME_DIR:-}" || ! -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]]; then
+    echo "Wayland display socket was not found at ${XDG_RUNTIME_DIR:-<unset>}/${WAYLAND_DISPLAY}" >&2
+    exit 1
+  fi
 fi
 
 if [[ ! -x "${BIN_PATH}" ]]; then
@@ -176,13 +233,14 @@ Latency bench injector:
   ./bin/linux-uinput-bench
 
 Display backend selection:
-  - Native Wayland is preferred automatically when a Wayland socket is available.
-  - X11/Xwayland can still be forced with SDL_VIDEODRIVER=x11.
-  - X11 is used automatically only when Wayland is unavailable and DISPLAY is set.
+  - Native Linux client runtime is Wayland-only.
+  - The host must provide XDG_RUNTIME_DIR and a WAYLAND_DISPLAY socket.
+  - WAYLAND_DISPLAY defaults to wayland-0 when unset.
 
 Important:
-  - This is a native SDL/libvpx client. It does not embed Chromium, WebView, or WebKit.
-  - The package bundles codec runtime libraries and uses the host's native SDL/X11/Wayland/audio stack.
+  - This is a native SDL client. It does not embed Chromium, WebView, or WebKit.
+  - VP8 and H.264 are decoded through the bundled FFmpeg codec libraries.
+  - The package uses the host's native SDL/Wayland/audio stack.
   - Audio and clipboard integration still depend on the host session environment.
 EOF
 
@@ -191,8 +249,12 @@ EOF
   echo "Image: ${IMAGE_NAME}"
   echo "Platform: ${IMAGE_PLATFORM}"
   echo "BuildID: ${BUILD_ID}"
+  echo "FFmpegVersion: ${RESOLVED_FFMPEG_VERSION}"
+  echo "FFmpegSource: ${FFMPEG_SOURCE_URL}"
+  echo "FFmpegSourceSHA256: ${FFMPEG_SOURCE_SHA256}"
+  echo "MaxSupportedGLIBC: ${GLIBC_MAX_VERSION}"
   echo
-  echo "Included runtime libraries:"
+  echo "Bundled runtime libraries:"
   cat "${MANIFEST_FILE}"
 } >"${PACKAGE_DIR}/manifest.txt"
 

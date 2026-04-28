@@ -141,14 +141,9 @@ func (r *NativeRenderer) Run() error {
 	go func() {
 		defer close(decodedFrames)
 		var currentCodec string
-		var vp8 *vp8Decoder
 		var av *avDecoder
 
 		closeDecoders := func() {
-			if vp8 != nil {
-				vp8.Close()
-				vp8 = nil
-			}
 			if av != nil {
 				av.Close()
 				av = nil
@@ -219,74 +214,38 @@ func (r *NativeRenderer) Run() error {
 					r.emitLifecycle(NativeWindowLifecycle{DecoderStateChanged: true, DecoderAwaitingKeyframe: false})
 				}
 
-				if strings.Contains(strings.ToLower(sample.codec), "vp8") {
-					if vp8 == nil {
-						log.Printf("Initializing VP8 decoder for %s", sample.codec)
-						vp8 = &vp8Decoder{}
-						if err := vp8.Init(); err != nil {
-							log.Printf("VP8 init error: %v", err)
-							r.emitLifecycle(NativeWindowLifecycle{Error: err.Error()})
-							continue
-						}
-					}
-					frame, err := vp8.Decode(sample.data)
-					if err != nil {
-						log.Printf("VP8 decode error: %v", err)
-						r.mu.Lock()
-						r.decoderAwaitingKeyframe = true
-						r.mu.Unlock()
-						r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
+				if av == nil {
+					log.Printf("Initializing FFmpeg decoder for %s", sample.codec)
+					av = &avDecoder{}
+					if err := av.Init(sample.codec); err != nil {
+						log.Printf("FFmpeg init error: %v", err)
+						r.emitLifecycle(NativeWindowLifecycle{Error: err.Error()})
 						continue
 					}
-					if frame.width > 0 && frame.height > 0 {
-						r.mu.RLock()
-						lowLatency := r.lowLatency
-						r.mu.RUnlock()
-						enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
-							frame:                        frame,
-							packetTimestamp:              sample.packetTimestamp,
-							firstPacketSequenceNumber:    sample.firstPacketSequenceNumber,
-							firstDecryptedPacketQueuedAt: sample.firstDecryptedPacketQueuedAt,
-							firstRemotePacketAt:          sample.firstRemotePacketAt,
-							firstPacketReadAt:            sample.firstPacketReadAt,
-							receiveAt:                    sample.receiveAt,
-							decodeReadyAt:                benchmarkClockNowMs(),
-						}, lowLatency)
-					}
-				} else {
-					if av == nil {
-						log.Printf("Initializing FFmpeg decoder for %s", sample.codec)
-						av = &avDecoder{}
-						if err := av.Init(sample.codec); err != nil {
-							log.Printf("FFmpeg init error: %v", err)
-							r.emitLifecycle(NativeWindowLifecycle{Error: err.Error()})
-							continue
-						}
-					}
-					frame, err := av.Decode(sample.data)
-					if err != nil {
-						log.Printf("FFmpeg decode error: %v", err)
-						r.mu.Lock()
-						r.decoderAwaitingKeyframe = true
-						r.mu.Unlock()
-						r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
-						continue
-					}
-					if frame.width > 0 && frame.height > 0 {
-						r.mu.RLock()
-						lowLatency := r.lowLatency
-						r.mu.RUnlock()
-						enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
-							frame:                        frame,
-							packetTimestamp:              sample.packetTimestamp,
-							firstPacketSequenceNumber:    sample.firstPacketSequenceNumber,
-							firstDecryptedPacketQueuedAt: sample.firstDecryptedPacketQueuedAt,
-							firstRemotePacketAt:          sample.firstRemotePacketAt,
-							firstPacketReadAt:            sample.firstPacketReadAt,
-							receiveAt:                    sample.receiveAt,
-							decodeReadyAt:                benchmarkClockNowMs(),
-						}, lowLatency)
-					}
+				}
+				frame, err := av.Decode(sample.data)
+				if err != nil {
+					log.Printf("FFmpeg decode error: %v", err)
+					r.mu.Lock()
+					r.decoderAwaitingKeyframe = true
+					r.mu.Unlock()
+					r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
+					continue
+				}
+				if frame.width > 0 && frame.height > 0 {
+					r.mu.RLock()
+					lowLatency := r.lowLatency
+					r.mu.RUnlock()
+					enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
+						frame:                        frame,
+						packetTimestamp:              sample.packetTimestamp,
+						firstPacketSequenceNumber:    sample.firstPacketSequenceNumber,
+						firstDecryptedPacketQueuedAt: sample.firstDecryptedPacketQueuedAt,
+						firstRemotePacketAt:          sample.firstRemotePacketAt,
+						firstPacketReadAt:            sample.firstPacketReadAt,
+						receiveAt:                    sample.receiveAt,
+						decodeReadyAt:                benchmarkClockNowMs(),
+					}, lowLatency)
 				}
 			}
 		}
