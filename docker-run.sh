@@ -179,7 +179,8 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     *)
-      shift
+      echo "Error: Unknown argument: $1"
+      exit 1
       ;;
   esac
 done
