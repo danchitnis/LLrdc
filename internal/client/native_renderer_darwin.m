@@ -192,7 +192,7 @@ static BOOL llrdc_update_parameter_sets(NSData *spsData, NSData *ppsData) {
         changed = YES;
     }
 
-    if (!changed) {
+    if (!changed && g_app_state.formatDesc != NULL) {
         return YES;
     }
 
