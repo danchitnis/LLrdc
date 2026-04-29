@@ -36,6 +36,7 @@ type NativeRendererOptions struct {
 	Fullscreen   bool
 	ProbeLatency bool
 	DebugCursor  bool
+	LowLatency   bool
 }
 
 type NativeWindowLifecycle struct {

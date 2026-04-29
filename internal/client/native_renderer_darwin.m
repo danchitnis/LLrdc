@@ -166,6 +166,7 @@ static struct {
     CMVideoFormatDescriptionRef formatDesc;
     NSData* spsData;
     NSData* ppsData;
+    int lowLatency;
 } g_app_state;
 
 static void llrdc_reset_video_state_locked(void) {
@@ -571,7 +572,7 @@ static NSString* nseventToDOMKey(NSEvent *event) {
 }
 @end
 
-void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart) {
+void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart, int lowLatency) {
     g_app_state.renderer = renderer;
     g_app_state.winCb = winCb;
     g_app_state.inCb = inCb;
@@ -580,6 +581,8 @@ void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallba
     g_app_state.w = w;
     g_app_state.h = h;
     g_app_state.autoStart = autoStart;
+    g_app_state.lowLatency = lowLatency;
+    NSLog(@"[ObjC] App initialized with low latency mode: %s", lowLatency ? "enabled" : "disabled");
     g_app_state.formatDesc = NULL;
     g_app_state.spsData = nil;
     g_app_state.ppsData = nil;
@@ -670,7 +673,9 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
         CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, YES);
         if (attachments && CFArrayGetCount(attachments) > 0) {
             CFMutableDictionaryRef dict = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0);
-            CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
+            if (g_app_state.lowLatency) {
+                CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
+            }
         }
 
         view.videoLayer.hidden = NO;
@@ -735,6 +740,11 @@ void llrdc_set_debug_cursor(int enabled) {
         view.debugCursorEnabled = (enabled != 0);
         [view updateDebugCursor];
     });
+}
+
+void llrdc_set_low_latency(int enabled) {
+    g_app_state.lowLatency = enabled;
+    NSLog(@"[ObjC] Low latency mode: %s", enabled ? "enabled" : "disabled");
 }
 
 void llrdc_set_mouse_position(double x, double y) {

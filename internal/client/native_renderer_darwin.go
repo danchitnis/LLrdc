@@ -19,13 +19,14 @@ typedef struct {
 	char* error;
 } llrdc_png_result;
 
-void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart);
+void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart, int lowLatency);
 void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
 void llrdc_reset_video();
 void llrdc_set_overlay_state(const char* hudText, int hudR, int hudG, int hudB, int hudA, int menuVisible, const char* menuTitle, const char* menuHint, const char* menuItems);
 void llrdc_set_debug_cursor(int enabled);
 void llrdc_set_mouse_position(double x, double y);
 void llrdc_set_window_size(int w, int h);
+void llrdc_set_low_latency(int enabled);
 llrdc_png_result llrdc_capture_png();
 void llrdc_free_png_result(llrdc_png_result result);
 void llrdc_run_app();
@@ -41,6 +42,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"runtime"
 	"strings"
 	"sync"
@@ -86,6 +88,7 @@ type NativeRenderer struct {
 	overlay      OverlayState
 	latencyProbe bool
 	debugCursor  bool
+	lowLatency   bool
 
 	sps    []byte
 	pps    []byte
@@ -101,6 +104,7 @@ func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
 		autoStart:    opts.AutoStart,
 		latencyProbe: opts.ProbeLatency,
 		debugCursor:  opts.DebugCursor,
+		lowLatency:   opts.LowLatency,
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
 	}, nil
@@ -165,7 +169,13 @@ func (r *NativeRenderer) SetDebugCursor(enabled bool) {
 	C.llrdc_set_debug_cursor(C.int(boolToInt(enabled)))
 }
 
-func (r *NativeRenderer) SetLowLatency(_ bool) {}
+func (r *NativeRenderer) SetLowLatency(enabled bool) {
+	r.mu.Lock()
+	r.lowLatency = enabled
+	r.mu.Unlock()
+	log.Printf("[Go] NativeRenderer.SetLowLatency: %v", enabled)
+	C.llrdc_set_low_latency(C.int(boolToInt(enabled)))
+}
 
 func (r *NativeRenderer) SetWindowSize(width, height int) error {
 	if width <= 0 || height <= 0 {
@@ -310,6 +320,7 @@ func (r *NativeRenderer) Run() error {
 		C.int(r.width),
 		C.int(r.height),
 		C.int(autoStart),
+		C.int(boolToInt(r.lowLatency)),
 	)
 
 	C.llrdc_run_app()
