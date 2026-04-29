@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pion/rtp"
@@ -71,29 +72,24 @@ func (a *h264ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetR
 		return frame, false, true, err
 	}
 
+	isStart := true
+	if len(packet.Payload) > 0 {
+		naluType := packet.Payload[0] & 0x1f
+		if naluType == 28 { // FU-A
+			fuHeader := packet.Payload[1]
+			isStart = (fuHeader & 0x80) != 0
+		}
+	}
+
 	if !a.active {
+		if !isStart {
+			return frame, false, dropped, fmt.Errorf("h264 low-latency frame missing start fragment")
+		}
 		a.start(packet, timing, packetReadAt, payload)
 	} else {
 		a.nextSequence = packet.SequenceNumber + 1
 
-		// If this is a new NALU with the same timestamp (STAP-A or just multiple packets),
-		// we should ideally detect it. But since we split them in the server,
-		// we know that if it's NOT an FU-A fragment (or if it's the start of an FU-A),
-		// it's a new NALU.
-		// Pion's Unmarshal returns the NALU header for the first fragment/single packet.
-		// We can detect new NALUs by checking if it's not a mid-fragment.
-
-		isNewNALU := true
-		if len(packet.Payload) > 0 {
-			naluType := packet.Payload[0] & 0x1f
-			if naluType == 28 { // FU-A
-				fuHeader := packet.Payload[1]
-				isStart := (fuHeader & 0x80) != 0
-				isNewNALU = isStart
-			}
-		}
-
-		if isNewNALU {
+		if isStart {
 			a.frame = append(a.frame, 0, 0, 0, 1)
 		}
 		a.frame = append(a.frame, payload...)

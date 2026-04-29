@@ -501,6 +501,8 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						"-p", fmt.Sprintf("b=%dk", targetBandwidthMbps*1000),
 						"-p", fmt.Sprintf("maxrate=%dk", targetBandwidthMbps*1000),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
+						"-p", "async_depth=1",
+						"-p", "bf=0",
 					)
 
 					if codec == "h264_vaapi" || codec == "hevc_vaapi" {

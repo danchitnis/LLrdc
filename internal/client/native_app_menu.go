@@ -636,8 +636,24 @@ func parseOnOff(value string) (bool, error) {
 }
 
 func (a *NativeApp) MenuSnapshot() any {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Dynamically rebuild codec options based on the latest server config
+	a.codecOptions = a.buildCodecOptions()
+	currentCodec := a.session.State().VideoCodec
+	found := false
+	for i, opt := range a.codecOptions {
+		if opt.Value == currentCodec {
+			a.codecIndex = i
+			found = true
+			break
+		}
+	}
+	if !found && len(a.codecOptions) > 0 {
+		a.codecIndex = 0
+	}
+
 	items := a.visibleMenuItemsLocked()
 	for idx := range items {
 		items[idx].Selected = idx == a.menuSelected

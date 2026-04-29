@@ -59,9 +59,18 @@ while [[ $# -gt 0 ]]; do
       USE_DETACHED="true"
       shift
       ;;
-    --host-net)
+    --host-net|--network-host)
       USE_HOST_NET="true"
       shift
+      ;;
+    --network)
+      if [ "${2:-}" = "host" ]; then
+        USE_HOST_NET="true"
+        shift 2
+      else
+        echo "Error: Only --network host is currently supported as a pass-through alias."
+        exit 1
+      fi
       ;;
     --intel)
       USE_INTEL="true"

@@ -137,27 +137,78 @@ type NativeApp struct {
 	reconnecting      atomic.Bool
 }
 
-func (a *NativeApp) filterCodecOptions(options []codecOption) []codecOption {
+func (a *NativeApp) buildCodecOptions() []codecOption {
+	baseOptions := defaultCodecOptions()
 	if a.renderer == nil {
-		return options
+		return baseOptions
 	}
+
 	provider, ok := a.renderer.(SupportedVideoCodecsProvider)
 	if !ok {
-		return options
+		return baseOptions
 	}
 	supported := provider.SupportedVideoCodecs()
 	if len(supported) == 0 {
-		return options
+		return baseOptions
 	}
 
-	filtered := make([]codecOption, 0, len(options))
-	for _, opt := range options {
+	a.session.mu.RLock()
+	lastConfig := a.session.state.LastConfig
+	a.session.mu.RUnlock()
+
+	var qsv, nvenc, h265Nvenc444, h265Qsv, av1Nvenc, av1Qsv bool
+	if lastConfig != nil {
+		qsv, _ = lastConfig["qsvAvailable"].(bool)
+		nvenc, _ = lastConfig["nvidiaAvailable"].(bool)
+		h265Nvenc444, _ = lastConfig["h265Nvenc444Available"].(bool)
+		h265Qsv, _ = lastConfig["h265QsvAvailable"].(bool)
+		if h265QsvInterface, exists := lastConfig["h265QsvAvailable"]; !exists {
+			h265Qsv = true // fallback if older server
+		} else {
+			h265Qsv, _ = h265QsvInterface.(bool)
+		}
+		av1Nvenc, _ = lastConfig["av1NvencAvailable"].(bool)
+		av1Qsv, _ = lastConfig["av1QsvAvailable"].(bool)
+	}
+
+	filtered := make([]codecOption, 0, len(baseOptions))
+	for _, opt := range baseOptions {
 		val := strings.ToLower(opt.Value)
+		
+		// Check renderer support by stripping hardware suffixes
+		baseCodec := val
+		if idx := strings.Index(baseCodec, "_"); idx > 0 {
+			baseCodec = baseCodec[:idx]
+		}
+		
+		rendererSupports := false
 		for _, s := range supported {
-			if val == strings.ToLower(s) {
-				filtered = append(filtered, opt)
+			if baseCodec == strings.ToLower(s) {
+				rendererSupports = true
 				break
 			}
+		}
+		if !rendererSupports {
+			continue
+		}
+
+		// Check server hardware availability
+		isNVENC := strings.HasSuffix(val, "_nvenc")
+		isQSV := strings.HasSuffix(val, "_qsv")
+		isH265 := strings.HasPrefix(val, "h265") || strings.HasPrefix(val, "hevc")
+		isAV1 := strings.HasPrefix(val, "av1")
+
+		shouldShow := false
+		if !isNVENC && !isQSV {
+			shouldShow = true // CPU fallback is always an option if renderer supports it
+		} else if isNVENC {
+			shouldShow = nvenc && (!isH265 || h265Nvenc444) && (!isAV1 || av1Nvenc)
+		} else if isQSV {
+			shouldShow = qsv && (!isH265 || h265Qsv) && (!isAV1 || av1Qsv)
+		}
+
+		if shouldShow {
+			filtered = append(filtered, opt)
 		}
 	}
 	return filtered
@@ -186,7 +237,7 @@ func NewNativeApp(opts NativeAppOptions) *NativeApp {
 		shutdownCh:        make(chan struct{}),
 	}
 
-	app.codecOptions = app.filterCodecOptions(app.codecOptions)
+	app.codecOptions = app.buildCodecOptions()
 	app.codecIndex = app.codecIndexForConfig()
 	app.framerateIndex = app.framerateIndexForConfig()
 	app.resolutionIndex = app.resolutionIndexForRenderer()

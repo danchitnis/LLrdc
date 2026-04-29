@@ -96,6 +96,21 @@ func (a *NativeApp) attachSessionHooks() {
 		a.refreshOverlay()
 	})
 	a.session.Hooks().On(EventConfig, func(_ EventPayload) {
+		a.mu.Lock()
+		a.codecOptions = a.buildCodecOptions()
+		currentCodec := a.session.State().VideoCodec
+		found := false
+		for i, opt := range a.codecOptions {
+			if opt.Value == currentCodec {
+				a.codecIndex = i
+				found = true
+				break
+			}
+		}
+		if !found && len(a.codecOptions) > 0 {
+			a.codecIndex = 0
+		}
+		a.mu.Unlock()
 		a.refreshOverlay()
 	})
 	a.session.Hooks().On(EventStats, func(_ EventPayload) {

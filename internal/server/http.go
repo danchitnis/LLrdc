@@ -477,11 +477,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if vCodec, ok := configMsg["videoCodec"].(string); ok {
-					resolvedCodec := resolveRequestedVideoCodec(vCodec)
-					if VideoCodec != resolvedCodec {
+					oldCodec := VideoCodec
+					SetVideoCodec(vCodec)
+					if VideoCodec != oldCodec {
 						restartRequested = true
 					}
-					SetVideoCodec(vCodec)
 				}
 				if chromaStr, ok := configMsg["chroma"].(string); ok {
 					if Chroma != chromaStr {
@@ -521,11 +521,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					SetKeyframeInterval(keyframe)
 				}
 				if codecStr, ok := configMsg["video_codec"].(string); ok {
-					resolvedCodec := resolveRequestedVideoCodec(codecStr)
-					if VideoCodec != resolvedCodec {
+					oldCodec := VideoCodec
+					SetVideoCodec(codecStr)
+					if VideoCodec != oldCodec {
 						restartRequested = true
 					}
-					SetVideoCodec(codecStr)
 				}
 				if cpuEffortFloat, ok := configMsg["cpu_effort"].(float64); ok {
 					effort := int(cpuEffortFloat)
