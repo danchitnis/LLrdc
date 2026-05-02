@@ -62,10 +62,14 @@ To enable Intel QSV acceleration, build the Intel image first and then run with 
 
 When `--intel` is passed, `docker-run.sh` automatically targets the `:intel` image tag unless `IMAGE_TAG` is explicitly set. If you force `IMAGE_TAG=latest`, the script will fail fast because `:latest` is now the CPU-only image.
 
-To request the new GPU direct-buffer path, use `--capture-mode direct` together with `--nvidia`:
+To request the new GPU direct-buffer path, use `--capture-mode direct` together with `--nvidia` or `--intel`:
 
 ```bash
+# NVIDIA example
 ./docker-run.sh --nvidia --capture-mode direct
+
+# Intel H.265 4:4:4 High-Performance example
+./docker-run.sh --intel --capture-mode direct --video-codec hevc_vaapi --chroma 444
 ```
 
 This mode is fail-closed: startup aborts unless the compositor exposes the required Wayland screencopy and linux-dmabuf capabilities.
@@ -237,7 +241,7 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 #### User Flags
 - `--port`: Port for both HTTP and WebRTC UDP (default: `8080`).
 - `--fps`: Target frames per second (default: `30`).
-- `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h264_qsv`, `h265`, `h265_nvenc`, `h265_qsv`, `av1`, `av1_nvenc`, or `av1_qsv`.
+- `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h264_qsv`, `h264_vaapi`, `h265`, `h265_nvenc`, `h265_qsv`, `hevc_vaapi`, `av1`, `av1_nvenc`, or `av1_qsv`.
 - `--chroma`: Chroma subsampling format, `420` (default) or `444`. See [Chroma 4:4:4](#chroma-444) below.
 - `--use-nvidia`: Enable NVIDIA acceleration for NVENC codecs.
 - `--use-intel`: Enable Intel acceleration for QSV codecs.
@@ -355,18 +359,13 @@ Use the profile-based commands above for current baseline work.
 
 Chroma 4:4:4 avoids chroma subsampling, improving clarity for text and sharp edges on remote desktops. It can be toggled at runtime from the config panel (Quality tab) or set at startup with `--chroma 444`.
 
-### Codec Support
+### Codec Support (Chroma 4:4:4)
 
 | Codec | 4:4:4 Support | Notes |
 | :--- | :--- | :--- |
-| `h264` (CPU) | ✅ | Uses `high444` profile |
-| `h264_nvenc` (GPU) | ✅ | Uses `high444p` profile. CPU usage increases (~50-85%) due to required CPU-side BGR→YUV444p conversion before GPU upload |
-| `h265` (CPU) | ✅ | Uses `main444-8` profile |
-| `h265_nvenc` (GPU) | ✅ | Uses `rext` profile. CPU usage increases due to CPU-side conversion. |
-| `av1` (CPU) | ✅ | Uses `libaom-av1` |
-| `av1_nvenc` (GPU) | ❌ | NVIDIA NVENC SDK does not support AV1 4:4:4 encoding on any current GPU architecture |
-| `vp8` | ❌ | VP8 does not support 4:4:4 |
+| `h264_qsv` (Intel) | ❌ | Restricted to 4:2:0. **Low CPU usage** via hardware acceleration. |
+| `h265_qsv` (Intel) | ✅ | **Exclusive 4:4:4 support**. Low CPU usage via hardware-accelerated conversion. |
+| `h264/h265` (NVIDIA) | ❌ | Restricted to 4:2:0. |
+| `CPU codecs` | ❌ | Restricted to 4:2:0. High CPU usage. |
 
-> **Note:** When using `h264_nvenc` or `h265_nvenc` with chroma 444, CPU usage increases because FFmpeg must convert frames from BGR0 to YUV444p on the CPU before uploading to the GPU. NVIDIA's `scale_cuda` filter does not support this conversion.
-from BGR0 to YUV444p on the CPU before uploading to the GPU. NVIDIA's `scale_cuda` filter does not support this conversion.
-ding to the GPU. NVIDIA's `scale_cuda` filter does not support this conversion.
+> **Note:** Chroma 4:4:4 is exclusively supported on the **H.265 (HEVC) Intel** hardware path. All other configurations, including NVIDIA and H.264 Intel, are limited to 4:2:0. Both Intel GPU paths (H.264 and H.265) feature low CPU overhead due to hardware-accelerated chroma conversion and encoding.
