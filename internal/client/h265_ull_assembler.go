@@ -45,9 +45,6 @@ func (a *h265ULLAssembler) reset() {
 func (a *h265ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetReadAt int64) (frame h265ULLFrame, ready bool, dropped bool, err error) {
 	if a.active && (packet.Timestamp != a.timestamp || packet.SequenceNumber != a.nextSequence) {
 		dropped = len(a.frame) > 0
-		if dropped {
-			fmt.Printf("DEBUG: H265 assembler dropped frame: next_seq=%d got_seq=%d, cur_ts=%d got_ts=%d\n", a.nextSequence, packet.SequenceNumber, a.timestamp, packet.Timestamp)
-		}
 		a.reset()
 	}
 

@@ -543,9 +543,7 @@ func (r *NativeRenderer) Run() error {
 
 				r.mu.Lock()
 				r.presentedFrameCount++
-				pfCount := r.presentedFrameCount
 				r.mu.Unlock()
-				log.Printf("Presented frame #%d: ts=%d", pfCount, decoded.packetTimestamp)
 
 				r.emitPresent(NativeFramePresented{
 					Width:                        int(decoded.frame.width),

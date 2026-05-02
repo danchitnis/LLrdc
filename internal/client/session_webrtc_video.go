@@ -198,10 +198,6 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 			return
 		}
 
-		if s.stats.VideoPackets%100 == 0 {
-			fmt.Printf("DEBUG: Received RTP packet: seq=%d ts=%d len=%d\n", packet.SequenceNumber, packet.Timestamp, len(packet.Payload))
-		}
-
 		s.mu.Lock()
 		now := time.Now()
 		s.stats.VideoPackets++
