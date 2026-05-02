@@ -509,7 +509,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						"-p", "bf=0",
 					)
 
-					if codec == "h264_vaapi" || codec == "h264_qsv" || codec == "h265_qsv" || (codec == "hevc_vaapi" && Chroma != "444") {
+					if codec == "h264_vaapi" || codec == "h264_qsv" {
 						args = append(args, "-p", "aud=1")
 					}
 

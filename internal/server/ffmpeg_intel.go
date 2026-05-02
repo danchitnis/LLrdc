@@ -51,7 +51,7 @@ func buildQSVH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrTh
 func buildQSVH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int, chroma string) []string {
 	var outputArgs []string
 
-	outputArgs = append(outputArgs, "-c:v", "hevc_qsv", "-preset", "veryfast", "-async_depth", "1", "-bf", "0", "-aud", "1")
+	outputArgs = append(outputArgs, "-c:v", "hevc_qsv", "-preset", "veryfast", "-async_depth", "1", "-bf", "0")
 	if chroma == "444" {
 		outputArgs = append(outputArgs, "-profile:v", "scc")
 	}
