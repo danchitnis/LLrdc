@@ -53,6 +53,13 @@ func TestNativeAppFiltersCodecOptionsByRendererSupport(t *testing.T) {
 		ControlAddr: "127.0.0.1:0",
 		BuildID:     "test",
 	})
+	linuxApp.session.mu.Lock()
+	linuxApp.session.state.LastConfig = map[string]any{
+		"qsvAvailable":    false,
+		"nvidiaAvailable": false,
+	}
+	linuxApp.session.mu.Unlock()
+	linuxApp.codecOptions = linuxApp.buildCodecOptions()
 
 	if len(linuxApp.codecOptions) != 2 {
 		t.Fatalf("expected 2 Linux native codec options, got %d", len(linuxApp.codecOptions))
@@ -72,6 +79,13 @@ func TestNativeAppFiltersCodecOptionsByRendererSupport(t *testing.T) {
 		ControlAddr: "127.0.0.1:0",
 		BuildID:     "test",
 	})
+	macosApp.session.mu.Lock()
+	macosApp.session.state.LastConfig = map[string]any{
+		"qsvAvailable":    false,
+		"nvidiaAvailable": false,
+	}
+	macosApp.session.mu.Unlock()
+	macosApp.codecOptions = macosApp.buildCodecOptions()
 
 	if len(macosApp.codecOptions) != 1 {
 		t.Fatalf("expected 1 macOS native codec option, got %d", len(macosApp.codecOptions))

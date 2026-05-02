@@ -7,11 +7,11 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-type h264RTPPacketWriter interface {
+type h265RTPPacketWriter interface {
 	WriteRTP(packet *rtp.Packet) error
 }
 
-type h264ULLVideoWriter struct {
+type h265ULLVideoWriter struct {
 	track       *webrtc.TrackLocalStaticRTP
 	codecFamily string
 
@@ -23,12 +23,12 @@ type h264ULLVideoWriter struct {
 	maxFramePart int
 }
 
-func newH264ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*h264ULLVideoWriter, error) {
+func newH265ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*h265ULLVideoWriter, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(capability, "video", "pion")
 	if err != nil {
 		return nil, err
 	}
-	return &h264ULLVideoWriter{
+	return &h265ULLVideoWriter{
 		track:        track,
 		codecFamily:  codecFamily,
 		frameStep:    frameSamples(),
@@ -36,11 +36,11 @@ func newH264ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily str
 	}, nil
 }
 
-func (w *h264ULLVideoWriter) TrackLocal() webrtc.TrackLocal {
+func (w *h265ULLVideoWriter) TrackLocal() webrtc.TrackLocal {
 	return w.track
 }
 
-func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
+func (w *h265ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 	if err := validateFrameCodec(frame, w.codecFamily); err != nil {
 		return nil
 	}
@@ -63,18 +63,18 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 		w.timestamp = cryptoRandomUint32()
 		w.initialized = true
 	}
-	if w.maxFramePart <= 2 {
-		w.maxFramePart = 3
+	if w.maxFramePart <= 3 {
+		w.maxFramePart = 4
 	}
 
 	nalus := splitAnnexB(frame.Data)
 	var filteredNALUs [][]byte
 	for _, nalu := range nalus {
-		if len(nalu) == 0 {
+		if len(nalu) < 2 {
 			continue
 		}
-		naluType := nalu[0] & 0x1f
-		if naluType == 9 { // Skip Access Unit Delimiter
+		naluType := (nalu[0] >> 1) & 0x3f
+		if naluType == 35 { // Skip Access Unit Delimiter (AUD)
 			continue
 		}
 		filteredNALUs = append(filteredNALUs, nalu)
@@ -86,7 +86,7 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 		isLastNALU := (i == len(filteredNALUs)-1)
 		isFirst := !sentFirst
 
-		err = writeH264NALURTP(w.track, nalu, w.timestamp, &w.sequence, w.maxFramePart, trace, isFirst, isLastNALU)
+		err = writeH265NALURTP(w.track, nalu, w.timestamp, &w.sequence, w.maxFramePart, trace, isFirst, isLastNALU)
 		if err == nil {
 			sentFirst = true
 		} else {
@@ -104,8 +104,8 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 	return nil
 }
 
-func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32, sequence *uint16, maxFragmentSize int, trace *latencyProbeSendTrace, isFirst bool, isLast bool) error {
-	if len(nalu) == 0 {
+func writeH265NALURTP(writer h265RTPPacketWriter, nalu []byte, timestamp uint32, sequence *uint16, maxFragmentSize int, trace *latencyProbeSendTrace, isFirst bool, isLast bool) error {
+	if len(nalu) < 2 {
 		return nil
 	}
 
@@ -139,22 +139,25 @@ func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32,
 	}
 
 	// FU-A Fragmentation
-	header := nalu[0]
-	f := header & 0x80
-	nri := header & 0x60
-	naluType := header & 0x1f
-	payload := nalu[1:]
+	h0 := nalu[0]
+	h1 := nalu[1]
+	naluType := (h0 >> 1) & 0x3f
+	payload := nalu[2:]
 
 	firstFragment := true
 	for len(payload) > 0 {
-		chunkSize := maxFragmentSize - 2
+		chunkSize := maxFragmentSize - 3 // 2 bytes NAL header + 1 byte FU header
 		if chunkSize > len(payload) {
 			chunkSize = len(payload)
 		}
 		chunk := payload[:chunkSize]
 		payload = payload[chunkSize:]
 
-		fuIndicator := f | nri | 28
+		// FU-A Indicator NAL header (Type 49)
+		fuIndicatorH0 := (h0 & 0x81) | (49 << 1)
+		fuIndicatorH1 := h1
+
+		// FU Header
 		fuHeader := naluType
 		if firstFragment {
 			fuHeader |= 0x80 // Start bit
@@ -163,10 +166,11 @@ func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32,
 			fuHeader |= 0x40 // End bit
 		}
 
-		rtpPayload := make([]byte, 2+len(chunk))
-		rtpPayload[0] = fuIndicator
-		rtpPayload[1] = fuHeader
-		copy(rtpPayload[2:], chunk)
+		rtpPayload := make([]byte, 3+len(chunk))
+		rtpPayload[0] = fuIndicatorH0
+		rtpPayload[1] = fuIndicatorH1
+		rtpPayload[2] = fuHeader
+		copy(rtpPayload[3:], chunk)
 
 		packet := &rtp.Packet{
 			Header: rtp.Header{

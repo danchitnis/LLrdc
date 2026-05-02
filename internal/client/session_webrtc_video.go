@@ -153,12 +153,14 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 	codecName := strings.ToLower(track.Codec().MimeType)
 	useVP8ULLAssembler := shouldUseVP8ULLAssembler(codecName, lowLatency)
 	useH264ULLAssembler := shouldUseH264ULLAssembler(codecName, lowLatency)
+	useH265ULLAssembler := shouldUseH265ULLAssembler(codecName, lowLatency)
 	builder := newVideoSampleBuilder(codecName, lowLatency)
-	if useVP8ULLAssembler || useH264ULLAssembler {
+	if useVP8ULLAssembler || useH264ULLAssembler || useH265ULLAssembler {
 		builder = nil
 	}
 	var vp8Assembler vp8ULLAssembler
 	var h264Assembler h264ULLAssembler
+	var h265Assembler h265ULLAssembler
 	h264Assembler.packetizer = &codecs.H264Packet{}
 	stopKeyframeRequests := make(chan struct{})
 	var stopKeyframeOnce sync.Once
@@ -176,7 +178,6 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 				case <-stopKeyframeRequests:
 					return
 				case <-s.keyframeRequests:
-					fmt.Printf("DEBUG: Sending PLI on video track (SSRC: %d) due to decode error or packet loss\n", track.SSRC())
 					_ = pc.WriteRTCP([]rtcp.Packet{
 						&rtcp.PictureLossIndication{MediaSSRC: uint32(track.SSRC())},
 					})
@@ -197,6 +198,10 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 			return
 		}
 
+		if s.stats.VideoPackets%100 == 0 {
+			fmt.Printf("DEBUG: Received RTP packet: seq=%d ts=%d len=%d\n", packet.SequenceNumber, packet.Timestamp, len(packet.Payload))
+		}
+
 		s.mu.Lock()
 		now := time.Now()
 		s.stats.VideoPackets++
@@ -206,7 +211,7 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 		s.mu.Unlock()
 
 		if builder == nil {
-			if !useVP8ULLAssembler && !useH264ULLAssembler {
+			if !useVP8ULLAssembler && !useH264ULLAssembler && !useH265ULLAssembler {
 				continue
 			}
 			timing := s.popRemotePacketTiming(uint32(track.SSRC()), packet.Timestamp, packet.SequenceNumber)
@@ -236,9 +241,18 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 				frameFirstDecrypted = vFrame.firstDecryptedPacketQueuedAt
 				frameFirstRemote = vFrame.firstRemotePacketAt
 				frameFirstRead = vFrame.firstPacketReadAt
-			} else {
+			} else if useH264ULLAssembler {
 				var hFrame h264ULLFrame
 				hFrame, ready, dropped, err = h264Assembler.push(packet, timing, packetReadAt)
+				frameData = hFrame.data
+				frameTimestamp = hFrame.packetTimestamp
+				frameFirstSeq = hFrame.firstPacketSequenceNumber
+				frameFirstDecrypted = hFrame.firstDecryptedPacketQueuedAt
+				frameFirstRemote = hFrame.firstRemotePacketAt
+				frameFirstRead = hFrame.firstPacketReadAt
+			} else {
+				var hFrame h265ULLFrame
+				hFrame, ready, dropped, err = h265Assembler.push(packet, timing, packetReadAt)
 				frameData = hFrame.data
 				frameTimestamp = hFrame.packetTimestamp
 				frameFirstSeq = hFrame.firstPacketSequenceNumber
@@ -359,6 +373,8 @@ func shouldStopInitialKeyframeRequests(codec string, frame []byte) bool {
 		return isVP8KeyframePayload(frame)
 	} else if strings.Contains(codec, "h264") {
 		return isH264KeyframePayload(frame)
+	} else if strings.Contains(codec, "h265") || strings.Contains(codec, "hevc") {
+		return isH265KeyframePayload(frame)
 	}
 	return len(frame) > 0
 }

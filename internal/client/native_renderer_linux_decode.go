@@ -3,10 +3,11 @@
 package client
 
 /*
-#cgo pkg-config: sdl2 libavcodec libavutil
+#cgo pkg-config: sdl2 libavcodec libavutil libswscale
 #include <SDL2/SDL.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,8 +15,11 @@ package client
 typedef struct {
     AVCodecContext* ctx;
     AVFrame* frame;
+    AVFrame* rgb_frame;
+    struct SwsContext* sws_ctx;
     AVPacket* packet;
     int initialized;
+    int is_444;
 } llrdc_av_decoder;
 
 static int llrdc_av_init(llrdc_av_decoder* decoder, const char* codec_name) {
@@ -27,6 +31,8 @@ static int llrdc_av_init(llrdc_av_decoder* decoder, const char* codec_name) {
         codec_id = AV_CODEC_ID_H264;
     } else if (strstr(codec_name, "vp8") || strstr(codec_name, "VP8")) {
         codec_id = AV_CODEC_ID_VP8;
+    } else if (strstr(codec_name, "hevc") || strstr(codec_name, "HEVC") || strstr(codec_name, "h265") || strstr(codec_name, "H265")) {
+        codec_id = AV_CODEC_ID_HEVC;
     }
 
     if (codec_id == AV_CODEC_ID_NONE) {
@@ -43,12 +49,20 @@ static int llrdc_av_init(llrdc_av_decoder* decoder, const char* codec_name) {
         return -3;
     }
 
+    // Enable multi-threaded software decoding (0 = auto)
+    // Use FF_THREAD_SLICE to avoid frame-delay latency in synchronous calls
+    decoder->ctx->thread_count = 0;
+    decoder->ctx->thread_type = FF_THREAD_SLICE;
+
     if (avcodec_open2(decoder->ctx, codec, NULL) < 0) {
         avcodec_free_context(&decoder->ctx);
         return -4;
     }
 
     decoder->frame = av_frame_alloc();
+    decoder->rgb_frame = NULL;
+    decoder->sws_ctx = NULL;
+    decoder->is_444 = 0;
     decoder->packet = av_packet_alloc();
     decoder->initialized = 1;
     return 0;
@@ -73,12 +87,43 @@ static int llrdc_av_decode(llrdc_av_decoder* decoder, const unsigned char* data,
     if (ret == AVERROR_EOF) {
         return 2; // EOF
     }
+    
+    if (ret >= 0) {
+        if (decoder->frame->format == AV_PIX_FMT_YUV444P || decoder->frame->format == AV_PIX_FMT_YUVJ444P) {
+            decoder->is_444 = 1;
+            if (!decoder->sws_ctx || !decoder->rgb_frame || decoder->rgb_frame->width != decoder->frame->width || decoder->rgb_frame->height != decoder->frame->height) {
+                if (decoder->sws_ctx) sws_freeContext(decoder->sws_ctx);
+                if (decoder->rgb_frame) {
+                    av_freep(&decoder->rgb_frame->data[0]);
+                    av_frame_free(&decoder->rgb_frame);
+                }
+                
+                decoder->sws_ctx = sws_getContext(decoder->frame->width, decoder->frame->height, decoder->frame->format,
+                                                  decoder->frame->width, decoder->frame->height, AV_PIX_FMT_RGB24,
+                                                  SWS_BILINEAR, NULL, NULL, NULL);
+                decoder->rgb_frame = av_frame_alloc();
+                decoder->rgb_frame->width = decoder->frame->width;
+                decoder->rgb_frame->height = decoder->frame->height;
+                decoder->rgb_frame->format = AV_PIX_FMT_RGB24;
+                av_image_alloc(decoder->rgb_frame->data, decoder->rgb_frame->linesize, decoder->rgb_frame->width, decoder->rgb_frame->height, AV_PIX_FMT_RGB24, 1);
+            }
+            sws_scale(decoder->sws_ctx, (const uint8_t * const *)decoder->frame->data, decoder->frame->linesize, 0, decoder->frame->height, decoder->rgb_frame->data, decoder->rgb_frame->linesize);
+        } else {
+            decoder->is_444 = 0;
+        }
+    }
+    
     return ret;
 }
 
 static void llrdc_av_close(llrdc_av_decoder* decoder) {
     if (!decoder->initialized) {
         return;
+    }
+    if (decoder->sws_ctx) sws_freeContext(decoder->sws_ctx);
+    if (decoder->rgb_frame) {
+        av_freep(&decoder->rgb_frame->data[0]);
+        av_frame_free(&decoder->rgb_frame);
     }
     avcodec_free_context(&decoder->ctx);
     av_frame_free(&decoder->frame);
@@ -106,6 +151,7 @@ type decodedFrame struct {
 	yStride int32
 	uStride int32
 	vStride int32
+	is444   bool
 }
 
 func decodeProbeMarker(frame decodedFrame) int {
@@ -204,6 +250,24 @@ func (d *avDecoder) Decode(data []byte) (decodedFrame, error) {
 	width := int32(f.width)
 	height := int32(f.height)
 
+	is444 := d.raw.is_444 == 1
+
+	if is444 {
+		rgb := d.raw.rgb_frame
+		rgbStride := int32(rgb.linesize[0])
+		return decodedFrame{
+			width:   width,
+			height:  height,
+			yPlane:  C.GoBytes(unsafe.Pointer(rgb.data[0]), C.int(rgbStride*height)),
+			uPlane:  nil,
+			vPlane:  nil,
+			yStride: rgbStride,
+			uStride: 0,
+			vStride: 0,
+			is444:   true,
+		}, nil
+	}
+
 	yStride := int32(f.linesize[0])
 	uStride := int32(f.linesize[1])
 	vStride := int32(f.linesize[2])
@@ -217,6 +281,7 @@ func (d *avDecoder) Decode(data []byte) (decodedFrame, error) {
 		yStride: yStride,
 		uStride: uStride,
 		vStride: vStride,
+		is444:   false,
 	}, nil
 }
 

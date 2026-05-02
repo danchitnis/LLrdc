@@ -8,7 +8,7 @@ IMAGE_PLATFORM="${CLIENT_IMAGE_PLATFORM:-linux/amd64}"
 FFMPEG_RELEASE_BASE="${FFMPEG_RELEASE_BASE:-https://ffmpeg.org/releases}"
 FFMPEG_VERSION="${FFMPEG_VERSION:-auto}"
 GLIBC_MAX_VERSION="${GLIBC_MAX_VERSION:-2.39}"
-BUNDLED_LIBS_REGEX='^libav(codec|util|swresample)\.so(\..*)?$'
+BUNDLED_LIBS_REGEX='^lib(avcodec|avutil|avswresample|swscale)\.so(\..*)?$'
 FORBIDDEN_BUNDLED_LIBS_REGEX='^(libvpx|libX|libxcb|libwayland|libSDL2|libasound|libpulse|libGL|libEGL|libdrm|libgbm|libsystemd|libapparmor|libcap)(\.|$)'
 
 resolve_ffmpeg_version() {

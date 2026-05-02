@@ -12,3 +12,4 @@ tmp_broken_wayland/
 dist/
 /macos/LLrdc.app/
 /macos/.DS_Store
+.omg

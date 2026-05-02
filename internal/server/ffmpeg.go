@@ -74,14 +74,6 @@ func SetChroma(chroma string) {
 		log.Printf("Invalid chroma setting: %s", chroma)
 		return
 	}
-	if CaptureMode == CaptureModeDirect && chroma != "420" {
-		log.Printf("Ignoring chroma change to %s: direct capture mode currently requires 420", chroma)
-		return
-	}
-
-	ffmpegMutex.Lock()
-	defer ffmpegMutex.Unlock()
-
 	if Chroma == chroma {
 		return
 	}
@@ -93,23 +85,17 @@ func SetChroma(chroma string) {
 }
 
 func SetVideoCodec(codec string) {
-	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h264_qsv" && codec != "h265" && codec != "h265_nvenc" && codec != "h265_qsv" && codec != "av1" && codec != "av1_nvenc" && codec != "av1_qsv" {
+	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h264_qsv" && codec != "h264_vaapi" && codec != "h265" && codec != "h265_nvenc" && codec != "h265_qsv" && codec != "h265_vaapi" && codec != "hevc_vaapi" && codec != "av1" && codec != "av1_nvenc" && codec != "av1_qsv" {
 		log.Printf("Invalid video codec: %s", codec)
 		return
 	}
+
 	requestedCodec := codec
 	codec = resolveRequestedVideoCodec(codec)
 	if requestedCodec != codec {
 		log.Printf("Mapping requested codec %s to %s for Intel acceleration", requestedCodec, codec)
 	}
-	if UseIntel && codec == "h265_qsv" && !H265QSVAvailable {
-		if CaptureMode == CaptureModeDirect {
-			log.Printf("Ignoring codec change to %s: Intel H.265 direct encode is not supported on the current FFmpeg/driver stack", codec)
-			return
-		}
-		log.Printf("Intel H.265 hardware encode is not supported on the current FFmpeg/driver stack; falling back to CPU h265")
-		codec = "h265"
-	}
+
 	if CaptureMode == CaptureModeDirect && !isHardwareCodec(codec) {
 		log.Printf("Ignoring codec change to %s: direct capture mode requires a hardware codec (NVENC or QSV/VAAPI)", codec)
 		return
@@ -131,8 +117,24 @@ func SetVideoCodec(codec string) {
 }
 
 func resolveRequestedVideoCodec(codec string) string {
-	if UseIntel && codec == "av1" && AV1QSVAvailable {
-		return "av1_qsv"
+	if UseIntel {
+		if (codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv") {
+			if H265QSVAvailable {
+				return "h265_qsv"
+			}
+			return "hevc_vaapi"
+		}
+		if (codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv") {
+			if QSVAvailable {
+				return "h264_qsv"
+			}
+			return "h264_vaapi"
+		}
+		if codec == "av1" || codec == "av1_qsv" {
+			if AV1QSVAvailable {
+				return "av1_qsv"
+			}
+		}
 	}
 	return codec
 }
@@ -400,6 +402,10 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				codec = "hevc_vaapi"
 				codecName = "h265"
 				format = "hevc"
+			} else if VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi" {
+				codec = "hevc_vaapi"
+				codecName = "h265"
+				format = "hevc"
 			} else if VideoCodec == "av1" {
 				codec = "libaom-av1"
 				codecName = "av1"
@@ -428,9 +434,10 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					ffmpegArgs = buildQSVH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
 					ffmpegArgs = buildH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
-				} else if VideoCodec == "h265_qsv" {
-					ffmpegArgs = buildQSVH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+				} else if VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi" {
+					ffmpegArgs = buildQSVH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval, Chroma)
 				} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
+
 					ffmpegArgs = buildAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 				} else if VideoCodec == "av1_qsv" {
 					ffmpegArgs = buildQSVAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
@@ -494,33 +501,45 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					// Intel hardware encoding via VAAPI (mapped from QSV names internally)
 					args = append(args, "-d", resolveIntelRenderNode())
 
-					// We do not pass -x nv12 here because wf-recorder automatically
-					// adds the necessary hwupload and scale_vaapi=format=nv12 filters.
-
 					args = append(args,
 						"-p", fmt.Sprintf("b=%dk", targetBandwidthMbps*1000),
 						"-p", fmt.Sprintf("maxrate=%dk", targetBandwidthMbps*1000),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
-						"-p", "async_depth=1",
+						"-p", "async_depth=2",
 						"-p", "bf=0",
 					)
 
-					if codec == "h264_vaapi" || codec == "hevc_vaapi" {
+					if codec == "h264_vaapi" || codec == "h264_qsv" || codec == "h265_qsv" || (codec == "hevc_vaapi" && Chroma != "444") {
 						args = append(args, "-p", "aud=1")
 					}
+
+					filterFormat := "nv12"
+					if Chroma == "444" {
+						filterFormat = "vuyx"
+					}
+					args = append(args, "-F", fmt.Sprintf("scale_vaapi=format=%s:out_range=full,fps=%d", filterFormat, FPS))
 
 					if codec == "h264_vaapi" {
 						args = append(args, "-p", "profile=77") // main
 					} else if codec == "hevc_vaapi" {
-						args = append(args, "-p", "profile=1") // main
+						if Chroma == "444" {
+							args = append(args, "-p", "profile=rext")
+						} else {
+							args = append(args, "-p", "profile=main")
+						}
 					} else if codec == "av1_vaapi" {
 						args = append(args, "-p", "profile=0") // main
 					}
 				} else {
 					// CPU encoding
-					args = append(args, "-x", "yuv420p")
+					if Chroma == "444" {
+					        args = append(args, "-x", "yuv444p")
+					} else {
+					        args = append(args, "-x", "yuv420p")
+					}
 
 					if codec == "libvpx" {
+
 						args = append(args,
 							"-p", "deadline=realtime",
 							"-p", "lag-in-frames=0",

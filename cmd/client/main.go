@@ -18,8 +18,6 @@ func init() {
 }
 
 func main() {
-	log.Println("DEBUG: Client starting")
-
 	paths := client.ResolveAppPaths("")
 
 	serverURL := flag.String("server", "", "LLrdc server URL (e.g. http://localhost:8080)")
@@ -31,6 +29,7 @@ func main() {
 	fullscreen := flag.Bool("fullscreen", false, "Start the native client in fullscreen mode")
 	headless := flag.Bool("headless", false, "Run without creating a native window")
 	showStats := flag.Bool("stats", false, "Show stats overlay on the screen")
+	videoCodec := flag.String("video-codec", "", "Preferred video codec (vp8, h264, h265, av1)")
 	defaultAutoStart := runtime.GOOS == "darwin"
 	autoStart := flag.Bool("auto-start", defaultAutoStart, "Start streaming automatically without waiting for click")
 	latencyProbe := flag.Bool("latency-probe", false, "Enable internal latency probe (checks center pixel brightness)")
@@ -43,6 +42,10 @@ func main() {
 		log.Printf("failed to parse config file %s: %v", *configPathFlag, err)
 	} else if *configPathFlag != "" {
 		log.Printf("loaded configuration from %s", *configPathFlag)
+	}
+
+	if *videoCodec != "" {
+		cfg.Codec = videoCodec
 	}
 
 	if cfg.Resolution != nil {

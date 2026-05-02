@@ -8,9 +8,30 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
+
+// normalizeClientCodecFamily maps all codec name variants (RTP MIME types,
+// server-side codec names, etc.) to a canonical family name.
+// This prevents false decoder resets when comparing e.g. "video/H265" vs "hevc_vaapi".
+func normalizeClientCodecFamily(codec string) string {
+	lower := strings.ToLower(codec)
+	if strings.Contains(lower, "h265") || strings.Contains(lower, "hevc") {
+		return "h265"
+	}
+	if strings.Contains(lower, "h264") {
+		return "h264"
+	}
+	if strings.Contains(lower, "vp8") {
+		return "vp8"
+	}
+	if strings.Contains(lower, "av1") {
+		return "av1"
+	}
+	return lower
+}
 
 func (r *NativeRenderer) Run() error {
 	runtime.LockOSThread()
@@ -92,6 +113,9 @@ func (r *NativeRenderer) Run() error {
 
 	// Click to Start Loop
 	clicked := r.autoStart
+	if clicked {
+		log.Printf("Auto-starting renderer loop")
+	}
 	for !clicked {
 		r.drawClickToStart(renderer)
 		r.drawOverlay(renderer)
@@ -138,6 +162,7 @@ func (r *NativeRenderer) Run() error {
 	r.emitLifecycle(NativeWindowLifecycle{RenderLoopStarted: true})
 
 	decodedFrames := make(chan nativeDecodedSample, 2)
+
 	go func() {
 		defer close(decodedFrames)
 		var currentCodec string
@@ -155,7 +180,7 @@ func (r *NativeRenderer) Run() error {
 			select {
 			case <-r.stopCh:
 				return
-			case codec := <-r.streamResets:
+			case codec := <-r.decoderResets:
 				if codec == "decode_error" {
 					// Keep current decoder but wait for keyframe
 					r.mu.Lock()
@@ -165,7 +190,7 @@ func (r *NativeRenderer) Run() error {
 				}
 				sCodec := strings.ToLower(codec)
 				cCodec := strings.ToLower(currentCodec)
-				if currentCodec != "" && !strings.Contains(sCodec, cCodec) && !strings.Contains(cCodec, sCodec) {
+				if currentCodec != "" && normalizeClientCodecFamily(sCodec) != normalizeClientCodecFamily(cCodec) {
 					log.Printf("Resetting stream to codec %s (previous %s)", codec, currentCodec)
 					closeDecoders()
 					currentCodec = codec
@@ -186,7 +211,7 @@ func (r *NativeRenderer) Run() error {
 					cCodec = strings.ToLower(currentCodec)
 				}
 
-				if currentCodec != "" && !strings.Contains(sCodec, cCodec) && !strings.Contains(cCodec, sCodec) {
+				if currentCodec != "" && normalizeClientCodecFamily(sCodec) != normalizeClientCodecFamily(cCodec) {
 					log.Printf("Codec mismatch in sample (got %s, expected %s), resetting decoders", sample.codec, currentCodec)
 					closeDecoders()
 					currentCodec = sample.codec
@@ -205,13 +230,12 @@ func (r *NativeRenderer) Run() error {
 				r.mu.RUnlock()
 
 				if awaiting {
-					if !isKeyframe(sample.codec, sample.data) {
-						continue
+					if isKeyframe(sample.codec, sample.data) {
+						r.mu.Lock()
+						r.decoderAwaitingKeyframe = false
+						r.mu.Unlock()
+						r.emitLifecycle(NativeWindowLifecycle{DecoderStateChanged: true, DecoderAwaitingKeyframe: false})
 					}
-					r.mu.Lock()
-					r.decoderAwaitingKeyframe = false
-					r.mu.Unlock()
-					r.emitLifecycle(NativeWindowLifecycle{DecoderStateChanged: true, DecoderAwaitingKeyframe: false})
 				}
 
 				if av == nil {
@@ -226,10 +250,16 @@ func (r *NativeRenderer) Run() error {
 				frame, err := av.Decode(sample.data)
 				if err != nil {
 					log.Printf("FFmpeg decode error: %v", err)
+					// Only reset to awaiting keyframe if we were already past the initial one
 					r.mu.Lock()
-					r.decoderAwaitingKeyframe = true
+					pastInitial := !r.decoderAwaitingKeyframe
+					if pastInitial {
+						r.decoderAwaitingKeyframe = true
+					}
 					r.mu.Unlock()
-					r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
+					if pastInitial {
+						r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
+					}
 					continue
 				}
 				if frame.width > 0 && frame.height > 0 {
@@ -253,21 +283,18 @@ func (r *NativeRenderer) Run() error {
 
 	var texture *sdl.Texture
 	var textureWidth, textureHeight int32
+	var textureFormat uint32 = sdl.PIXELFORMAT_IYUV
 	defer func() {
 		if texture != nil {
 			texture.Destroy()
 		}
 	}()
 
+	var lastPresentAt int64
 	for {
 		r.processWindowRequests(window, renderer)
 
-		select {
-		case <-r.stopCh:
-			return nil
-		default:
-		}
-
+		needsRedraw := false
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch e := event.(type) {
 			case *sdl.QuitEvent:
@@ -304,18 +331,10 @@ func (r *NativeRenderer) Run() error {
 					x := (float64(e.X) - float64(dx)) / float64(dw)
 					y := (float64(e.Y) - float64(dy)) / float64(dh)
 
-					if x < 0 {
-						x = 0
-					}
-					if x > 1 {
-						x = 1
-					}
-					if y < 0 {
-						y = 0
-					}
-					if y > 1 {
-						y = 1
-					}
+					if x < 0 { x = 0 }
+					if x > 1 { x = 1 }
+					if y < 0 { y = 0 }
+					if y > 1 { y = 1 }
 
 					r.sendInput(map[string]any{
 						"type": "mousemove",
@@ -336,9 +355,7 @@ func (r *NativeRenderer) Run() error {
 					vw, vh = ww, wh
 				}
 
-				x := 0.0
-				y := 0.0
-
+				x, y := 0.0, 0.0
 				if ww > 0 && wh > 0 && vw > 0 && vh > 0 {
 					videoAspect := float64(vw) / float64(vh)
 					windowAspect := float64(ww) / float64(wh)
@@ -360,18 +377,10 @@ func (r *NativeRenderer) Run() error {
 					x = (float64(e.X) - float64(dx)) / float64(dw)
 					y = (float64(e.Y) - float64(dy)) / float64(dh)
 
-					if x < 0 {
-						x = 0
-					}
-					if x > 1 {
-						x = 1
-					}
-					if y < 0 {
-						y = 0
-					}
-					if y > 1 {
-						y = 1
-					}
+					if x < 0 { x = 0 }
+					if x > 1 { x = 1 }
+					if y < 0 { y = 0 }
+					if y > 1 { y = 1 }
 				}
 
 				r.sendInput(map[string]any{
@@ -414,17 +423,19 @@ func (r *NativeRenderer) Run() error {
 					r.mu.Unlock()
 					lifecycle.Width = int(e.Data1)
 					lifecycle.Height = int(e.Data2)
-					r.sendInput(map[string]any{
-						"type":   "resize",
-						"width":  int(e.Data1),
-						"height": int(e.Data2),
-					})
+					needsRedraw = true
+				}
+				if e.Event == sdl.WINDOWEVENT_EXPOSED || e.Event == sdl.WINDOWEVENT_SHOWN {
+					needsRedraw = true
 				}
 				r.emitLifecycle(lifecycle)
 			}
 		}
 
+		var decoded *nativeDecodedSample
 		select {
+		case <-r.stopCh:
+			return nil
 		case codec := <-r.streamResets:
 			if codec == "reset_texture" {
 				log.Printf("Resetting SDL texture for codec change")
@@ -434,27 +445,45 @@ func (r *NativeRenderer) Run() error {
 				}
 				continue
 			}
-			r.mu.Lock()
-			r.decoderAwaitingKeyframe = true
-			r.mu.Unlock()
-		case decoded := <-decodedFrames:
+		case d := <-decodedFrames:
+			decoded = &d
+		case <-time.After(16 * time.Millisecond):
+			// Heartbeat for events and UI
+		}
+
+		if decoded != nil {
 			frame := decoded.frame
-			if texture == nil || textureWidth != frame.width || textureHeight != frame.height {
+			var targetFormat uint32 = sdl.PIXELFORMAT_IYUV
+			if frame.is444 {
+				targetFormat = sdl.PIXELFORMAT_RGB24
+			}
+
+			if texture == nil || textureWidth != frame.width || textureHeight != frame.height || textureFormat != targetFormat {
 				if texture != nil {
 					texture.Destroy()
 				}
 				var err error
-				texture, err = renderer.CreateTexture(uint32(sdl.PIXELFORMAT_IYUV), sdl.TEXTUREACCESS_STREAMING, frame.width, frame.height)
+				texture, err = renderer.CreateTexture(targetFormat, sdl.TEXTUREACCESS_STREAMING, frame.width, frame.height)
 				if err != nil {
 					return fmt.Errorf("create texture: %w", err)
 				}
 				textureWidth, textureHeight = frame.width, frame.height
+				textureFormat = targetFormat
 				r.mu.Lock()
 				r.videoWidth = frame.width
 				r.videoHeight = frame.height
 				r.mu.Unlock()
 			}
-			_ = texture.UpdateYUV(nil, frame.yPlane, int(frame.yStride), frame.uPlane, int(frame.uStride), frame.vPlane, int(frame.vStride))
+
+			if frame.is444 {
+				_ = texture.Update(nil, unsafe.Pointer(&frame.yPlane[0]), int(frame.yStride))
+			} else {
+				_ = texture.UpdateYUV(nil, frame.yPlane, int(frame.yStride), frame.uPlane, int(frame.uStride), frame.vPlane, int(frame.vStride))
+			}
+			needsRedraw = true
+		}
+
+		if texture != nil && (needsRedraw || benchmarkClockNowMs()-lastPresentAt > 100) {
 			_ = renderer.Clear()
 			r.mu.RLock()
 			ww, wh := r.width, r.height
@@ -462,29 +491,6 @@ func (r *NativeRenderer) Run() error {
 			debugCursor := r.debugCursor
 			mx, my := r.mouseX, r.mouseY
 			r.mu.RUnlock()
-
-			brightness := -1
-			probeMarker := 0
-			if probeLatency {
-				// Compute center pixel brightness (Y channel)
-				cx := int(decoded.frame.width / 2)
-				cy := int(decoded.frame.height / 2)
-				offset := cy*int(decoded.frame.yStride) + cx
-				if offset >= 0 && offset < len(decoded.frame.yPlane) {
-					brightness = int(decoded.frame.yPlane[offset])
-				}
-				if brightness >= 0 {
-					probeMarker = decodeProbeMarker(decoded.frame)
-				}
-			}
-
-			// Ensure the renderer's logical size matches the window size so drawing coordinates match mouse coordinates
-			if ww > 0 && wh > 0 {
-				lw, lh := renderer.GetLogicalSize()
-				if lw != int32(ww) || lh != int32(wh) {
-					_ = renderer.SetLogicalSize(int32(ww), int32(wh))
-				}
-			}
 
 			// Compute aspect-fit destination rect
 			var dstRect *sdl.Rect
@@ -496,13 +502,11 @@ func (r *NativeRenderer) Run() error {
 				var dx, dy int32
 
 				if windowAspect > videoAspect {
-					// Pillarboxed (bars on sides)
 					dh = int32(wh)
 					dw = int32(float64(dh) * videoAspect)
 					dx = (int32(ww) - dw) / 2
 					dy = 0
 				} else {
-					// Letterboxed (bars on top/bottom)
 					dw = int32(ww)
 					dh = int32(float64(dw) / videoAspect)
 					dx = 0
@@ -520,64 +524,45 @@ func (r *NativeRenderer) Run() error {
 
 			r.drawOverlay(renderer)
 			renderer.Present()
-			presentedAt := benchmarkClockNowMs()
-			r.emitPresent(NativeFramePresented{
-				Width:                        int(decoded.frame.width),
-				Height:                       int(decoded.frame.height),
-				PacketTimestamp:              decoded.packetTimestamp,
-				FirstPacketSequenceNumber:    decoded.firstPacketSequenceNumber,
-				Brightness:                   brightness,
-				ProbeMarker:                  probeMarker,
-				FirstDecryptedPacketQueuedAt: decoded.firstDecryptedPacketQueuedAt,
-				FirstRemotePacketAt:          decoded.firstRemotePacketAt,
-				FirstPacketReadAt:            decoded.firstPacketReadAt,
-				ReceiveAt:                    decoded.receiveAt,
-				DecodeReadyAt:                decoded.decodeReadyAt,
-				PresentationAt:               presentedAt,
-				PresentationSource:           "render_present",
-			})
+			lastPresentAt = benchmarkClockNowMs()
 
-		case <-time.After(10 * time.Millisecond):
-			if texture != nil {
-				_ = renderer.Clear()
-
-				r.mu.RLock()
-				ww, wh := r.width, r.height
-				debugCursor := r.debugCursor
-				mx, my := r.mouseX, r.mouseY
-				r.mu.RUnlock()
-
-				// Compute aspect-fit destination rect
-				var dstRect *sdl.Rect
-				if textureWidth > 0 && textureHeight > 0 && ww > 0 && wh > 0 {
-					videoAspect := float64(textureWidth) / float64(textureHeight)
-					windowAspect := float64(ww) / float64(wh)
-					var dw, dh int32
-					var dx, dy int32
-					if windowAspect > videoAspect {
-						dh = int32(wh)
-						dw = int32(float64(dh) * videoAspect)
-						dx = (int32(ww) - dw) / 2
-						dy = 0
-					} else {
-						dw = int32(ww)
-						dh = int32(float64(dw) / videoAspect)
-						dx = 0
-						dy = (int32(wh) - dh) / 2
+			if decoded != nil {
+				brightness := -1
+				probeMarker := 0
+				if probeLatency {
+					cx := int(decoded.frame.width / 2)
+					cy := int(decoded.frame.height / 2)
+					offset := cy*int(decoded.frame.yStride) + cx
+					if offset >= 0 && offset < len(decoded.frame.yPlane) {
+						brightness = int(decoded.frame.yPlane[offset])
 					}
-					dstRect = &sdl.Rect{X: dx, Y: dy, W: dw, H: dh}
+					if brightness >= 0 {
+						probeMarker = decodeProbeMarker(decoded.frame)
+					}
 				}
 
-				_ = renderer.Copy(texture, nil, dstRect)
-				if debugCursor {
-					_ = renderer.SetDrawColor(255, 0, 0, 255)
-					_ = renderer.FillRect(&sdl.Rect{X: mx - 5, Y: my - 5, W: 10, H: 10})
-				}
-				r.drawOverlay(renderer)
-				renderer.Present()
+				r.mu.Lock()
+				r.presentedFrameCount++
+				pfCount := r.presentedFrameCount
+				r.mu.Unlock()
+				log.Printf("Presented frame #%d: ts=%d", pfCount, decoded.packetTimestamp)
+
+				r.emitPresent(NativeFramePresented{
+					Width:                        int(decoded.frame.width),
+					Height:                       int(decoded.frame.height),
+					PacketTimestamp:              decoded.packetTimestamp,
+					FirstPacketSequenceNumber:    decoded.firstPacketSequenceNumber,
+					Brightness:                   brightness,
+					ProbeMarker:                  probeMarker,
+					FirstDecryptedPacketQueuedAt: decoded.firstDecryptedPacketQueuedAt,
+					FirstRemotePacketAt:          decoded.firstRemotePacketAt,
+					FirstPacketReadAt:            decoded.firstPacketReadAt,
+					ReceiveAt:                    decoded.receiveAt,
+					DecodeReadyAt:                decoded.decodeReadyAt,
+					PresentationAt:               lastPresentAt,
+					PresentationSource:           "render_present",
+				})
 			}
-		case <-r.stopCh:
-			return nil
 		}
 	}
 }

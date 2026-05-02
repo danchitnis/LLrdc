@@ -18,6 +18,9 @@ func isKeyframe(codec string, data []byte) bool {
 	if strings.Contains(strings.ToLower(codec), "h264") {
 		return isH264KeyframePayload(data)
 	}
+	if strings.Contains(strings.ToLower(codec), "hevc") || strings.Contains(strings.ToLower(codec), "h265") {
+		return isH265KeyframePayload(data)
+	}
 	return false
 }
 
