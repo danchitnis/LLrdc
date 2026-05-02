@@ -164,6 +164,7 @@ static struct {
     LLrdcView* view;
     NSWindow* window;
     CMVideoFormatDescriptionRef formatDesc;
+    NSData* vpsData;
     NSData* spsData;
     NSData* ppsData;
     int lowLatency;
@@ -179,6 +180,9 @@ static void llrdc_reset_video_state_locked(void) {
         CFRelease(g_app_state.formatDesc);
         g_app_state.formatDesc = NULL;
     }
+    g_app_state.vpsData = nil;
+    g_app_state.spsData = nil;
+    g_app_state.ppsData = nil;
 }
 
 static BOOL llrdc_update_parameter_sets(NSData *spsData, NSData *ppsData) {
@@ -584,6 +588,7 @@ void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallba
     g_app_state.lowLatency = lowLatency;
     NSLog(@"[ObjC] App initialized with low latency mode: %s", lowLatency ? "enabled" : "disabled");
     g_app_state.formatDesc = NULL;
+    g_app_state.vpsData = nil;
     g_app_state.spsData = nil;
     g_app_state.ppsData = nil;
     return NULL;
@@ -619,6 +624,169 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
         }
 
         if (!llrdc_update_parameter_sets(spsData, ppsData) || !g_app_state.formatDesc) {
+            return;
+        }
+
+        CMBlockBufferRef blockBuffer = NULL;
+        void *memory = malloc(sampleData.length);
+        if (!memory) {
+            return;
+        }
+        memcpy(memory, sampleData.bytes, sampleData.length);
+        OSStatus status = CMBlockBufferCreateWithMemoryBlock(
+            NULL,
+            memory,
+            sampleData.length,
+            kCFAllocatorMalloc,
+            NULL,
+            0,
+            sampleData.length,
+            0,
+            &blockBuffer
+        );
+        if (status != kCMBlockBufferNoErr) {
+            free(memory);
+            return;
+        }
+
+        CMSampleTimingInfo timingInfo = {
+            .duration = kCMTimeInvalid,
+            .presentationTimeStamp = CMTimeMake(ts, 90000),
+            .decodeTimeStamp = kCMTimeInvalid,
+        };
+        size_t sampleSize = sampleData.length;
+        CMSampleBufferRef sampleBuffer = NULL;
+        status = CMSampleBufferCreate(
+            NULL,
+            blockBuffer,
+            true,
+            NULL,
+            NULL,
+            g_app_state.formatDesc,
+            1,
+            1,
+            &timingInfo,
+            1,
+            &sampleSize,
+            &sampleBuffer
+        );
+        if (status != noErr) {
+            CFRelease(blockBuffer);
+            return;
+        }
+
+        CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, YES);
+        if (attachments && CFArrayGetCount(attachments) > 0) {
+            CFMutableDictionaryRef dict = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0);
+            if (g_app_state.lowLatency) {
+                CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
+            }
+        }
+
+        view.videoLayer.hidden = NO;
+        CGSize presentationSize = CMVideoFormatDescriptionGetPresentationDimensions(g_app_state.formatDesc, true, true);
+        CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(g_app_state.formatDesc);
+        if (presentationSize.width <= 0 || presentationSize.height <= 0) {
+            presentationSize = CGSizeMake(dimensions.width, dimensions.height);
+        }
+        if (presentationSize.width > 0 && presentationSize.height > 0) {
+            view.videoContentSize = NSMakeSize(presentationSize.width, presentationSize.height);
+        }
+        [renderer enqueueSampleBuffer:sampleBuffer];
+        if (g_app_state.presentCb) {
+            g_app_state.presentCb(g_app_state.renderer, (int)lround(presentationSize.width), (int)lround(presentationSize.height), ts);
+        }
+
+        CFRelease(sampleBuffer);
+        CFRelease(blockBuffer);
+    });
+}
+
+static BOOL llrdc_update_parameter_sets_hevc(NSData *vpsData, NSData *spsData, NSData *ppsData) {
+    BOOL changed = NO;
+
+    if (vpsData != nil && ![g_app_state.vpsData isEqualToData:vpsData]) {
+        g_app_state.vpsData = vpsData;
+        changed = YES;
+    }
+    if (spsData != nil && ![g_app_state.spsData isEqualToData:spsData]) {
+        g_app_state.spsData = spsData;
+        changed = YES;
+    }
+    if (ppsData != nil && ![g_app_state.ppsData isEqualToData:ppsData]) {
+        g_app_state.ppsData = ppsData;
+        changed = YES;
+    }
+
+    if (!changed && g_app_state.formatDesc != NULL) {
+        return YES;
+    }
+
+    if (g_app_state.formatDesc) {
+        CFRelease(g_app_state.formatDesc);
+        g_app_state.formatDesc = NULL;
+    }
+
+    if (!g_app_state.vpsData || !g_app_state.spsData || !g_app_state.ppsData) {
+        return NO;
+    }
+
+    const uint8_t* parameterSetPointers[3] = {
+        (const uint8_t*)g_app_state.vpsData.bytes,
+        (const uint8_t*)g_app_state.spsData.bytes,
+        (const uint8_t*)g_app_state.ppsData.bytes,
+    };
+    size_t parameterSetSizes[3] = {
+        g_app_state.vpsData.length,
+        g_app_state.spsData.length,
+        g_app_state.ppsData.length,
+    };
+    OSStatus status = CMVideoFormatDescriptionCreateFromHEVCParameterSets(
+        NULL,
+        3,
+        parameterSetPointers,
+        parameterSetSizes,
+        4,
+        NULL,
+        &g_app_state.formatDesc
+    );
+    return status == noErr;
+}
+
+void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* vps, size_t vpsSize, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize) {
+    if (!data || size == 0) {
+        return;
+    }
+
+    NSData *sampleData = [[NSData alloc] initWithBytes:data length:size];
+    NSData *vpsData = nil;
+    NSData *spsData = nil;
+    NSData *ppsData = nil;
+    if (vps && vpsSize > 0) {
+        vpsData = [[NSData alloc] initWithBytes:vps length:vpsSize];
+    }
+    if (sps && spsSize > 0) {
+        spsData = [[NSData alloc] initWithBytes:sps length:spsSize];
+    }
+    if (pps && ppsSize > 0) {
+        ppsData = [[NSData alloc] initWithBytes:pps length:ppsSize];
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        LLrdcView *view = g_app_state.view;
+        if (!view || !view.videoLayer) {
+            return;
+        }
+        AVSampleBufferVideoRenderer *renderer = view.videoLayer.sampleBufferRenderer;
+
+        if (!renderer.readyForMoreMediaData) {
+            [renderer flushWithRemovalOfDisplayedImage:NO completionHandler:nil];
+        }
+        if (renderer.status == AVQueuedSampleBufferRenderingStatusFailed) {
+            [renderer flushWithRemovalOfDisplayedImage:YES completionHandler:nil];
+        }
+
+        if (!llrdc_update_parameter_sets_hevc(vpsData, spsData, ppsData) || !g_app_state.formatDesc) {
             return;
         }
 

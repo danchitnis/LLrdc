@@ -5,12 +5,17 @@ import (
 	"errors"
 )
 
+// h264AccessUnit represents a parsed H.264 access unit.
+// This is primarily used for the macOS VideoToolbox renderer, which requires
+// explicit parameter sets and length-prefixed NAL units (AVCC format).
 type h264AccessUnit struct {
 	AVCC []byte
 	SPS  []byte
 	PPS  []byte
 }
 
+// buildH264AccessUnit parses an Annex-B H.264 frame and extracts the parameter sets.
+// It also converts the stream to length-prefixed NALUs required by VideoToolbox.
 func buildH264AccessUnit(frame []byte) (h264AccessUnit, error) {
 	nalus := splitH264NALUs(frame)
 	if len(nalus) == 0 {

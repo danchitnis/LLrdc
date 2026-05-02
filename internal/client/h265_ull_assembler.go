@@ -164,5 +164,5 @@ func (a *h265ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetR
 
 func shouldUseH265ULLAssembler(codecName string, lowLatency bool) bool {
 	lower := strings.ToLower(codecName)
-	return strings.Contains(lower, "h265") || strings.Contains(lower, "hevc")
+	return lowLatency && (strings.Contains(lower, "h265") || strings.Contains(lower, "hevc"))
 }

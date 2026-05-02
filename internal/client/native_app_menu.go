@@ -271,9 +271,11 @@ func (a *NativeApp) executeValueCommand(id string) error {
 func (a *NativeApp) setCodec(value string) error {
 	a.mu.Lock()
 	target := -1
+	var opt codecOption
 	for idx, option := range a.codecOptions {
 		if option.Value == value {
 			target = idx
+			opt = option
 			break
 		}
 	}
@@ -286,7 +288,15 @@ func (a *NativeApp) setCodec(value string) error {
 	a.mu.Unlock()
 
 	if value != "" || a.session.State().Connected {
-		if err := a.session.SendConfig(map[string]any{"videoCodec": value}); err != nil && !strings.Contains(err.Error(), "not connected") {
+		chroma := "420"
+		if opt.Chroma != "" {
+			chroma = opt.Chroma
+		}
+		config := map[string]any{
+			"videoCodec": value,
+			"chroma":     chroma,
+		}
+		if err := a.session.SendConfig(config); err != nil && !strings.Contains(err.Error(), "not connected") {
 			return err
 		}
 	}

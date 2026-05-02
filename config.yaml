@@ -1,0 +1,2 @@
+videoCodec: "hevc_qsv"
+chroma: "444"

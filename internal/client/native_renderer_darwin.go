@@ -21,6 +21,7 @@ typedef struct {
 
 void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart, int lowLatency);
 void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
+void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* vps, size_t vpsSize, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
 void llrdc_reset_video();
 void llrdc_set_overlay_state(const char* hudText, int hudR, int hudG, int hudB, int hudA, int menuVisible, const char* menuTitle, const char* menuHint, const char* menuItems);
 void llrdc_set_debug_cursor(int enabled);
@@ -90,6 +91,7 @@ type NativeRenderer struct {
 	debugCursor  bool
 	lowLatency   bool
 
+	vps    []byte
 	sps    []byte
 	pps    []byte
 	stopCh chan struct{}
@@ -208,11 +210,11 @@ func (r *NativeRenderer) Size() (int, int) {
 }
 
 func (r *NativeRenderer) PreferredVideoCodec() string {
-	return "h264"
+	return "hevc"
 }
 
 func (r *NativeRenderer) SupportedVideoCodecs() []string {
-	return []string{"h264"}
+	return []string{"h265", "hevc", "h264"}
 }
 
 func (r *NativeRenderer) SupportsWebSocketVideoFallback() bool {
@@ -220,10 +222,12 @@ func (r *NativeRenderer) SupportsWebSocketVideoFallback() bool {
 }
 
 func (r *NativeRenderer) ResetVideoStream(codec string) {
-	if !strings.Contains(strings.ToLower(codec), "h264") {
+	lower := strings.ToLower(codec)
+	if !strings.Contains(lower, "h264") && !strings.Contains(lower, "h265") && !strings.Contains(lower, "hevc") {
 		return
 	}
 	r.mu.Lock()
+	r.vps = nil
 	r.sps = nil
 	r.pps = nil
 	r.mu.Unlock()
@@ -231,9 +235,16 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 }
 
 func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
-	if !strings.Contains(strings.ToLower(codec), "h264") {
-		return fmt.Errorf("macOS native renderer requires H.264, got %s", codec)
+	lower := strings.ToLower(codec)
+	if strings.Contains(lower, "h264") {
+		return r.handleH264(frame, packetTimestamp)
+	} else if strings.Contains(lower, "h265") || strings.Contains(lower, "hevc") {
+		return r.handleHEVC(frame, packetTimestamp)
 	}
+	return fmt.Errorf("macOS native renderer requires H.264 or HEVC, got %s", codec)
+}
+
+func (r *NativeRenderer) handleH264(frame []byte, packetTimestamp uint32) error {
 	if len(frame) == 0 {
 		return nil
 	}
@@ -268,6 +279,59 @@ func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTime
 		(*C.uint8_t)(unsafe.Pointer(&unit.AVCC[0])),
 		C.size_t(len(unit.AVCC)),
 		C.uint32_t(packetTimestamp),
+		spsPtr,
+		C.size_t(len(currentSPS)),
+		ppsPtr,
+		C.size_t(len(currentPPS)),
+	)
+	return nil
+}
+
+func (r *NativeRenderer) handleHEVC(frame []byte, packetTimestamp uint32) error {
+	if len(frame) == 0 {
+		return nil
+	}
+
+	unit, err := buildH265AccessUnit(frame)
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	if len(unit.VPS) > 0 {
+		r.vps = append(r.vps[:0], unit.VPS...)
+	}
+	if len(unit.SPS) > 0 {
+		r.sps = append(r.sps[:0], unit.SPS...)
+	}
+	if len(unit.PPS) > 0 {
+		r.pps = append(r.pps[:0], unit.PPS...)
+	}
+	currentVPS := append([]byte(nil), r.vps...)
+	currentSPS := append([]byte(nil), r.sps...)
+	currentPPS := append([]byte(nil), r.pps...)
+	r.mu.Unlock()
+
+	var vpsPtr *C.uint8_t
+	if len(currentVPS) > 0 {
+		vpsPtr = (*C.uint8_t)(unsafe.Pointer(&currentVPS[0]))
+	}
+	var spsPtr *C.uint8_t
+	if len(currentSPS) > 0 {
+		spsPtr = (*C.uint8_t)(unsafe.Pointer(&currentSPS[0]))
+	}
+	var ppsPtr *C.uint8_t
+	if len(currentPPS) > 0 {
+		ppsPtr = (*C.uint8_t)(unsafe.Pointer(&currentPPS[0]))
+	}
+
+	C.llrdc_enqueue_hevc(
+		nil,
+		(*C.uint8_t)(unsafe.Pointer(&unit.HVCC[0])),
+		C.size_t(len(unit.HVCC)),
+		C.uint32_t(packetTimestamp),
+		vpsPtr,
+		C.size_t(len(currentVPS)),
 		spsPtr,
 		C.size_t(len(currentSPS)),
 		ppsPtr,

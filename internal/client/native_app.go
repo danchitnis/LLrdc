@@ -62,8 +62,9 @@ type NativeAppOptions struct {
 }
 
 type codecOption struct {
-	Label string
-	Value string
+	Label  string
+	Value  string
+	Chroma string
 }
 
 type resolutionOption struct {
@@ -157,28 +158,15 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 	lastConfig := a.session.state.LastConfig
 	a.session.mu.RUnlock()
 
-	var qsv, nvenc, h265Nvenc444, h265Qsv, av1Nvenc, av1Qsv bool
+	var qsv, nvenc bool
 	if lastConfig != nil {
 		qsv, _ = lastConfig["qsvAvailable"].(bool)
 		nvenc, _ = lastConfig["nvidiaAvailable"].(bool)
-		h265Nvenc444, _ = lastConfig["h265Nvenc444Available"].(bool)
-		h265Qsv, _ = lastConfig["h265QsvAvailable"].(bool)
-		if h265QsvInterface, exists := lastConfig["h265QsvAvailable"]; !exists {
-			h265Qsv = true // fallback if older server
-		} else {
-			h265Qsv, _ = h265QsvInterface.(bool)
-		}
-		av1Nvenc, _ = lastConfig["av1NvencAvailable"].(bool)
-		av1Qsv, _ = lastConfig["av1QsvAvailable"].(bool)
 	} else {
 		// If server config is not available, assume all hardware codecs are possible
 		// to allow initial configuration from YAML to be respected.
 		qsv = true
 		nvenc = true
-		h265Nvenc444 = true
-		h265Qsv = true
-		av1Nvenc = true
-		av1Qsv = true
 	}
 
 	filtered := make([]codecOption, 0, len(baseOptions))
@@ -206,16 +194,14 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 		isNVENC := strings.HasSuffix(val, "_nvenc")
 		isQSV := strings.HasSuffix(val, "_qsv")
 		isVAAPI := strings.HasSuffix(val, "_vaapi")
-		isH265 := strings.HasPrefix(val, "h265") || strings.HasPrefix(val, "hevc")
-		isAV1 := strings.HasPrefix(val, "av1")
 
 		shouldShow := false
 		if !isNVENC && !isQSV && !isVAAPI {
 			shouldShow = true // CPU fallback is always an option if renderer supports it
 		} else if isNVENC {
-			shouldShow = nvenc && (!isH265 || h265Nvenc444) && (!isAV1 || av1Nvenc)
+			shouldShow = nvenc
 		} else if isQSV || isVAAPI {
-			shouldShow = qsv && (!isH265 || h265Qsv) && (!isAV1 || av1Qsv)
+			shouldShow = qsv
 		}
 
 		if shouldShow {
@@ -278,12 +264,12 @@ func defaultCodecOptions() []codecOption {
 	return []codecOption{
 		{Label: "VP8", Value: "vp8"},
 		{Label: "H.264 (CPU)", Value: "h264"},
-		{Label: "H.264 (NVIDIA NVENC)", Value: "h264_nvenc"},
+		{Label: "H.264 (NVIDIA 4:4:4)", Value: "h264_nvenc", Chroma: "444"},
 		{Label: "H.264 (Intel QSV)", Value: "h264_qsv"},
 		{Label: "H.265 (CPU)", Value: "h265"},
-		{Label: "H.265 (NVIDIA NVENC)", Value: "h265_nvenc"},
+		{Label: "H.265 (NVIDIA 4:4:4)", Value: "h265_nvenc", Chroma: "444"},
 		{Label: "H.265 (Intel QSV)", Value: "h265_qsv"},
-		{Label: "HEVC (Intel VAAPI)", Value: "hevc_vaapi"},
+		{Label: "HEVC (Intel 4:4:4)", Value: "hevc_vaapi", Chroma: "444"},
 		{Label: "AV1 (CPU)", Value: "av1"},
 		{Label: "AV1 (NVIDIA NVENC)", Value: "av1_nvenc"},
 		{Label: "AV1 (Intel QSV)", Value: "av1_qsv"},
