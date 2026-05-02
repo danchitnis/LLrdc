@@ -267,9 +267,17 @@ func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 				}
 				for _, pk := range packets {
 					if _, ok := pk.(*rtcp.PictureLossIndication); ok {
-						log.Printf("Received PLI on video track, triggering keyframe...")
-						TriggerPing()
-						PrimeFrameGeneration(0, 5, 50*time.Millisecond)
+						now := time.Now()
+						lastRestart := getLastFFmpegRestartTime()
+						// Use 10 seconds cooldown
+						if now.Sub(lastRestart) > 10*time.Second {
+							log.Printf("Received PLI on video track and last restart was %v ago, restarting video stream to force keyframe...", now.Sub(lastRestart))
+							killFFmpegWithTimestamp()
+						} else {
+							// log.Printf("Received PLI on video track but last restart was only %v ago, sending pings instead...", now.Sub(lastRestart))
+							TriggerPing()
+							PrimeFrameGeneration(0, 5, 50*time.Millisecond)
+						}
 					}
 				}
 			}

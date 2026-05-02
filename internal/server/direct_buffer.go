@@ -40,7 +40,7 @@ var (
 )
 
 func isHardwareCodec(codec string) bool {
-	return isNVENCCodec(codec) || isQSVCodec(codec)
+	return isNVENCCodec(codec) || isQSVCodec(codec) || codec == "h264_vaapi" || codec == "hevc_vaapi" || codec == "av1_vaapi"
 }
 
 func initDirectBufferState() {
@@ -131,11 +131,10 @@ func validateCaptureModeConfig() error {
 	if !isHardwareCodec(VideoCodec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, VideoCodec)
 	}
-	if UseIntel && VideoCodec == "h265_qsv" && !H265QSVAvailable {
-		return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
-	}
-	if Chroma != "420" {
-		return fmt.Errorf("direct capture mode currently requires chroma 420, got %s", Chroma)
+	if UseIntel && (VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi") && !H265QSVAvailable {
+		if VideoCodec == "h265_vaapi" {
+			return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
+		}
 	}
 	return nil
 }
@@ -147,11 +146,12 @@ func validateRuntimeDirectMode(codec string, chroma string) error {
 	if !isHardwareCodec(codec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, codec)
 	}
-	if UseIntel && codec == "h265_qsv" && !H265QSVAvailable {
-		return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
-	}
-	if chroma != "420" {
-		return fmt.Errorf("direct capture mode currently requires chroma 420, got %s", chroma)
+	if UseIntel && (codec == "h265_vaapi" || codec == "hevc_vaapi") && !H265QSVAvailable {
+		// If hevc_vaapi is requested, we allow it even if QSV is not detected, 
+		// as it might be using the generic VAAPI driver which supports rext/444.
+		if codec == "h265_vaapi" {
+		    return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
+		}
 	}
 	state := snapshotDirectBufferState()
 	if !state.Supported {

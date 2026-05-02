@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/pion/rtp"
@@ -46,20 +45,6 @@ func (a *h264ULLAssembler) reset() {
 	a.frame = nil
 }
 
-func (a *h264ULLAssembler) start(packet *rtp.Packet, timing packetTiming, firstPacketReadAt int64, payload []byte) {
-	a.active = true
-	a.timestamp = packet.Timestamp
-	a.nextSequence = packet.SequenceNumber + 1
-	a.firstPacketSequenceNumber = packet.SequenceNumber
-	a.firstDecryptedPacketQueuedAt = timing.firstDecryptedPacketQueuedAt
-	a.firstRemotePacketAt = timing.firstRemotePacketAt
-	a.firstPacketReadAt = firstPacketReadAt
-
-	// Start with Annex B start code
-	a.frame = append(a.frame[:0], 0, 0, 0, 1)
-	a.frame = append(a.frame, payload...)
-}
-
 func (a *h264ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetReadAt int64) (frame h264ULLFrame, ready bool, dropped bool, err error) {
 	if a.active && (packet.Timestamp != a.timestamp || packet.SequenceNumber != a.nextSequence) {
 		dropped = len(a.frame) > 0
@@ -72,26 +57,19 @@ func (a *h264ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetR
 		return frame, false, true, err
 	}
 
-	isStart := true
-	if len(packet.Payload) > 0 {
-		naluType := packet.Payload[0] & 0x1f
-		if naluType == 28 { // FU-A
-			fuHeader := packet.Payload[1]
-			isStart = (fuHeader & 0x80) != 0
-		}
-	}
-
 	if !a.active {
-		if !isStart {
-			return frame, false, dropped, fmt.Errorf("h264 low-latency frame missing start fragment")
-		}
-		a.start(packet, timing, packetReadAt, payload)
+		a.active = true
+		a.timestamp = packet.Timestamp
+		a.nextSequence = packet.SequenceNumber + 1
+		a.firstPacketSequenceNumber = packet.SequenceNumber
+		a.firstDecryptedPacketQueuedAt = timing.firstDecryptedPacketQueuedAt
+		a.firstRemotePacketAt = timing.firstRemotePacketAt
+		a.firstPacketReadAt = packetReadAt
+
+		a.frame = append(a.frame[:0], 0, 0, 0, 1)
+		a.frame = append(a.frame, payload...)
 	} else {
 		a.nextSequence = packet.SequenceNumber + 1
-
-		if isStart {
-			a.frame = append(a.frame, 0, 0, 0, 1)
-		}
 		a.frame = append(a.frame, payload...)
 	}
 

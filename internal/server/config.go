@@ -168,7 +168,7 @@ func initConfig() {
 		printFlag(os.Stderr, "port", "Port for HTTP and WebRTC UDP", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
 		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", targetBandwidthMbps)
-		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, av1, av1_nvenc, av1_qsv)", VideoCodec)
+		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-nvidia", "Enable NVIDIA acceleration if available", UseNVIDIA)
 		printFlag(os.Stderr, "use-intel", "Enable Intel QSV acceleration if available", UseIntel)
@@ -203,7 +203,7 @@ func initConfig() {
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
 	flag.IntVar(&targetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
-	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, av1, av1_nvenc, av1_qsv)")
+	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h264_vaapi, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseNVIDIA, "use-nvidia", defaultUseNVIDIA, "Enable NVIDIA acceleration if available")
 	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel QSV acceleration if available")
@@ -300,6 +300,8 @@ func initConfig() {
 		log.Printf("Intel H.265 hardware encode is not supported on this FFmpeg/driver stack; falling back to CPU h265")
 		VideoCodec = "h265"
 	}
+
+	VideoCodec = resolveRequestedVideoCodec(VideoCodec)
 
 	if err := validateCaptureModeConfig(); err != nil {
 		log.Fatalf("Invalid direct-buffer configuration: %v", err)

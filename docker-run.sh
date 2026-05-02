@@ -21,6 +21,7 @@ SERVER_BANDWIDTH="${BANDWIDTH:-5}"
 SERVER_VBR="${VBR:-false}"
 SERVER_DAMAGE_TRACKING="${DAMAGE_TRACKING:-false}"
 SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
+SERVER_CHROMA="${CHROMA:-420}"
 SERVER_CAPTURE_MODE="${CAPTURE_MODE:-compat}"
 SERVER_RESOLUTION="${RESOLUTION:-0}"
 
@@ -76,6 +77,11 @@ while [[ $# -gt 0 ]]; do
       USE_INTEL="true"
       shift
       ;;
+    --chroma-444)
+      SERVER_CHROMA="444"
+      CHROMA="444"
+      shift
+      ;;
     --webrtc-buffer)
       if [ -n "${2:-}" ]; then
         WEBRTC_BUFFER_SIZE="$2"
@@ -114,6 +120,16 @@ while [[ $# -gt 0 ]]; do
     --nvidia)
       USE_NVIDIA="true"
       shift
+      ;;
+    --video-codec)
+      if [ -n "${2:-}" ]; then
+        SERVER_VIDEO_CODEC="$2"
+        VIDEO_CODEC="$2" # Also set the env-var equivalent to override defaults
+        shift 2
+      else
+        echo "Error: --video-codec requires an argument."
+        exit 1
+      fi
       ;;
     --capture-mode)
       if [ -n "${2:-}" ]; then
@@ -239,7 +255,7 @@ fi
 
 GPU_ARGS=""
 if [ "$USE_INTEL" = "true" ]; then
-  if [ -z "${VIDEO_CODEC:-}" ]; then
+  if [ -z "${SERVER_VIDEO_CODEC:-}" ] || [ "$SERVER_VIDEO_CODEC" = "vp8" ]; then
     SERVER_VIDEO_CODEC="h264_qsv"
   fi
   if [ -d /dev/dri ]; then
@@ -376,6 +392,7 @@ DOCKER_RUN_CMD+=(
   --env "BANDWIDTH=${SERVER_BANDWIDTH}"
   --env "VBR=${SERVER_VBR}"
   --env "DAMAGE_TRACKING=${SERVER_DAMAGE_TRACKING}"
+  --env "CHROMA=${SERVER_CHROMA}"
   --env "VIDEO_CODEC=${SERVER_VIDEO_CODEC}"
   --env "USE_NVIDIA=${USE_NVIDIA}"
   --env "USE_INTEL=${USE_INTEL}"

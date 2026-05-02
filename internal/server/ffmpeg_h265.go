@@ -155,20 +155,24 @@ func joinNALUnits(nals [][]byte) []byte {
 func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	buffer := make([]byte, 0, 1024*1024)
 	temp := make([]byte, 16384)
-	pendingPrefix := make([][]byte, 0, 4)
 	currentAU := make([][]byte, 0, 8)
 	currentHasVCL := false
 
 	emitCurrent := func() {
-		if len(currentAU) == 0 {
+		if !currentHasVCL && len(currentAU) == 0 {
 			return
 		}
+
 		parsedAtMs := benchmarkClockNowMs()
-		onFrame(EncodedVideoFrame{
-			Data:         joinNALUnits(currentAU),
-			ParsedAtMs:   parsedAtMs,
-			LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
-		})
+		
+		if len(currentAU) > 0 {
+			onFrame(EncodedVideoFrame{
+				Data:         joinNALUnits(currentAU),
+				ParsedAtMs:   parsedAtMs,
+				LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
+			})
+		}
+		
 		currentAU = currentAU[:0]
 		currentHasVCL = false
 	}
@@ -181,11 +185,7 @@ func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 		nalCopy := append([]byte(nil), nal...)
 		nalType, prefixLen, ok := h265NALType(nalCopy)
 		if !ok {
-			if currentHasVCL {
-				currentAU = append(currentAU, nalCopy)
-			} else {
-				pendingPrefix = append(pendingPrefix, nalCopy)
-			}
+			currentAU = append(currentAU, nalCopy)
 			return
 		}
 
@@ -193,25 +193,16 @@ func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 			if isH265FirstSliceSegment(nalCopy, prefixLen) && currentHasVCL {
 				emitCurrent()
 			}
-			if len(currentAU) == 0 && len(pendingPrefix) > 0 {
-				currentAU = append(currentAU, pendingPrefix...)
-				pendingPrefix = pendingPrefix[:0]
-			}
 			currentAU = append(currentAU, nalCopy)
 			currentHasVCL = true
-			return
-		}
-
-		if isH265SuffixNAL(nalType) && currentHasVCL {
+		} else {
+			// Prefix/Suffix NALs
+			if currentHasVCL && (nalType == 35 || nalType == 32 || nalType == 33 || nalType == 34) {
+				// New headers or AUD usually means start of a new AU
+				emitCurrent()
+			}
 			currentAU = append(currentAU, nalCopy)
-			return
 		}
-
-		if currentHasVCL && isH265PrefixBoundaryNAL(nalType) {
-			emitCurrent()
-		}
-
-		pendingPrefix = append(pendingPrefix, nalCopy)
 	}
 
 	for {

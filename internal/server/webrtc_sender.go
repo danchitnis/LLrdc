@@ -62,6 +62,10 @@ func newVideoFrameWriter(codec string, lowLatency bool) (videoFrameWriter, error
 			return newH264ULLVideoWriter(capability, codecFamily)
 		}
 	}
+	if codecFamily == "h265" {
+		log.Printf("Initializing isolated WebRTC H265 ULL RTP sender")
+		return newH265ULLVideoWriter(capability, codecFamily)
+	}
 	log.Printf("Initializing WebRTC sample-track sender for %s", capability.MimeType)
 	return newSampleVideoWriter(capability, codecFamily)
 }
@@ -76,7 +80,14 @@ func videoTrackCapability(codec string) (webrtc.RTPCodecCapability, string) {
 			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42E034",
 		}
 	case "h265":
-		capability = webrtc.RTPCodecCapability{MimeType: "video/H265"}
+		sdpFmtp := "profile-id=1" // Main profile
+		if Chroma == "444" {
+			sdpFmtp = "profile-id=4" // Main 4:4:4
+		}
+		capability = webrtc.RTPCodecCapability{
+			MimeType:    "video/H265",
+			SDPFmtpLine: sdpFmtp,
+		}
 	case "av1":
 		capability = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeAV1}
 	}
@@ -85,11 +96,11 @@ func videoTrackCapability(codec string) (webrtc.RTPCodecCapability, string) {
 
 func normalizeCodecFamily(codec string) string {
 	switch codec {
-	case "h264", "h264_nvenc", "h264_qsv":
+	case "h264", "h264_nvenc", "h264_qsv", "h264_vaapi":
 		return "h264"
-	case "h265", "h265_nvenc", "h265_qsv":
+	case "h265", "h265_nvenc", "h265_qsv", "h265_vaapi", "hevc_vaapi":
 		return "h265"
-	case "av1", "av1_nvenc", "av1_qsv":
+	case "av1", "av1_nvenc", "av1_qsv", "av1_vaapi":
 		return "av1"
 	default:
 		return codec

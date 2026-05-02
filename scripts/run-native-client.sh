@@ -13,6 +13,7 @@ CONTROL_ADDR="${LLRDC_CLIENT_CONTROL_ADDR:-127.0.0.1:18080}"
 WINDOW_WIDTH="${LLRDC_CLIENT_WIDTH:-1280}"
 WINDOW_HEIGHT="${LLRDC_CLIENT_HEIGHT:-720}"
 WINDOW_TITLE="${LLRDC_CLIENT_TITLE:-LLrdc Native Client}"
+VIDEO_CODEC="${LLRDC_CLIENT_CODEC:-}"
 REBUILD=0
 
 package_is_stale() {
@@ -38,6 +39,7 @@ Environment overrides:
   LLRDC_CLIENT_WIDTH=1280
   LLRDC_CLIENT_HEIGHT=720
   LLRDC_CLIENT_TITLE="LLrdc Native Client"
+  LLRDC_CLIENT_CODEC=h265
   WAYLAND_DISPLAY=wayland-0
   PACKAGE_NAME=llrdc-client-linux-amd64
 EOF
@@ -67,10 +69,12 @@ if [[ ${REBUILD} -eq 1 || ! -x "${CLIENT_BIN}" ]] || package_is_stale; then
   "${ROOT_DIR}/scripts/package-native-client.sh"
 fi
 
+export SDL_VIDEODRIVER=wayland
 exec "${CLIENT_BIN}" \
   --server "${SERVER_URL}" \
   --control-addr "${CONTROL_ADDR}" \
   --width "${WINDOW_WIDTH}" \
   --height "${WINDOW_HEIGHT}" \
   --title "${WINDOW_TITLE}" \
+  ${VIDEO_CODEC:+--video-codec "${VIDEO_CODEC}"} \
   "$@"

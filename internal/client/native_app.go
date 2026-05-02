@@ -24,6 +24,7 @@ type ClientConfig struct {
 	} `yaml:"resolution"`
 	FPS   *int    `yaml:"fps"`
 	Codec *string `yaml:"codec"`
+	VideoCodec *string `yaml:"videoCodec"`
 	DPI   *int    `yaml:"dpi"`
 }
 
@@ -169,6 +170,15 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 		}
 		av1Nvenc, _ = lastConfig["av1NvencAvailable"].(bool)
 		av1Qsv, _ = lastConfig["av1QsvAvailable"].(bool)
+	} else {
+		// If server config is not available, assume all hardware codecs are possible
+		// to allow initial configuration from YAML to be respected.
+		qsv = true
+		nvenc = true
+		h265Nvenc444 = true
+		h265Qsv = true
+		av1Nvenc = true
+		av1Qsv = true
 	}
 
 	filtered := make([]codecOption, 0, len(baseOptions))
@@ -195,15 +205,16 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 		// Check server hardware availability
 		isNVENC := strings.HasSuffix(val, "_nvenc")
 		isQSV := strings.HasSuffix(val, "_qsv")
+		isVAAPI := strings.HasSuffix(val, "_vaapi")
 		isH265 := strings.HasPrefix(val, "h265") || strings.HasPrefix(val, "hevc")
 		isAV1 := strings.HasPrefix(val, "av1")
 
 		shouldShow := false
-		if !isNVENC && !isQSV {
+		if !isNVENC && !isQSV && !isVAAPI {
 			shouldShow = true // CPU fallback is always an option if renderer supports it
 		} else if isNVENC {
 			shouldShow = nvenc && (!isH265 || h265Nvenc444) && (!isAV1 || av1Nvenc)
-		} else if isQSV {
+		} else if isQSV || isVAAPI {
 			shouldShow = qsv && (!isH265 || h265Qsv) && (!isAV1 || av1Qsv)
 		}
 
@@ -272,6 +283,7 @@ func defaultCodecOptions() []codecOption {
 		{Label: "H.265 (CPU)", Value: "h265"},
 		{Label: "H.265 (NVIDIA NVENC)", Value: "h265_nvenc"},
 		{Label: "H.265 (Intel QSV)", Value: "h265_qsv"},
+		{Label: "HEVC (Intel VAAPI)", Value: "hevc_vaapi"},
 		{Label: "AV1 (CPU)", Value: "av1"},
 		{Label: "AV1 (NVIDIA NVENC)", Value: "av1_nvenc"},
 		{Label: "AV1 (Intel QSV)", Value: "av1_qsv"},
@@ -309,8 +321,12 @@ func defaultHDPIOptions() []hdpiOption {
 }
 
 func (a *NativeApp) codecIndexForConfig() int {
-	if a.opts.Config.Codec != nil {
-		value := strings.TrimSpace(strings.ToLower(*a.opts.Config.Codec))
+	cfgCodec := a.opts.Config.Codec
+	if cfgCodec == nil {
+		cfgCodec = a.opts.Config.VideoCodec
+	}
+	if cfgCodec != nil {
+		value := strings.TrimSpace(strings.ToLower(*cfgCodec))
 		for idx, option := range a.codecOptions {
 			if option.Value == value {
 				return idx
