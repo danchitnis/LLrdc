@@ -90,6 +90,9 @@ static int llrdc_av_decode(llrdc_av_decoder* decoder, const unsigned char* data,
     
     if (ret >= 0) {
         if (decoder->frame->format == AV_PIX_FMT_YUV444P || decoder->frame->format == AV_PIX_FMT_YUVJ444P) {
+            if (!decoder->is_444) {
+                printf("DEBUG: Native decoder detected Chroma 4:4:4 (YUV444P) stream\n");
+            }
             decoder->is_444 = 1;
             if (!decoder->sws_ctx || !decoder->rgb_frame || decoder->rgb_frame->width != decoder->frame->width || decoder->rgb_frame->height != decoder->frame->height) {
                 if (decoder->sws_ctx) sws_freeContext(decoder->sws_ctx);
