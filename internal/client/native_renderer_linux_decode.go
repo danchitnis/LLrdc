@@ -87,7 +87,7 @@ static int llrdc_av_decode(llrdc_av_decoder* decoder, const unsigned char* data,
     if (ret == AVERROR_EOF) {
         return 2; // EOF
     }
-    
+
     if (ret >= 0) {
         if (decoder->frame->format == AV_PIX_FMT_YUV444P || decoder->frame->format == AV_PIX_FMT_YUVJ444P) {
             if (!decoder->is_444) {
@@ -100,7 +100,7 @@ static int llrdc_av_decode(llrdc_av_decoder* decoder, const unsigned char* data,
                     av_freep(&decoder->rgb_frame->data[0]);
                     av_frame_free(&decoder->rgb_frame);
                 }
-                
+
                 decoder->sws_ctx = sws_getContext(decoder->frame->width, decoder->frame->height, decoder->frame->format,
                                                   decoder->frame->width, decoder->frame->height, AV_PIX_FMT_RGB24,
                                                   SWS_BILINEAR, NULL, NULL, NULL);
@@ -115,7 +115,7 @@ static int llrdc_av_decode(llrdc_av_decoder* decoder, const unsigned char* data,
             decoder->is_444 = 0;
         }
     }
-    
+
     return ret;
 }
 

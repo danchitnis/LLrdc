@@ -26,17 +26,22 @@ struct input_client {
 
 static uint32_t last_time = 0;
 
-static uint32_t get_time_ms(void) {
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	uint32_t t = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
-	if (t <= last_time) {
-		t = last_time + 1;
-	}
-	last_time = t;
-	return t;
+static int64_t get_now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ((int64_t)ts.tv_sec * 1000LL) + ((int64_t)ts.tv_nsec / 1000000LL);
 }
 
+static uint32_t get_time_ms(void) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        uint32_t t = (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+        if (t < last_time) {
+                t = last_time;
+        }
+        last_time = t;
+        return t;
+}
 static void registry_handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 	struct input_client *client = data;
@@ -119,52 +124,66 @@ int main(int argc, char *argv[]) {
 
 	char line[256];
 	while (fgets(line, sizeof(line), stdin)) {
-		char type[16];
-		if (sscanf(line, "%s", type) != 1) continue;
+	        char type[16];
+	        int64_t sent_time = 0;
+	        char *cmd_ptr = line;
 
-		uint32_t t = get_time_ms();
-		if (strcmp(type, "move") == 0) {
-			int x, y, w, h;
-			if (sscanf(line, "move %d %d %d %d", &x, &y, &w, &h) == 4) {
-				zwlr_virtual_pointer_v1_motion_absolute(client.pointer, t, x, y, w, h);
-				zwlr_virtual_pointer_v1_frame(client.pointer);
-			}
-		} else if (strcmp(type, "button") == 0) {
-			int btn, state;
-			if (sscanf(line, "button %d %d", &btn, &state) == 2) {
-				zwlr_virtual_pointer_v1_button(client.pointer, t, btn, state);
-				zwlr_virtual_pointer_v1_frame(client.pointer);
-			}
-		} else if (strcmp(type, "key") == 0) {
-			int key, state;
-			if (sscanf(line, "key %d %d", &key, &state) == 2) {
-				zwp_virtual_keyboard_v1_key(client.keyboard, t, key, state);
-				
-				xkb_state_update_key(client.xkb_state, key + 8, state ? XKB_KEY_DOWN : XKB_KEY_UP);
-				uint32_t depressed = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_DEPRESSED);
-				uint32_t latched = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_LATCHED);
-				uint32_t locked = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_LOCKED);
-				uint32_t group = xkb_state_serialize_layout(client.xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
-				zwp_virtual_keyboard_v1_modifiers(client.keyboard, depressed, latched, locked, group);
-				wl_display_roundtrip(client.display);
-			}
-		} else if (strcmp(type, "axis") == 0) {
-			int axis;
-			float value;
-			if (sscanf(line, "axis %d %f", &axis, &value) == 2) {
-				zwlr_virtual_pointer_v1_axis(client.pointer, t, axis, wl_fixed_from_double(value));
-				zwlr_virtual_pointer_v1_frame(client.pointer);
-			}
-		} else if (strcmp(type, "ping") == 0) {
-			// Trigger a tiny 1-pixel jitter to force a damage update.
-			// This is invisible to the user but forces a frame out during damage tracking.
-			zwlr_virtual_pointer_v1_motion(client.pointer, t, wl_fixed_from_double(1.0), wl_fixed_from_double(1.0));
-			zwlr_virtual_pointer_v1_frame(client.pointer);
-			
-			zwlr_virtual_pointer_v1_motion(client.pointer, t + 1, wl_fixed_from_double(-1.0), wl_fixed_from_double(-1.0));
-			zwlr_virtual_pointer_v1_frame(client.pointer);
-		}
-		wl_display_flush(client.display);
+	        if (strncmp(line, "ts ", 3) == 0) {
+	                if (sscanf(line, "ts %lld %15s", &sent_time, type) == 2) {
+	                        // Skip "ts <time> "
+	                        cmd_ptr = strchr(line, ' '); // after 'ts'
+	                        if (cmd_ptr) cmd_ptr = strchr(cmd_ptr + 1, ' '); // after time
+	                        if (cmd_ptr) cmd_ptr++; // start of command
+	                        else cmd_ptr = line;
+	                } else {
+	                        sscanf(line, "%15s", type);
+	                }
+	        } else {
+	                sscanf(line, "%15s", type);
+	        }
+
+	        uint32_t t = get_time_ms();
+
+	        if (strcmp(type, "move") == 0) {
+	                int x, y, w, h;
+	                if (sscanf(cmd_ptr, "move %d %d %d %d", &x, &y, &w, &h) == 4) {
+	                        zwlr_virtual_pointer_v1_motion_absolute(client.pointer, t, x, y, w, h);
+	                        zwlr_virtual_pointer_v1_frame(client.pointer);
+	                }
+	        } else if (strcmp(type, "button") == 0) {
+	                int btn, state;
+	                if (sscanf(cmd_ptr, "button %d %d", &btn, &state) == 2) {
+	                        zwlr_virtual_pointer_v1_button(client.pointer, t, btn, state);
+	                        zwlr_virtual_pointer_v1_frame(client.pointer);
+	                }
+	        } else if (strcmp(type, "key") == 0) {
+	                int key, state;
+	                if (sscanf(cmd_ptr, "key %d %d", &key, &state) == 2) {
+	                        zwp_virtual_keyboard_v1_key(client.keyboard, t, key, state);
+	                        
+	                        xkb_state_update_key(client.xkb_state, key + 8, state ? XKB_KEY_DOWN : XKB_KEY_UP);
+	                        uint32_t depressed = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_DEPRESSED);
+	                        uint32_t latched = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_LATCHED);
+	                        uint32_t locked = xkb_state_serialize_mods(client.xkb_state, XKB_STATE_MODS_LOCKED);
+	                        uint32_t group = xkb_state_serialize_layout(client.xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
+	                        zwp_virtual_keyboard_v1_modifiers(client.keyboard, depressed, latched, locked, group);
+	                        wl_display_roundtrip(client.display);
+	                }
+	        } else if (strcmp(type, "axis") == 0) {
+	                int axis;
+	                float value;
+	                if (sscanf(cmd_ptr, "axis %d %f", &axis, &value) == 2) {
+	                        zwlr_virtual_pointer_v1_axis(client.pointer, t, axis, wl_fixed_from_double(value));
+	                        zwlr_virtual_pointer_v1_frame(client.pointer);
+	                }
+	        } else if (strcmp(type, "ping") == 0) {
+	                zwlr_virtual_pointer_v1_motion(client.pointer, t, wl_fixed_from_double(1.0), wl_fixed_from_double(1.0));
+	                zwlr_virtual_pointer_v1_frame(client.pointer);
+	                
+	                zwlr_virtual_pointer_v1_motion(client.pointer, t + 1, wl_fixed_from_double(-1.0), wl_fixed_from_double(-1.0));
+	                zwlr_virtual_pointer_v1_frame(client.pointer);
+	        }
+	        wl_display_flush(client.display);
 	}
 
 	zwp_virtual_keyboard_v1_destroy(client.keyboard);

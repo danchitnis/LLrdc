@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,16 +15,25 @@ import (
 )
 
 type inputTask struct {
-	Type   string
-	NX, NY float64
-	Button int
-	Action string
-	Key    string
-	DX, DY float64
+	Type     string
+	NX, NY   float64
+	Button   int
+	Action   string
+	Key      string
+	DX, DY   float64
+	SentTime int64
 }
 
 var inputChan = make(chan inputTask, 5000)
 var inputStdin io.WriteCloser
+var inputStdinMu sync.Mutex
+
+func SetInputWriter(w io.WriteCloser) {
+	inputStdinMu.Lock()
+	inputStdin = w
+	inputStdinMu.Unlock()
+	log.Printf("Input writer set: %T", w)
+}
 
 var (
 	// lastInputTime tracks the last time any user interaction was received.
@@ -34,7 +44,56 @@ var (
 	pulseStarted bool
 )
 
+var inputMu sync.Mutex
+
+func handleAgentInputConnection(conn net.Conn) {
+	defer conn.Close()
+	scanner := bufio.NewReader(conn)
+	for {
+		line, err := scanner.ReadString('\n')
+		if err != nil {
+			log.Printf("Agent input connection closed: %v", err)
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		inputStdinMu.Lock()
+		if inputStdin != nil {
+			fmt.Fprintln(inputStdin, line)
+		}
+		inputStdinMu.Unlock()
+
+		updateActivity()
+	}
+}
+
 func startWaylandInputHelper() {
+	if CaptureMode == CaptureModeAgent {
+		log.Println("Agent mode: starting TCP input listener on :12346")
+		go func() {
+			ln, err := net.Listen("tcp", ":12346")
+			if err != nil {
+				log.Printf("Failed to listen for input: %v", err)
+				return
+			}
+			for {
+				conn, err := ln.Accept()
+				if err != nil {
+					log.Printf("Input accept error: %v", err)
+					continue
+				}
+				if tcpConn, ok := conn.(*net.TCPConn); ok {
+					tcpConn.SetNoDelay(true)
+				}
+				log.Printf("Input client connected: %v", conn.RemoteAddr())
+				go handleAgentInputConnection(conn)
+			}
+		}()
+	}
+
 	go func() {
 		for {
 			readiness.Set(readinessInputHelper, false)
@@ -93,21 +152,39 @@ func startWaylandInputHelper() {
 				continue
 			}
 
+			inputStdinMu.Lock()
 			inputStdin = stdin
+			inputStdinMu.Unlock()
 			readiness.Set(readinessInputHelper, true)
 			log.Println("Wayland persistent input helper started.")
 
-			for task := range inputChan {
-				if err := execTask(task); err != nil {
-					log.Printf("Input helper communication error: %v", err)
-					break
-				}
+			// In Agent mode, we don't consume inputChan here; it's done by the host.
+			// The container receives input via handleAgentInputConnection.
+			if CaptureMode != CaptureModeAgent {
+				// Consumer loop for non-agent mode.
+				// We run this in a separate goroutine so we can wait for cmd.
+				go func() {
+					for task := range inputChan {
+						if err := ExecTask(task); err != nil {
+							// If write fails, the pipe is likely closed, which means cmd exited.
+							break
+						}
+					}
+				}()
 			}
 
+			if err := cmd.Wait(); err != nil {
+				log.Printf("Input helper exited with error: %v", err)
+			} else {
+				log.Println("Input helper exited gracefully.")
+			}
+
+			inputStdinMu.Lock()
+			if inputStdin == stdin {
+				inputStdin = nil
+			}
+			inputStdinMu.Unlock()
 			readiness.Set(readinessInputHelper, false)
-			inputStdin = nil
-			_ = cmd.Wait()
-			log.Println("Wayland input helper exited, restarting...")
 			time.Sleep(1 * time.Second)
 		}
 	}()
@@ -164,13 +241,19 @@ func runActivityPulse() {
 	}
 }
 
-func execTask(task inputTask) error {
+func ExecTask(task inputTask) error {
+	// Any input task updates the activity timer to keep the pulse running
+	updateActivity()
+
+	inputStdinMu.Lock()
+	defer inputStdinMu.Unlock()
 	if inputStdin == nil {
 		return fmt.Errorf("no input helper")
 	}
 
-	// Any input task updates the activity timer to keep the pulse running
-	updateActivity()
+	if UseDebugInput && task.SentTime > 0 {
+		fmt.Fprintf(inputStdin, "ts %d ", task.SentTime)
+	}
 
 	switch task.Type {
 	case "mousemove":
@@ -180,10 +263,6 @@ func execTask(task inputTask) error {
 		}
 		targetX := int(math.Round(task.NX * float64(width)))
 		targetY := int(math.Round(task.NY * float64(height)))
-
-		if UseDebugInput {
-			log.Printf("Wayland mouse move: %d, %d", targetX, targetY)
-		}
 
 		_, err := fmt.Fprintf(inputStdin, "move %d %d %d %d\n", targetX, targetY, width, height)
 		return err
@@ -244,19 +323,26 @@ func execTask(task inputTask) error {
 		return nil
 
 	case "ping":
-		TriggerPing()
+		triggerPingLocked()
 		return nil
 	}
 	return nil
+}
+
+// triggerPingLocked sends a 'ping' command. Assumes inputStdinMu is held.
+func triggerPingLocked() {
+	if inputStdin != nil {
+		fmt.Fprintln(inputStdin, "ping")
+	}
 }
 
 // TriggerPing sends a 'ping' command to the wayland_input_client.
 // This command performs a tiny 1-pixel jitter which is invisible to the user
 // but forces the Wayland compositor to generate damage and the encoder to emit a frame.
 func TriggerPing() {
-	if inputStdin != nil {
-		fmt.Fprintln(inputStdin, "ping")
-	}
+	inputStdinMu.Lock()
+	defer inputStdinMu.Unlock()
+	triggerPingLocked()
 }
 
 func PrimeFrameGeneration(delay time.Duration, count int, interval time.Duration) {
@@ -280,32 +366,36 @@ func PrimeFrameGeneration(delay time.Duration, count int, interval time.Duration
 	}()
 }
 
-func injectMouseMove(nx, ny float64) {
+func injectMouseMove(nx, ny float64, sentTime int64) {
 	select {
-	case inputChan <- inputTask{Type: "mousemove", NX: nx, NY: ny}:
+	case inputChan <- inputTask{Type: "mousemove", NX: nx, NY: ny, SentTime: sentTime}:
 	default:
 	}
 }
 
-func injectMouseButton(button int, action string) {
+func injectMouseButton(button int, action string, sentTime int64) {
 	select {
-	case inputChan <- inputTask{Type: "mousebtn", Button: button, Action: action}:
+	case inputChan <- inputTask{Type: "mousebtn", Button: button, Action: action, SentTime: sentTime}:
 	default:
 	}
 }
 
-func injectKey(key, action string) {
+func injectKey(key, action string, sentTime int64) {
 	select {
-	case inputChan <- inputTask{Type: action, Key: key}:
+	case inputChan <- inputTask{Type: action, Key: key, SentTime: sentTime}:
 	default:
 	}
 }
 
-func injectMouseWheel(dx, dy float64) {
+func injectMouseWheel(dx, dy float64, sentTime int64) {
 	select {
-	case inputChan <- inputTask{Type: "wheel", DX: dx, DY: dy}:
+	case inputChan <- inputTask{Type: "wheel", DX: dx, DY: dy, SentTime: sentTime}:
 	default:
 	}
+}
+
+func GetInputChannel() chan inputTask {
+	return inputChan
 }
 
 func spawnApp(command string) {

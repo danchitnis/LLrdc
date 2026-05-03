@@ -30,7 +30,7 @@ var (
 	lastLogTime       time.Time
 )
 
-func initWebRTCTrack() {
+func InitWebRTCTrack() {
 	videoTrackMutex.Lock()
 	defer videoTrackMutex.Unlock()
 

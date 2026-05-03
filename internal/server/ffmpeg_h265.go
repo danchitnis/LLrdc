@@ -164,7 +164,7 @@ func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 		}
 
 		parsedAtMs := benchmarkClockNowMs()
-		
+
 		if len(currentAU) > 0 {
 			onFrame(EncodedVideoFrame{
 				Data:         joinNALUnits(currentAU),
@@ -172,7 +172,7 @@ func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 				LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
 			})
 		}
-		
+
 		currentAU = currentAU[:0]
 		currentHasVCL = false
 	}

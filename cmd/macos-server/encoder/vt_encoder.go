@@ -1,0 +1,68 @@
+package encoder
+
+/*
+#cgo LDFLAGS: -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework Foundation
+#include <stdlib.h>
+#include <stdint.h>
+
+typedef struct VTEncoder VTEncoder;
+VTEncoder* vt_encoder_create(int width, int height, int fps, int bitrate_kbps, uintptr_t handle);
+int vt_encoder_encode(VTEncoder* encoder, uint8_t* yuv_data, int force_keyframe);
+void vt_encoder_destroy(VTEncoder* encoder);
+*/
+import "C"
+import (
+	"runtime/cgo"
+	"sync/atomic"
+	"unsafe"
+)
+
+type VTEncoder struct {
+	ptr          *C.VTEncoder
+	handle       cgo.Handle
+	onFrame      func(data []byte, isKeyframe bool)
+	forceNextIDR atomic.Bool
+}
+
+//export goEncodedFrameCallback
+func goEncodedFrameCallback(handle C.uintptr_t, data unsafe.Pointer, length C.int, isKeyframe C.int) {
+	h := cgo.Handle(handle)
+	encoder, ok := h.Value().(*VTEncoder)
+	if ok && encoder.onFrame != nil {
+		buf := C.GoBytes(data, length)
+		encoder.onFrame(buf, isKeyframe != 0)
+	}
+}
+
+func NewVTEncoder(width, height, fps, bitrateKbps int, onFrame func(data []byte, isKeyframe bool)) *VTEncoder {
+	enc := &VTEncoder{
+		onFrame: onFrame,
+	}
+	enc.handle = cgo.NewHandle(enc)
+	enc.ptr = C.vt_encoder_create(C.int(width), C.int(height), C.int(fps), C.int(bitrateKbps), C.uintptr_t(enc.handle))
+	if enc.ptr == nil {
+		enc.handle.Delete()
+		return nil
+	}
+	return enc
+}
+
+func (e *VTEncoder) Encode(yuvData []byte) int {
+	force := 0
+	if e.forceNextIDR.CompareAndSwap(true, false) {
+		force = 1
+	}
+	return int(C.vt_encoder_encode(e.ptr, (*C.uint8_t)(unsafe.Pointer(&yuvData[0])), C.int(force)))
+}
+
+func (e *VTEncoder) ForceKeyframe() {
+	e.forceNextIDR.Store(true)
+}
+
+func (e *VTEncoder) Close() {
+	if e.ptr != nil {
+		C.vt_encoder_destroy(e.ptr)
+		e.ptr = nil
+		e.handle.Delete()
+	}
+}

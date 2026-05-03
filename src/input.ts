@@ -1,4 +1,4 @@
-import { overlayEl, displayContainerEl, displayEl } from './ui';
+import { overlayEl, displayContainerEl, displayEl, videoEl } from './ui';
 
 export function setupInput(sendMsg: (data: string) => void) {
     if (!overlayEl) return;
@@ -18,14 +18,23 @@ export function setupInput(sendMsg: (data: string) => void) {
     };
 
     const getNormalizedPos = (e: MouseEvent): { x: number, y: number } | null => {
-        if (!displayEl) return null;
-        const rect = displayEl.getBoundingClientRect();
+        // Determine the active display element (canvas for WebCodecs, video for WebRTC)
+        let activeEl: HTMLElement = displayEl;
+        let internalW = displayEl.width;
+        let internalH = displayEl.height;
+
+        // If WebRTC mode is active, use the video element
+        if (videoEl && videoEl.style.display !== 'none' && videoEl.videoWidth > 0) {
+            activeEl = videoEl;
+            internalW = videoEl.videoWidth;
+            internalH = videoEl.videoHeight;
+        }
+
+        if (!activeEl) return null;
+        const rect = activeEl.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return null;
 
-        // Current internal video resolution (e.g. 1920x1080)
-        const videoW = displayEl.width;
-        const videoH = displayEl.height;
-        const videoRatio = videoW / videoH;
+        const videoRatio = internalW / internalH;
 
         // The element dimensions (e.g. 1280x768 container)
         const containerW = rect.width;
@@ -60,9 +69,21 @@ export function setupInput(sendMsg: (data: string) => void) {
         };
     };
 
-    const forwardMouseMove = (e: MouseEvent) => {
+    let isMouseMovePending = false;
+    let lastMouseMoveEvent: MouseEvent | null = null;
+
+    const processMouseMove = () => {
+        if (!lastMouseMoveEvent) {
+            isMouseMovePending = false;
+            return;
+        }
+
+        const e = lastMouseMoveEvent;
+        lastMouseMoveEvent = null;
+
         const withinDisplay = isWithinDisplayContainer(e);
         if (!withinDisplay && pressedButton === null) {
+            isMouseMovePending = false;
             return;
         }
 
@@ -71,9 +92,19 @@ export function setupInput(sendMsg: (data: string) => void) {
         }
 
         const pos = getNormalizedPos(e);
-        if (!pos) return;
+        if (pos) {
+            sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y, ts: Date.now() }));
+        }
 
-        sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
+        isMouseMovePending = false;
+    };
+
+    const forwardMouseMove = (e: MouseEvent) => {
+        lastMouseMoveEvent = e;
+        if (!isMouseMovePending) {
+            isMouseMovePending = true;
+            requestAnimationFrame(processMouseMove);
+        }
     };
 
     overlayEl.addEventListener('mouseenter', () => {
@@ -90,9 +121,9 @@ export function setupInput(sendMsg: (data: string) => void) {
         focusOverlay();
         const pos = getNormalizedPos(e);
         if (pos) {
-            sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
+            sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y, ts: Date.now() }));
         }
-        sendMsg(JSON.stringify({ type: 'mousebtn', button: e.button, action: 'mousedown' }));
+        sendMsg(JSON.stringify({ type: 'mousebtn', button: e.button, action: 'mousedown', ts: Date.now() }));
         e.preventDefault();
     });
 
@@ -104,25 +135,25 @@ export function setupInput(sendMsg: (data: string) => void) {
         if (isWithinDisplayContainer(e)) {
             const pos = getNormalizedPos(e);
             if (pos) {
-                sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y }));
+                sendMsg(JSON.stringify({ type: 'mousemove', x: pos.x, y: pos.y, ts: Date.now() }));
             }
         }
-        sendMsg(JSON.stringify({ type: 'mousebtn', button: e.button, action: 'mouseup' }));
+        sendMsg(JSON.stringify({ type: 'mousebtn', button: e.button, action: 'mouseup', ts: Date.now() }));
         e.preventDefault();
     }, true);
 
     overlayEl.addEventListener('keydown', (e: KeyboardEvent) => {
-        sendMsg(JSON.stringify({ type: 'keydown', key: e.code }));
+        sendMsg(JSON.stringify({ type: 'keydown', key: e.code, ts: Date.now() }));
         e.preventDefault();
     });
 
     overlayEl.addEventListener('keyup', (e: KeyboardEvent) => {
-        sendMsg(JSON.stringify({ type: 'keyup', key: e.code }));
+        sendMsg(JSON.stringify({ type: 'keyup', key: e.code, ts: Date.now() }));
         e.preventDefault();
     });
 
     overlayEl.addEventListener('wheel', (e: WheelEvent) => {
-        sendMsg(JSON.stringify({ type: 'wheel', deltaX: e.deltaX, deltaY: e.deltaY }));
+        sendMsg(JSON.stringify({ type: 'wheel', deltaX: e.deltaX, deltaY: e.deltaY, ts: Date.now() }));
         e.preventDefault();
     }, { passive: false });
 

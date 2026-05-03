@@ -22,10 +22,10 @@ type ClientConfig struct {
 		Width  int `yaml:"width"`
 		Height int `yaml:"height"`
 	} `yaml:"resolution"`
-	FPS   *int    `yaml:"fps"`
-	Codec *string `yaml:"codec"`
+	FPS        *int    `yaml:"fps"`
+	Codec      *string `yaml:"codec"`
 	VideoCodec *string `yaml:"videoCodec"`
-	DPI   *int    `yaml:"dpi"`
+	DPI        *int    `yaml:"dpi"`
 }
 
 func LoadClientConfig(path string) (ClientConfig, error) {
@@ -172,13 +172,13 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 	filtered := make([]codecOption, 0, len(baseOptions))
 	for _, opt := range baseOptions {
 		val := strings.ToLower(opt.Value)
-		
+
 		// Check renderer support by stripping hardware suffixes
 		baseCodec := val
 		if idx := strings.Index(baseCodec, "_"); idx > 0 {
 			baseCodec = baseCodec[:idx]
 		}
-		
+
 		rendererSupports := false
 		for _, s := range supported {
 			if baseCodec == strings.ToLower(s) {

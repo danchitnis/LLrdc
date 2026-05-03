@@ -8,19 +8,19 @@ import (
 )
 
 type NativeRenderer struct {
-	title        string
-	width        int
-	height       int
-	autoStart    bool
-	fullscreen   bool
-	probeLatency bool
-	debugCursor  bool
-	videoWidth   int32
-	videoHeight  int32
-	mouseX       int32
-	mouseY       int32
-	lowLatency   bool
-	presentedFrameCount     uint64
+	title               string
+	width               int
+	height              int
+	autoStart           bool
+	fullscreen          bool
+	probeLatency        bool
+	debugCursor         bool
+	videoWidth          int32
+	videoHeight         int32
+	mouseX              int32
+	mouseY              int32
+	lowLatency          bool
+	presentedFrameCount uint64
 
 	mu                      sync.RWMutex
 	runStarted              bool
@@ -54,10 +54,10 @@ func NewNativeRenderer(opts NativeRendererOptions) (*NativeRenderer, error) {
 		streamResets:            make(chan string, 4),
 		resizeRequests:          make(chan nativeResizeRequest, 4),
 
-		snapshotRequests:        make(chan chan nativeSnapshotResult, 2),
-		vsyncRequests:           make(chan bool, 2),
-		stopCh:                  make(chan struct{}),
-		doneCh:                  make(chan struct{}),
+		snapshotRequests: make(chan chan nativeSnapshotResult, 2),
+		vsyncRequests:    make(chan bool, 2),
+		stopCh:           make(chan struct{}),
+		doneCh:           make(chan struct{}),
 	}, nil
 }
 

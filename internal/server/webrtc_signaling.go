@@ -9,7 +9,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webrtc.PeerConnection, writeJSON func(interface{}) error) {
+func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webrtc.PeerConnection, writeJSON func(interface{}) error) {
 	log.Println("Received webrtc_offer")
 	if sdpMap, ok := msg["sdp"].(map[string]interface{}); ok {
 		b, _ := json.Marshal(sdpMap)
@@ -38,7 +38,7 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 		}
 
 		log.Println("Creating new PeerConnection")
-		newPC, err := createPeerConnection(requestHost)
+		newPC, err := CreatePeerConnection(requestHost)
 		if err != nil {
 			log.Printf("Failed to create PeerConnection: %v", err)
 			return
@@ -77,7 +77,7 @@ func handleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 					if err := json.Unmarshal(msg.Data, &inputMsg); err != nil {
 						return
 					}
-					handleInputMessage(inputMsg)
+					HandleInputMessage(inputMsg)
 				})
 			}
 		})
@@ -166,7 +166,7 @@ func fallbackCodecForRemoteOffer() string {
 	return "h264"
 }
 
-func handleWebRTCICE(msg map[string]interface{}, pc *webrtc.PeerConnection) {
+func HandleWebRTCICE(msg map[string]interface{}, pc *webrtc.PeerConnection) {
 	if candidateMap, ok := msg["candidate"].(map[string]interface{}); ok {
 		if pc != nil {
 			b, _ := json.Marshal(candidateMap)

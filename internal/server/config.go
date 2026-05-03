@@ -43,9 +43,10 @@ var (
 	TileSize                int
 	WebRTCLowLatency        bool
 	InitialRes              int
+	AgentAddress            string
 )
 
-func initConfig() {
+func InitConfig() {
 	// Fallback from environment variables
 	defaultPort := 8080
 	if p, err := strconv.Atoi(os.Getenv("PORT")); err == nil {
@@ -158,6 +159,8 @@ func initConfig() {
 		defaultInitialRes = 2160
 	}
 
+	defaultAgentAddress := os.Getenv("AGENT_ADDRESS")
+
 	// Custom Usage format
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of llrdc:\n")
@@ -172,7 +175,8 @@ func initConfig() {
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-nvidia", "Enable NVIDIA acceleration if available", UseNVIDIA)
 		printFlag(os.Stderr, "use-intel", "Enable Intel QSV acceleration if available", UseIntel)
-		printFlag(os.Stderr, "capture-mode", "Capture mode (compat or direct)", CaptureMode)
+		printFlag(os.Stderr, "capture-mode", "Capture mode (compat, direct, or agent)", CaptureMode)
+		printFlag(os.Stderr, "agent-address", "TCP address for remote agent streaming (e.g. host.docker.internal:12345)", AgentAddress)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
 		printFlag(os.Stderr, "wallpaper", "Path to wallpaper image", Wallpaper)
 		printFlag(os.Stderr, "webrtc-public-ip", "Public IP for WebRTC", WebRTCPublicIP)
@@ -207,7 +211,8 @@ func initConfig() {
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseNVIDIA, "use-nvidia", defaultUseNVIDIA, "Enable NVIDIA acceleration if available")
 	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel QSV acceleration if available")
-	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat or direct)")
+	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat, direct, or agent)")
+	flag.StringVar(&AgentAddress, "agent-address", defaultAgentAddress, "TCP address for remote agent streaming (e.g. host.docker.internal:12345)")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")
 	flag.BoolVar(&UseDebugInput, "use-debug-input", defaultUseDebugInput, "Enable Input debugging")
 	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of Wayland session")

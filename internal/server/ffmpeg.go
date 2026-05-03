@@ -111,20 +111,20 @@ func SetVideoCodec(codec string) {
 	VideoCodec = codec
 	log.Printf("Target video codec changed to %s, reinitializing WebRTC track and restarting ffmpeg...", codec)
 
-	initWebRTCTrack() // Re-create track
+	InitWebRTCTrack() // Re-create track
 
 	killFFmpegWithTimestamp()
 }
 
 func resolveRequestedVideoCodec(codec string) string {
 	if UseIntel {
-		if (codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv") {
+		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv" {
 			if H265QSVAvailable {
 				return "h265_qsv"
 			}
 			return "hevc_vaapi"
 		}
-		if (codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv") {
+		if codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv" {
 			if QSVAvailable {
 				return "h264_qsv"
 			}
@@ -425,28 +425,46 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				setDirectBufferActive(false, "Direct buffer is unavailable in test-pattern mode")
 				log.Printf("TEST_PATTERN mode: starting ffmpeg with testsrc")
 				w, h := GetScreenSize()
-				var ffmpegArgs []string
-				if VideoCodec == "vp8" {
-					ffmpegArgs = buildVP8Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetVBRThreshold, targetKeyframeInterval)
-				} else if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
-					ffmpegArgs = buildH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
-				} else if VideoCodec == "h264_qsv" {
-					ffmpegArgs = buildQSVH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
-				} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
-					ffmpegArgs = buildH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
-				} else if VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi" {
-					ffmpegArgs = buildQSVH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval, Chroma)
-				} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
 
-					ffmpegArgs = buildAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
-				} else if VideoCodec == "av1_qsv" {
-					ffmpegArgs = buildQSVAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+				if CaptureMode == CaptureModeAgent {
+					if AgentAddress == "" {
+						log.Fatalf("Capture mode 'agent' requires --agent-address")
+					}
+					// Output raw video over TCP with frame number overlay
+					finalArgs := []string{
+						"-y", "-re", "-f", "lavfi",
+						"-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", w, h, FPS),
+						"-vf", "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='%{n}':fontsize=100:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+						"-f", "rawvideo",
+						"-pix_fmt", "yuv420p",
+						"tcp://" + AgentAddress,
+					}
+					log.Printf("FFmpeg testsrc agent command: ffmpeg %v", finalArgs)
+					cmd = exec.Command("ffmpeg", finalArgs...)
+				} else {
+					var ffmpegArgs []string
+					if VideoCodec == "vp8" {
+						ffmpegArgs = buildVP8Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
+						ffmpegArgs = buildH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h264_qsv" {
+						ffmpegArgs = buildQSVH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
+						ffmpegArgs = buildH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi" {
+						ffmpegArgs = buildQSVH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval, Chroma)
+					} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
+						ffmpegArgs = buildAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "av1_qsv" {
+						ffmpegArgs = buildQSVAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					}
+
+					ffmpegArgs = append(ffmpegArgs, "-f", "pipe:1")
+
+					finalArgs := append([]string{"-y", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", w, h, FPS)}, ffmpegArgs...)
+					log.Printf("FFmpeg testsrc command: ffmpeg %v", finalArgs)
+					cmd = exec.Command("ffmpeg", finalArgs...)
 				}
-
-				// Insert testsrc at the beginning
-				finalArgs := append([]string{"-y", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", w, h, FPS)}, ffmpegArgs...)
-				log.Printf("FFmpeg testsrc command: ffmpeg %v", finalArgs)
-				cmd = exec.Command("ffmpeg", finalArgs...)
 			} else {
 				// Base config using wf-recorder
 				args := []string{
@@ -463,7 +481,24 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					"-B", fmt.Sprintf("%d", FPS),
 				)
 
-				if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
+				if CaptureMode == CaptureModeAgent {
+					if AgentAddress == "" {
+						log.Fatalf("Capture mode 'agent' requires --agent-address")
+					}
+					// Override encoder args to stream raw video to the macOS host
+					args = []string{
+						"wf-recorder",
+						"-c", "rawvideo",
+						"-m", "rawvideo",
+						"-x", "yuv420p",
+						"-r", fmt.Sprintf("%d", FPS),
+						"-B", fmt.Sprintf("%d", FPS),
+						"-f", "tcp://" + AgentAddress,
+					}
+					if !targetDamageTracking {
+						args = append(args, "-D")
+					}
+				} else if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
 					// Always use packed RGB/BGR and let NVENC convert to YUV on-GPU.
 					// Forcing yuv420p here pushes the conversion into wf-recorder/FFmpeg's
 					// CPU path and is very expensive at 4K60.
@@ -533,9 +568,9 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				} else {
 					// CPU encoding
 					if Chroma == "444" {
-					        args = append(args, "-x", "yuv444p")
+						args = append(args, "-x", "yuv444p")
 					} else {
-					        args = append(args, "-x", "yuv420p")
+						args = append(args, "-x", "yuv420p")
 					}
 
 					if codec == "libvpx" {
@@ -587,7 +622,9 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					)
 				}
 
-				args = append(args, "-f", "pipe:1")
+				if CaptureMode != CaptureModeAgent {
+					args = append(args, "-f", "pipe:1")
+				}
 
 				log.Printf("Starting wf-recorder capture: %v", args)
 				cmd = exec.Command("stdbuf", append([]string{"-i0", "-o0"}, args...)...)
@@ -620,10 +657,21 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 			// Prime the compositor so damage tracking sessions emit an initial frame without waiting for user input.
 			PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
+			if CaptureMode == CaptureModeAgent {
+				// In agent mode, wf-recorder streams directly to the TCP address.
+				// We just wait for it to exit.
+				_ = cmd.Wait()
+				time.Sleep(1 * time.Second) // Prevent rapid spin loop if TCP is refused
+				continue
+			}
+
 			doneCh := make(chan bool, 1)
 			go func() {
 				streamProducedFrame := false
 				onFrameWithCheck := func(frame EncodedVideoFrame, sid uint32) {
+					if onFrame == nil {
+						return
+					}
 					if sid != lastStreamID {
 						log.Printf("Stream ID change detected: %d -> %d. Triggering config reset.", lastStreamID, sid)
 						noteStreamFrame(sid)

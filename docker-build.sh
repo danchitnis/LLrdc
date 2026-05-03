@@ -12,6 +12,7 @@ IMAGE_NAME="${IMAGE_NAME:-danchitnis/llrdc}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 DOCKERFILE="Dockerfile"
 ENABLE_INTEL="false"
+ENABLE_MACOS="false"
 BUILD_VARIANT="cpu"
 USE_DRY_RUN="false"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,6 +24,12 @@ while [[ $# -gt 0 ]]; do
     --intel)
       ENABLE_INTEL="true"
       BUILD_VARIANT="intel"
+      shift
+      ;;
+    --macos)
+      ENABLE_MACOS="true"
+      DOCKERFILE="Dockerfile.macos"
+      IMAGE_TAG="macos"
       shift
       ;;
     --dry-run)

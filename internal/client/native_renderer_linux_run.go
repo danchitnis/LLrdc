@@ -331,10 +331,18 @@ func (r *NativeRenderer) Run() error {
 					x := (float64(e.X) - float64(dx)) / float64(dw)
 					y := (float64(e.Y) - float64(dy)) / float64(dh)
 
-					if x < 0 { x = 0 }
-					if x > 1 { x = 1 }
-					if y < 0 { y = 0 }
-					if y > 1 { y = 1 }
+					if x < 0 {
+						x = 0
+					}
+					if x > 1 {
+						x = 1
+					}
+					if y < 0 {
+						y = 0
+					}
+					if y > 1 {
+						y = 1
+					}
 
 					r.sendInput(map[string]any{
 						"type": "mousemove",
@@ -377,10 +385,18 @@ func (r *NativeRenderer) Run() error {
 					x = (float64(e.X) - float64(dx)) / float64(dw)
 					y = (float64(e.Y) - float64(dy)) / float64(dh)
 
-					if x < 0 { x = 0 }
-					if x > 1 { x = 1 }
-					if y < 0 { y = 0 }
-					if y > 1 { y = 1 }
+					if x < 0 {
+						x = 0
+					}
+					if x > 1 {
+						x = 1
+					}
+					if y < 0 {
+						y = 0
+					}
+					if y > 1 {
+						y = 1
+					}
 				}
 
 				r.sendInput(map[string]any{

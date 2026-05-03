@@ -26,7 +26,7 @@ var (
 	webrtcFrameChan = make(chan WebRTCFrame, 1000)
 )
 
-func initWebRTCMux() {
+func InitWebRTCMux() {
 	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: Port})
 	if err != nil {
 		log.Printf("Warning: Failed to bind WebRTC UDP Mux to port %d: %v. Falling back to ephemeral ports.", Port, err)
@@ -49,9 +49,9 @@ func initWebRTCMux() {
 	log.Printf("WebRTC UDP Mux initialized on port %d with 4MB buffers", Port)
 }
 
-func initWebRTC() {
-	initWebRTCMux()
-	initWebRTCTrack()
+func InitWebRTC() {
+	InitWebRTCMux()
+	InitWebRTCTrack()
 
 	go func() {
 		for frame := range webrtcFrameChan {
@@ -171,7 +171,7 @@ func resolveAdvertisedIP(requestHost string) string {
 	return ""
 }
 
-func createPeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
+func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
 
 	if webrtcUDPMux != nil {

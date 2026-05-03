@@ -58,8 +58,8 @@ static int64_t get_now_ms(void) {
 static void write_state(struct probe_app *app) {
     FILE *f = fopen(STATE_PATH, "w");
     if (!f) return;
-    fprintf(f, "{\"marker\": %d, \"color\": \"%s\", \"requestedAtMs\": %" PRId64 ", \"drawnAtMs\": %" PRId64 "}\n",
-            app->marker, app->is_white ? "white" : "black", app->requested_at_ms, app->drawn_at_ms);
+    fprintf(f, "{\"marker\": %d, \"color\": \"%s\", \"requestedAtMs\": %" PRId64 ", \"drawnAtMs\": %" PRId64 ", \"mouseX\": %d, \"mouseY\": %d}\n",
+            app->marker, app->is_white ? "white" : "black", app->requested_at_ms, app->drawn_at_ms, app->mouse_x, app->mouse_y);
     fclose(f);
 }
 
@@ -152,6 +152,8 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer, uin
     struct probe_app *app = data;
     app->mouse_x = wl_fixed_to_int(surface_x);
     app->mouse_y = wl_fixed_to_int(surface_y);
+
+    write_state(app);
 
     bool near_center = (abs(app->mouse_x - app->width/2) < 50 && abs(app->mouse_y - app->height/2) < 50);
     if (near_center != app->is_white) {

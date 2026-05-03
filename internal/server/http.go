@@ -325,8 +325,15 @@ func applyDisplayChange(previousStreamID uint32, width, height int, reason strin
 	}
 }
 
-func handleInputMessage(msg map[string]interface{}) {
+func HandleInputMessage(msg map[string]interface{}) {
 	msgType, _ := msg["type"].(string)
+	ts, _ := msg["ts"].(float64)
+	sentTime := int64(ts)
+
+	if UseDebugInput && sentTime > 0 {
+		log.Printf("HOST_RECV: type=%s, delay=%v ms", msgType, benchmarkClockNowMs()-sentTime)
+	}
+
 	if msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "key" || msgType == "wheel" {
 		setLastInputReceivedAt(benchmarkClockNowMs())
 	}
@@ -334,24 +341,24 @@ func handleInputMessage(msg map[string]interface{}) {
 	switch msgType {
 	case "keydown", "keyup", "key":
 		if key, ok := msg["key"].(string); ok {
-			injectKey(key, msgType)
+			injectKey(key, msgType, sentTime)
 		}
 	case "mousemove":
 		if x, ok1 := msg["x"].(float64); ok1 {
 			if y, ok2 := msg["y"].(float64); ok2 {
-				injectMouseMove(x, y)
+				injectMouseMove(x, y, sentTime)
 			}
 		}
 	case "mousebtn":
 		if btn, ok := msg["button"].(float64); ok {
 			if action, ok2 := msg["action"].(string); ok2 {
-				injectMouseButton(int(btn), action)
+				injectMouseButton(int(btn), action, sentTime)
 			}
 		}
 	case "wheel":
 		if dx, ok1 := msg["deltaX"].(float64); ok1 {
 			if dy, ok2 := msg["deltaY"].(float64); ok2 {
-				injectMouseWheel(dx, dy)
+				injectMouseWheel(dx, dy, sentTime)
 			}
 		}
 	case "spawn":
@@ -445,7 +452,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		switch msgType {
 		case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
-			handleInputMessage(msg)
+			HandleInputMessage(msg)
 		case "config":
 			go func(configMsg map[string]interface{}) {
 				log.Printf("Received config message: %v", configMsg)
@@ -677,9 +684,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				writeJSON(resp)
 			}
 		case "webrtc_offer":
-			handleWebRTCOffer(msg, r.Host, &pc, writeJSON)
+			HandleWebRTCOffer(msg, r.Host, &pc, writeJSON)
 		case "webrtc_ice":
-			handleWebRTCICE(msg, pc)
+			HandleWebRTCICE(msg, pc)
 		}
 	}
 }

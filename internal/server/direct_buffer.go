@@ -14,6 +14,7 @@ import (
 const (
 	CaptureModeCompat = "compat"
 	CaptureModeDirect = "direct"
+	CaptureModeAgent  = "agent"
 )
 
 type directBufferStatus struct {
@@ -119,8 +120,11 @@ func isNVENCCodec(codec string) bool {
 }
 
 func validateCaptureModeConfig() error {
-	if CaptureMode != CaptureModeCompat && CaptureMode != CaptureModeDirect {
+	if CaptureMode != CaptureModeCompat && CaptureMode != CaptureModeDirect && CaptureMode != CaptureModeAgent {
 		return fmt.Errorf("invalid capture mode %q", CaptureMode)
+	}
+	if CaptureMode == CaptureModeAgent {
+		return nil
 	}
 	if CaptureMode != CaptureModeDirect {
 		return nil
@@ -147,10 +151,10 @@ func validateRuntimeDirectMode(codec string, chroma string) error {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, codec)
 	}
 	if UseIntel && (codec == "h265_vaapi" || codec == "hevc_vaapi") && !H265QSVAvailable {
-		// If hevc_vaapi is requested, we allow it even if QSV is not detected, 
+		// If hevc_vaapi is requested, we allow it even if QSV is not detected,
 		// as it might be using the generic VAAPI driver which supports rext/444.
 		if codec == "h265_vaapi" {
-		    return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
+			return errors.New("direct capture mode does not support Intel H.265 on the current FFmpeg/driver stack")
 		}
 	}
 	state := snapshotDirectBufferState()

@@ -106,6 +106,32 @@ http://localhost:8080
 
 You should see your XFCE4 desktop session running and ready for interaction.
 
+## macOS Split Architecture
+
+LLrdc features a specialized "Split" architecture for macOS users. This mode allows you to run the heavy desktop environment and Wayland session inside a Docker container (as usual), while utilizing a **native macOS host server** for high-performance H.264 encoding via Apple's **VideoToolbox** framework.
+
+### Why Use Split Mode?
+
+- **Hardware Acceleration**: Access native macOS hardware encoding (VideoToolbox) which is not typically accessible from within a standard Docker container.
+- **Ultra-Low Latency**: Benefit from Apple's optimized silicon for video encoding, providing a smoother experience on Mac hardware.
+- **Seamless Integration**: The browser connects to the native macOS host, which orchestrates the Docker container in the background.
+
+### How to Run (macOS only)
+
+To build and launch the split architecture environment, use the provided helper script:
+
+```bash
+./run-macos-split.sh
+```
+
+This script will:
+1. Build the frontend and the native macOS host server.
+2. Build/verify the specialized Docker agent container.
+3. Launch the host server and the Docker agent in the background.
+4. Provide a URL to access the remote desktop (`http://localhost:8080/viewer.html`).
+
+To stop the session and clean up all background processes and containers, simply press `Ctrl+C` in the terminal where the script is running.
+
 ## Native Client
 
 The repo also includes a native Linux client in [cmd/client/main.go](/home/danial/code/LLrdc/cmd/client/main.go). It is built and tested inside Docker from [Dockerfile.client](/home/danial/code/LLrdc/Dockerfile.client), but runs as a real SDL windowed client rather than embedding Chromium, WebView, or WebKit.

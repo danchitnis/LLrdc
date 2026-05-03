@@ -12,8 +12,10 @@ var cleanupTasks []func()
 
 func Run() error {
 	log.Println("Starting llrdc (Go)...")
+	log.Printf("Args: %v", os.Args)
 
-	initConfig()
+	InitConfig()
+	log.Printf("Parsed CaptureMode: %v", CaptureMode)
 	initScreenSize(3840, 2160)
 	initReadiness()
 
@@ -32,9 +34,11 @@ func Run() error {
 		log.Println("TEST_PATTERN mode: skipping display server setup.")
 	}
 
-	initWebRTC()
+	InitWebRTC()
 	startStreaming(broadcastVideoFrame)
-	startAudioStreaming()
+	if CaptureMode != CaptureModeAgent {
+		startAudioStreaming()
+	}
 	startHTTPServer()
 	return nil
 }
