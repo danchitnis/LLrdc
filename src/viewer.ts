@@ -51,6 +51,9 @@ let hasReceivedInitialConfig = false;
 let pendingHdpi: number | null = null;
 let pendingMaxRes: number | null = null;
 
+(window as any).sendConfig = sendConfig;
+(window as any).buildConfigMessage = buildConfigMessage;
+
 function sendConfig() {
     if (isReinitializingWebRTC) {
         if (deferredConfigTimer) {

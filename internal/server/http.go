@@ -267,6 +267,7 @@ func broadcastJSON(msg interface{}) {
 }
 
 func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string) {
+	noteStreamFrame(streamID)
 	captureTime := time.Now()
 	if frame.LatencyTrace != nil {
 		noteLatencyProbeFrameDispatch(frame.LatencyTrace, benchmarkClockNowMs())

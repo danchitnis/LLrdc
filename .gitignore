@@ -13,3 +13,5 @@ dist/
 /macos/LLrdc.app/
 /macos/.DS_Store
 .omg
+test-logs/
+/macos-server

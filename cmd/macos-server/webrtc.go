@@ -39,8 +39,15 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	var wsMu sync.Mutex
+	safeWriteJSON := func(v interface{}) error {
+		wsMu.Lock()
+		defer wsMu.Unlock()
+		return conn.WriteJSON(v)
+	}
+
 	// Send initial config to browser to force H264 UI
-	conn.WriteJSON(map[string]interface{}{
+	safeWriteJSON(map[string]interface{}{
 		"type": "config",
 		"config": map[string]interface{}{
 			"videoCodec": "h264",
@@ -64,9 +71,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		switch msg["type"] {
 		case "webrtc_offer":
 			pcMu.Lock()
-			server.HandleWebRTCOffer(msg, r.Host, &pc, func(v interface{}) error {
-				return conn.WriteJSON(v)
-			})
+			server.HandleWebRTCOffer(msg, r.Host, &pc, safeWriteJSON)
 			pcMu.Unlock()
 
 		case "webrtc_ice":
@@ -86,6 +91,9 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 					server.SetScreenSize(int(w), int(h))
 				}
 			}
+
+			// Forward the entire message to the agent so it can resize the display and restart FFmpeg
+			forwardAgentMsg(msg)
 
 		default:
 			// Route other messages (input) to HandleInputMessage

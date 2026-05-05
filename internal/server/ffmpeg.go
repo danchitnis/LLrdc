@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -624,6 +625,15 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 
 				if CaptureMode != CaptureModeAgent {
 					args = append(args, "-f", "pipe:1")
+				} else {
+					// Ensure the relay is running
+					startAgentRelay()
+					// Update wf-recorder to point to the local relay
+					for i, arg := range args {
+						if strings.HasPrefix(arg, "tcp://") {
+							args[i] = "tcp://127.0.0.1:12347"
+						}
+					}
 				}
 
 				log.Printf("Starting wf-recorder capture: %v", args)
@@ -658,7 +668,6 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 			PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
 			if CaptureMode == CaptureModeAgent {
-				// In agent mode, wf-recorder streams directly to the TCP address.
 				// We just wait for it to exit.
 				_ = cmd.Wait()
 				time.Sleep(1 * time.Second) // Prevent rapid spin loop if TCP is refused

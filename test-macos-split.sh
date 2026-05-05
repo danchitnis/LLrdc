@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# run-macos-split-test.sh
+# test-macos-split.sh
+# Usage: ./test-macos-split.sh [test_file.spec.ts]
+# If no argument is provided, runs all tests in tests/macos/
+
 set -euo pipefail
 
 # Configuration
@@ -8,6 +11,8 @@ IMAGE_TAG="macos"
 CONTAINER_NAME="llrdc-macos"
 LOG_DIR="test-logs"
 mkdir -p "$LOG_DIR"
+
+TEST_TO_RUN="${1:-}"
 
 echo "========================================"
 echo "Cleaning up previous session..."
@@ -66,17 +71,25 @@ if ! grep -q "Video producer connected" "$LOG_DIR/macos-server.log"; then
 fi
 
 echo "========================================"
-echo "Running Playwright Test..."
+echo "Running Playwright Tests..."
 export CONTAINER_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 set +e
-./test.sh tests/macos_split.spec.ts
-TEST_EXIT=$?
+
+if [ -n "$TEST_TO_RUN" ]; then
+    echo "Running specific test: $TEST_TO_RUN"
+    ./test.sh "tests/macos/$TEST_TO_RUN"
+    TEST_EXIT=$?
+else
+    echo "Running all macOS tests..."
+    ./test.sh tests/macos/
+    TEST_EXIT=$?
+fi
 set -e
 
 if [ $TEST_EXIT -eq 0 ]; then
-    echo "✅ TEST PASSED"
+    echo "✅ TEST(S) PASSED"
 else
-    echo "❌ TEST FAILED"
+    echo "❌ TEST(S) FAILED"
     echo "--- LAST 50 LINES OF macos-server.log ---"
     tail -n 50 "$LOG_DIR/macos-server.log"
     echo "--- LAST 50 LINES OF CONTAINER LOGS ---"

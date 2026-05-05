@@ -18,10 +18,11 @@ import (
 )
 
 type VTEncoder struct {
-	ptr          *C.VTEncoder
-	handle       cgo.Handle
-	onFrame      func(data []byte, isKeyframe bool)
-	forceNextIDR atomic.Bool
+	ptr           *C.VTEncoder
+	handle        cgo.Handle
+	onFrame       func(data []byte, isKeyframe bool)
+	forceNextIDR  atomic.Bool
+	Width, Height int
 }
 
 //export goEncodedFrameCallback
@@ -37,6 +38,8 @@ func goEncodedFrameCallback(handle C.uintptr_t, data unsafe.Pointer, length C.in
 func NewVTEncoder(width, height, fps, bitrateKbps int, onFrame func(data []byte, isKeyframe bool)) *VTEncoder {
 	enc := &VTEncoder{
 		onFrame: onFrame,
+		Width:   width,
+		Height:  height,
 	}
 	enc.handle = cgo.NewHandle(enc)
 	enc.ptr = C.vt_encoder_create(C.int(width), C.int(height), C.int(fps), C.int(bitrateKbps), C.uintptr_t(enc.handle))

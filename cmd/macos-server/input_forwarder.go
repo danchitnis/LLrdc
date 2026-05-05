@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -45,6 +47,21 @@ func (w *tcpInputWriter) setConn(conn net.Conn) {
 }
 
 var globalInputWriter = &tcpInputWriter{}
+
+func forwardAgentMsg(msg map[string]interface{}) {
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Failed to marshal agent message: %v", err)
+		return
+	}
+
+	// We use the "agent_msg " prefix to distinguish from plain text input commands
+	line := fmt.Sprintf("agent_msg %s\n", string(payload))
+	_, err = globalInputWriter.Write([]byte(line))
+	if err != nil {
+		log.Printf("Failed to forward message to agent: %v", err)
+	}
+}
 
 func startInputProcessor() {
 	log.Println("Starting macOS input task processor")

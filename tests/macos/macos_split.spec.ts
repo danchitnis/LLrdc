@@ -130,11 +130,15 @@ test('macOS split architecture correctly streams video and has low mouse latency
     
     await page.mouse.move(midX, midY); // Jump to exact center
     
+    // Get actual video dimensions to calculate expected center
+    const videoDims = await video.evaluate((v: HTMLVideoElement) => ({ w: v.videoWidth, h: v.videoHeight }));
+    const expectedX = Math.round(videoDims.w / 2);
+    console.log(`Expected center for ${videoDims.w}x${videoDims.h}: X=${expectedX}`);
+
     let finalCursorX = 0;
     for (let i = 0; i < 50; i++) { // Poll for up to 5 seconds
         const state = readProbeState(containerName);
-        // Wayland runs at 1920x1080. Center X is 960.
-        if (Math.abs(state.mouseX - 960) < 100) { 
+        if (Math.abs(state.mouseX - expectedX) < 100) { 
             finalCursorX = state.mouseX;
             break; 
         }
@@ -143,6 +147,6 @@ test('macOS split architecture correctly streams video and has low mouse latency
 
     console.log(`Final Wayland cursor arrived at: X=${finalCursorX}`);
 
-    // If it's stuck, it will never reach the middle (960)
-    expect(Math.abs(finalCursorX - 960)).toBeLessThan(100);
+    // If it's stuck, it will never reach the expected center
+    expect(Math.abs(finalCursorX - expectedX)).toBeLessThan(100);
 });

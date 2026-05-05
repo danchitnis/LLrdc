@@ -4,43 +4,71 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/danchitnis/llrdc/cmd/macos-server/encoder"
 	"github.com/danchitnis/llrdc/internal/server"
 )
 
-var globalVTEncoder *encoder.VTEncoder
+var (
+	encoderMu       sync.RWMutex
+	globalVTEncoder *encoder.VTEncoder
+)
 
-func main() {
-	log.SetOutput(os.Stdout)
+func getEncoder() *encoder.VTEncoder {
+	encoderMu.RLock()
+	defer encoderMu.RUnlock()
+	return globalVTEncoder
+}
 
-	// 1. Initialize server config and flags
-	// This will parse command line flags and environment variables.
-	server.InitConfig()
+func recreateEncoder(width, height int) {
+	encoderMu.Lock()
+	defer encoderMu.Unlock()
 
-	// If screen size wasn't set by flags, use defaults
-	width, height := server.GetScreenSize()
-	if width == 320 && height == 240 { // Default minimums from GetScreenSize
-		width, height = 1920, 1080
+	if globalVTEncoder != nil {
+		log.Printf("Closing old VTEncoder (%dx%d)", globalVTEncoder.Width, globalVTEncoder.Height)
+		globalVTEncoder.Close()
 	}
 
 	fps := server.FPS
 	if fps <= 0 {
 		fps = 60
 	}
+	bitrateKbps := 8000
 
-	bitrateKbps := 8000 // Default bitrate
-
-	log.Printf("LLrdc macOS Native Server starting (Resolution: %dx%d@%d FPS)", width, height, fps)
-
-	// 2. Initialize VideoToolbox Encoder
+	log.Printf("Creating new VTEncoder: %dx%d@%d FPS", width, height, fps)
 	globalVTEncoder = encoder.NewVTEncoder(width, height, fps, bitrateKbps, func(data []byte, isKeyframe bool) {
 		broadcastVideoFrame(data, isKeyframe)
 	})
 	if globalVTEncoder == nil {
-		log.Fatal("Failed to create VideoToolbox encoder")
+		log.Printf("ERROR: Failed to create VideoToolbox encoder for %dx%d", width, height)
 	}
-	defer globalVTEncoder.Close()
+}
+
+func main() {
+	log.SetOutput(os.Stdout)
+
+	// 1. Initialize server config and flags
+	server.InitConfig()
+
+	// If screen size wasn't set by flags, use defaults
+	width, height := server.GetScreenSize()
+	if width == 320 && height == 240 {
+		width, height = 1920, 1080
+	}
+
+	// 2. Initialize VideoToolbox Encoder
+	recreateEncoder(width, height)
+	if getEncoder() == nil {
+		log.Fatal("Failed to create initial VideoToolbox encoder")
+	}
+	defer func() {
+		encoderMu.Lock()
+		if globalVTEncoder != nil {
+			globalVTEncoder.Close()
+		}
+		encoderMu.Unlock()
+	}()
 
 	// 3. Set up input forwarding
 	server.SetInputWriter(globalInputWriter)
@@ -48,7 +76,7 @@ func main() {
 	go startInputProcessor()
 
 	// 4. Start Video Receiver (from Docker)
-	go startVideoReceiver(width, height, globalVTEncoder)
+	go startVideoReceiver()
 
 	// 5. Start HTTP & Signaling Server
 	fs := http.FileServer(http.Dir("public"))
