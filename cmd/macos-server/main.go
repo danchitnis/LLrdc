@@ -1,76 +1,79 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"sync"
 
-	"github.com/danchitnis/llrdc/cmd/macos-server/encoder"
 	"github.com/danchitnis/llrdc/internal/server"
 )
 
 var (
-	encoderMu       sync.RWMutex
-	globalVTEncoder *encoder.VTEncoder
+	encMgr          *EncoderManager
+	currentGeneration uint64
+	generationMu    sync.Mutex
 )
 
-func getEncoder() *encoder.VTEncoder {
-	encoderMu.RLock()
-	defer encoderMu.RUnlock()
-	return globalVTEncoder
+func nextGeneration() uint64 {
+	generationMu.Lock()
+	defer generationMu.Unlock()
+	currentGeneration++
+	return currentGeneration
 }
 
-func recreateEncoder(width, height int) {
-	encoderMu.Lock()
-	defer encoderMu.Unlock()
-
-	if globalVTEncoder != nil {
-		log.Printf("Closing old VTEncoder (%dx%d)", globalVTEncoder.Width, globalVTEncoder.Height)
-		globalVTEncoder.Close()
-	}
-
-	fps := server.FPS
-	if fps <= 0 {
-		fps = 60
-	}
-	bitrateKbps := 8000
-
-	log.Printf("Creating new VTEncoder: %dx%d@%d FPS", width, height, fps)
-	globalVTEncoder = encoder.NewVTEncoder(width, height, fps, bitrateKbps, func(data []byte, isKeyframe bool) {
-		broadcastVideoFrame(data, isKeyframe)
-	})
-	if globalVTEncoder == nil {
-		log.Printf("ERROR: Failed to create VideoToolbox encoder for %dx%d", width, height)
-	}
+func getGeneration() uint64 {
+	generationMu.Lock()
+	defer generationMu.Unlock()
+	return currentGeneration
 }
 
 func main() {
 	log.SetOutput(os.Stdout)
 
+	encMgr = NewEncoderManager()
+
 	// 1. Initialize server config and flags
 	server.InitConfig()
+	server.CaptureMode = server.CaptureModeAgent
+	server.HDPI = 100
 
-	// If screen size wasn't set by flags, use defaults
+	// If screen size wasn't set by flags, use defaults (1280x720 for macOS host)
 	width, height := server.GetScreenSize()
-	if width == 320 && height == 240 {
-		width, height = 1920, 1080
+	if width == 1920 && height == 1080 { // Default from internal/server/screen.go
+		width, height = 1280, 720
 	}
+	
+	// macOS host enforces 32px alignment with exceptions for standard 720p/1080p heights
+	width = (width / 32) * 32
+	if height != 720 && height != 1080 {
+		height = (height / 32) * 32
+	}
+	server.SetScreenSize(width, height)
+	
+	// Refresh width/height after SetScreenSize alignment
+	width, height = server.GetScreenSize()
 
 	// 2. Initialize VideoToolbox Encoder
-	recreateEncoder(width, height)
-	if getEncoder() == nil {
+	gen := nextGeneration()
+	encMgr.Recreate(width, height, server.FPS, gen)
+	if enc, _ := encMgr.Get(); enc == nil {
 		log.Fatal("Failed to create initial VideoToolbox encoder")
 	}
-	defer func() {
-		encoderMu.Lock()
-		if globalVTEncoder != nil {
-			globalVTEncoder.Close()
-		}
-		encoderMu.Unlock()
-	}()
+	defer encMgr.Close()
 
-	// 3. Set up input forwarding
+	// 3. Set up input forwarding and control client
+	agentHost := "127.0.0.1"
+	if server.AgentAddress != "" {
+		host, _, err := net.SplitHostPort(server.AgentAddress)
+		if err == nil {
+			agentHost = host
+		}
+	}
+	startAgentControlClient(agentHost)
+
 	server.SetInputWriter(globalInputWriter)
 	go startInputForwarder()
 	go startInputProcessor()
@@ -88,8 +91,38 @@ func main() {
 		fs.ServeHTTP(w, r)
 	})
 
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	http.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		inputConnected := globalInputWriter.IsConnected()
+		controlConnected := false
+		readyGen := uint64(0)
+		if globalControlClient != nil {
+			controlConnected = globalControlClient.conn != nil
+			if globalControlClient.IsReady(getGeneration()) {
+				readyGen = getGeneration()
+			}
+		}
+
+		if inputConnected && controlConnected && readyGen == getGeneration() {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("READY"))
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, "NOT READY: input=%v, control=%v, readyGen=%d, targetGen=%d",
+				inputConnected, controlConnected, readyGen, getGeneration())
+		}
+	})
+
 	log.Printf("macOS Native Server listening on :%d", server.Port)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	ln, err := net.Listen("tcp4", "0.0.0.0:8080")
+	if err != nil {
+		log.Fatalf("Failed to listen on 0.0.0.0:8080: %v", err)
+	}
+	if err := http.Serve(ln, nil); err != nil {
 		log.Fatalf("HTTP server failed: %v", err)
 	}
 }

@@ -472,14 +472,19 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					"wf-recorder",
 				}
 
+				bufferSize := fmt.Sprintf("%d", FPS)
+				if WebRTCLowLatency {
+					bufferSize = "5"
+				}
+
 				if !targetDamageTracking {
-					args = append(args, "-D") // Disable damage tracking to continuously emit frames
+					args = append(args, "-D") // Disable damage tracking
 				}
 				args = append(args,
 					"-c", codec,
 					"-m", format,
 					"-r", fmt.Sprintf("%d", FPS),
-					"-B", fmt.Sprintf("%d", FPS),
+					"-B", bufferSize,
 				)
 
 				if CaptureMode == CaptureModeAgent {
@@ -487,13 +492,17 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						log.Fatalf("Capture mode 'agent' requires --agent-address")
 					}
 					// Override encoder args to stream raw video to the macOS host
+					// Use -g to force strict capture dimensions matching the requested size
+					gw, gh := GetScreenSize()
 					args = []string{
 						"wf-recorder",
 						"-c", "rawvideo",
 						"-m", "rawvideo",
 						"-x", "yuv420p",
+						"-g", fmt.Sprintf("0,0 %dx%d", gw, gh),
 						"-r", fmt.Sprintf("%d", FPS),
-						"-B", fmt.Sprintf("%d", FPS),
+						"-F", fmt.Sprintf("fps=%d", FPS),
+						"-B", "5",
 						"-f", "tcp://" + AgentAddress,
 					}
 					if !targetDamageTracking {
@@ -637,7 +646,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				}
 
 				log.Printf("Starting wf-recorder capture: %v", args)
-				cmd = exec.Command("stdbuf", append([]string{"-i0", "-o0"}, args...)...)
+				cmd = exec.Command(args[0], args[1:]...)
 				cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0", "XDG_RUNTIME_DIR=/tmp/llrdc-run")
 			}
 

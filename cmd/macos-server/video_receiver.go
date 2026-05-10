@@ -1,16 +1,17 @@
 package main
 
 import (
-	"encoding/binary"
 	"io"
 	"log"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/danchitnis/llrdc/internal/splitproto"
 )
 
 func startVideoReceiver() {
-	ln, err := net.Listen("tcp", ":12345")
+	ln, err := net.Listen("tcp4", "0.0.0.0:12345")
 	if err != nil {
 		log.Fatalf("Failed to listen on :12345: %v", err)
 	}
@@ -28,31 +29,42 @@ func startVideoReceiver() {
 			defer c.Close()
 
 			if tcpConn, ok := c.(*net.TCPConn); ok {
-				tcpConn.SetReadBuffer(16 * 1024 * 1024)
 				tcpConn.SetNoDelay(true)
 			}
 
-			// 1. Read resolution header from producer
-			// Format: 8 bytes width, 8 bytes height (BigEndian)
-			header := make([]byte, 16)
-			if _, err := io.ReadFull(c, header); err != nil {
-				log.Printf("Failed to read resolution header: %v", err)
+			// 1. Read split protocol header from producer
+			headerBuf := make([]byte, splitproto.HeaderSize)
+			if _, err := io.ReadFull(c, headerBuf); err != nil {
+				log.Printf("Failed to read split header: %v", err)
 				return
 			}
-			width := int(binary.BigEndian.Uint64(header[0:8]))
-			height := int(binary.BigEndian.Uint64(header[8:16]))
-			log.Printf("Video producer resolution header: %dx%d", width, height)
-
-			vtEncoder := getEncoder()
-
-			// If the encoder resolution doesn't match the incoming stream, recreate it
-			if vtEncoder == nil || vtEncoder.Width != width || vtEncoder.Height != height {
-				log.Printf("Resolution mismatch: stream %dx%d, encoder %v. Recreating...", width, height, vtEncoder)
-				recreateEncoder(width, height)
-				vtEncoder = getEncoder()
+			h, err := splitproto.DecodeHeader(headerBuf)
+			if err != nil {
+				log.Printf("Invalid split header: %v", err)
+				return
 			}
 
-			if vtEncoder == nil {
+			width := int(h.Width)
+			height := int(h.Height)
+			generation := h.Generation
+			log.Printf("Video producer header: %dx%d (gen %d)", width, height, generation)
+
+			// Drop connection if generation is behind current
+			if generation < getGeneration() {
+				log.Printf("Dropping stale connection (gen %d < current %d)", generation, getGeneration())
+				return
+			}
+
+			enc, encGen := encMgr.Get()
+
+			// If the encoder state doesn't match the incoming stream, recreate it (synchronously in encMgr)
+			if enc == nil || enc.Width != width || enc.Height != height || encGen != generation {
+				log.Printf("Encoder mismatch: stream %dx%d (gen %d), encoder %v (gen %d). Recreating...", width, height, generation, enc, encGen)
+				encMgr.Recreate(width, height, int(h.FPS), generation)
+				enc, encGen = encMgr.Get()
+			}
+
+			if enc == nil {
 				log.Printf("ERROR: No encoder available for %dx%d, dropping connection", width, height)
 				return
 			}
@@ -61,9 +73,8 @@ func startVideoReceiver() {
 			buf := make([]byte, frameSize)
 
 			frameCount := 0
+			dropCount := 0
 			lastTime := time.Now()
-
-			// ... (rest of the function)
 
 			// 1-frame deep channel. If the encoder is busy, we drop the frame.
 			// This completely eliminates TCP buffer bloat.
@@ -75,17 +86,18 @@ func startVideoReceiver() {
 				},
 			}
 
+			const fpsCheckInterval = 60
 			go func() {
 				for frame := range encodeChan {
-					// Always use the latest encoder in case it was swapped during the session
-					// (though usually resolution changes trigger a reconnect)
-					enc := getEncoder()
-					if enc != nil && enc.Encode(frame) == 0 {
+					// Always use the latest encoder, but GUARD against mismatched frames or generations.
+					// This prevents mangling during transitions when an old stream is still closing.
+					currentEnc, currentGen := encMgr.Get()
+					if currentEnc != nil && currentGen == generation && currentEnc.Width == width && currentEnc.Height == height && currentEnc.Encode(frame) == 0 {
 						frameCount++
-						if frameCount%60 == 0 {
+						if frameCount%fpsCheckInterval == 0 {
 							now := time.Now()
 							elapsed := now.Sub(lastTime).Seconds()
-							fps := 60.0 / elapsed
+							fps := float64(fpsCheckInterval) / elapsed
 							log.Printf("Network Receiver (%dx%d): %.2f FPS (Elapsed: %.2fs)", width, height, fps, elapsed)
 							lastTime = now
 						}
@@ -110,9 +122,10 @@ func startVideoReceiver() {
 				default:
 					// Encoder is too slow; drop the frame to prevent the multi-second delay!
 					framePool.Put(frameCopy)
+					dropCount++
 					// Only log occasionally to avoid flooding
-					if frameCount%120 == 0 {
-						log.Println("Dropped frame to prevent TCP buffer bloat!")
+					if dropCount%120 == 0 {
+						log.Printf("Dropped %d frames to prevent TCP buffer bloat!", dropCount)
 					}
 				}
 			}

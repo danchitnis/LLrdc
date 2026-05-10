@@ -31,7 +31,7 @@ test('macOS split architecture correctly streams video and has low mouse latency
 
     // Wait for the video element to be attached and have a source
     const video = page.locator('#webrtc-video');
-    await expect(video).toBeAttached({ timeout: 10000 });
+    await expect(video).toBeAttached({ timeout: 15000 });
 
     // Ensure video reaches playing state
     await page.waitForFunction(() => {

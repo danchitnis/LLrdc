@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var (
@@ -44,6 +45,8 @@ var (
 	WebRTCLowLatency        bool
 	InitialRes              int
 	AgentAddress            string
+
+	displayChangeMu sync.Mutex
 )
 
 func InitConfig() {
@@ -115,7 +118,7 @@ func InitConfig() {
 
 	defaultNVENCLatencyMode := os.Getenv("NVENC_LATENCY_MODE") != "false"
 
-	defaultHDPI := 0
+	defaultHDPI := 100
 	if hdpi, err := strconv.Atoi(os.Getenv("HDPI")); err == nil {
 		defaultHDPI = hdpi
 	}

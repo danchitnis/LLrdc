@@ -23,6 +23,7 @@ type VTEncoder struct {
 	onFrame       func(data []byte, isKeyframe bool)
 	forceNextIDR  atomic.Bool
 	Width, Height int
+	FPS           int
 }
 
 //export goEncodedFrameCallback
@@ -40,6 +41,7 @@ func NewVTEncoder(width, height, fps, bitrateKbps int, onFrame func(data []byte,
 		onFrame: onFrame,
 		Width:   width,
 		Height:  height,
+		FPS:     fps,
 	}
 	enc.handle = cgo.NewHandle(enc)
 	enc.ptr = C.vt_encoder_create(C.int(width), C.int(height), C.int(fps), C.int(bitrateKbps), C.uintptr_t(enc.handle))

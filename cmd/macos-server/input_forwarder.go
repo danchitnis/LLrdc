@@ -1,9 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -46,29 +46,53 @@ func (w *tcpInputWriter) setConn(conn net.Conn) {
 	w.conn = conn
 }
 
-var globalInputWriter = &tcpInputWriter{}
-
-func forwardAgentMsg(msg map[string]interface{}) {
-	payload, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Failed to marshal agent message: %v", err)
-		return
-	}
-
-	// We use the "agent_msg " prefix to distinguish from plain text input commands
-	line := fmt.Sprintf("agent_msg %s\n", string(payload))
-	_, err = globalInputWriter.Write([]byte(line))
-	if err != nil {
-		log.Printf("Failed to forward message to agent: %v", err)
-	}
+func (w *tcpInputWriter) IsConnected() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.conn != nil
 }
+
+var globalInputWriter = &tcpInputWriter{}
 
 func startInputProcessor() {
 	log.Println("Starting macOS input task processor")
 	inputChan := server.GetInputChannel()
 	for task := range inputChan {
-		if err := server.ExecTask(task); err != nil {
-			// Expected if not connected yet
+		var line string
+		switch task.Type {
+		case "mousemove":
+			width, height := server.GetScreenSize()
+			targetX := int(math.Round(task.NX * float64(width)))
+			targetY := int(math.Round(task.NY * float64(height)))
+			line = fmt.Sprintf("move %d %d %d %d\n", targetX, targetY, width, height)
+		case "mousebtn":
+			btnCode := 272 // Left
+			if task.Button == 1 {
+				btnCode = 274 // Middle
+			} else if task.Button == 2 {
+				btnCode = 273 // Right
+			}
+			state := 1
+			if task.Action == "mouseup" {
+				state = 0
+			}
+			line = fmt.Sprintf("button %d %d\n", btnCode, state)
+		case "keydown", "keyup":
+			// For now, we skip keys as they are not used for priming.
+			continue
+		case "wheel":
+			if task.DY != 0 {
+				line += fmt.Sprintf("axis 0 %f\n", task.DY)
+			}
+			if task.DX != 0 {
+				line += fmt.Sprintf("axis 1 %f\n", task.DX)
+			}
+		case "ping":
+			line = "ping\n"
+		}
+
+		if line != "" {
+			_, _ = globalInputWriter.Write([]byte(line))
 		}
 	}
 }
@@ -79,13 +103,16 @@ func startInputForwarder() {
 	// We'll use an environment variable for this later if needed.
 	addr := "localhost:12346"
 
+	var connectedOnce bool
 	for {
 		conn, err := net.Dial("tcp", addr)
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		log.Printf("TCP Input Forwarder connected to %s", addr)
+		if connectedOnce {
+			log.Printf("TCP Input Forwarder connected to %s", addr)
+		}
 
 		if tcpConn, ok := conn.(*net.TCPConn); ok {
 			tcpConn.SetNoDelay(true)
@@ -98,9 +125,12 @@ func startInputForwarder() {
 		for {
 			_, err := conn.Read(buf)
 			if err != nil {
-				log.Printf("Input connection lost: %v", err)
+				if connectedOnce {
+					log.Printf("Input connection lost: %v", err)
+				}
 				break
 			}
+			connectedOnce = true
 		}
 
 		globalInputWriter.setConn(nil)

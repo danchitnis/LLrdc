@@ -60,6 +60,7 @@ docker run -d \
   -e PULSE_SERVER=unix:/tmp/pulseaudio.socket \
   -e USE_DEBUG_INPUT=true \
   -p 12346:12346 \
+  -p 12348:12348 \
   --add-host host.docker.internal:host-gateway \
   "${IMAGE_NAME}:${IMAGE_TAG}" > /dev/null
 

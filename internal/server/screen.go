@@ -43,7 +43,7 @@ func initScreenSize(maxW, maxH int) {
 }
 
 func forceSetScreenSize(width, height int) bool {
-	// Ensure 8-pixel alignment for maximum encoder compatibility
+	// Ensure 8-pixel alignment for maximum compatibility
 	width = (width / 8) * 8
 	height = (height / 8) * 8
 
@@ -78,6 +78,10 @@ func SetScreenSize(width, height int) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
+
+	// Ensure 8-pixel alignment for maximum compatibility
+	width = (width / 8) * 8
+	height = (height / 8) * 8
 
 	if InitialRes > 0 {
 		return false // Ignore client resizes when a fixed resolution is active

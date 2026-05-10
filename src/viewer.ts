@@ -96,7 +96,7 @@ function buildConfigMessage(): ConfigMessage {
     } else {
         config.quality = parseInt(qualitySlider.value, 10);
     }
-    config.framerate = parseInt(framerateSelect.value, 10);
+    config.framerate = parseInt(framerateSelect.value, 10) || 30;
     if (hdpiSelect) {
         config.hdpi = parseInt(hdpiSelect.value, 10);
     }

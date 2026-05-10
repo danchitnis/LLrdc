@@ -320,7 +320,14 @@ if [ "$USE_NVIDIA" = "true" ]; then
 fi
 
 # Detect number of CPUs for maximum throughput
-NUM_CPUS=$(nproc)
+if command -v nproc &> /dev/null; then
+  NUM_CPUS=$(nproc)
+elif command -v sysctl &> /dev/null; then
+  # Fallback for macOS
+  NUM_CPUS=$(sysctl -n hw.logicalcpu)
+else
+  NUM_CPUS=4 # Safe fallback
+fi
 CPU_LIST="0-$((NUM_CPUS - 1))"
 
 

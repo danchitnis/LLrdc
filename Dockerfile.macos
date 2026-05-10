@@ -114,4 +114,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/
 EXPOSE 8080
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/app/llrdc", "--capture-mode", "agent", "--agent-address", "host.docker.internal:12345", "--fps", "60"]
+CMD ["/app/llrdc", "--capture-mode", "agent", "--agent-address", "host.docker.internal:12345", "--fps", "30"]

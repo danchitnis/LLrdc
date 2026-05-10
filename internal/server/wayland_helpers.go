@@ -37,7 +37,7 @@ func applyHdpiSettings(env []string) {
 	}
 
 	dpi := int(float64(HDPI) * 96.0 / 100.0)
-	log.Printf("Applying HDPI scaling: %d%% (DPI: %d)", HDPI, dpi)
+	log.Printf("Applying HDPI desktop scaling: %d%% (DPI: %d)", HDPI, dpi)
 
 	waylandScale := 1.0
 	if HDPI > 100 {
@@ -46,13 +46,7 @@ func applyHdpiSettings(env []string) {
 
 	waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
 
-	// 1. Set Wayland compositor scale
-	log.Printf("Applying Wayland compositor scale: %f", waylandScale)
-	if err := runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--scale", fmt.Sprintf("%f", waylandScale)}, waylandEnv); err != nil {
-		log.Printf("Warning: wlr-randr --scale failed: %v", err)
-	}
-
-	// 2. Set XFCE/GTK scaling properties via xfconf
+	// 1. Set XFCE/GTK scaling properties via xfconf
 	// Set GDK scale (integer)
 	gdkScale := int(waylandScale)
 	if gdkScale < 1 {
@@ -70,22 +64,30 @@ func resizeDisplay(width, height int) error {
 		waylandScale = float64(HDPI) / 100.0
 	}
 
+	// Standard mode string (without FPS)
 	modeStr := fmt.Sprintf("%dx%d", width, height)
+	// Custom mode string (with FPS)
+	customModeStr := fmt.Sprintf("%dx%d@%d", width, height, FPS)
 	scaleStr := fmt.Sprintf("%.6f", waylandScale)
-	log.Printf("Resizing Wayland display (HEADLESS-1) to %s with scale %s", modeStr, scaleStr)
+
+	log.Printf("Resizing Wayland display (HEADLESS-1) to %dx%d @ %d FPS with scale %s", width, height, FPS, scaleStr)
 	env := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
 
+	// Try standard --mode first.
 	args := []string{"--output", "HEADLESS-1", "--mode", modeStr, "--scale", scaleStr}
 	if err := runWithEnv("wlr-randr", args, env); err != nil {
-		log.Printf("Warning: wlr-randr --mode failed: %v. Trying --custom-mode.", err)
-		args = []string{"--output", "HEADLESS-1", "--custom-mode", modeStr + "@60", "--scale", scaleStr}
+		log.Printf("Warning: wlr-randr --mode %s failed: %v. Trying --custom-mode %s.", modeStr, err, customModeStr)
+
+		// Fallback to --custom-mode
+		args = []string{"--output", "HEADLESS-1", "--custom-mode", customModeStr, "--scale", scaleStr}
 		if err := runWithEnv("wlr-randr", args, env); err != nil {
-			log.Printf("Error: wlr-randr --custom-mode also failed: %v", err)
+			log.Printf("Error: wlr-randr --custom-mode also failed: %v. Output might be unstable.", err)
 			return err
 		}
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	// Give the compositor a moment to process the mode change
+	time.Sleep(200 * time.Millisecond)
 	return nil
 }
 

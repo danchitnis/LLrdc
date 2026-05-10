@@ -147,7 +147,7 @@ test.describe('Wayland HDPI Scaling', () => {
     }, {
       message: 'Server should apply dynamic 150% HDPI scaling',
       timeout: 20000,
-    }).toContain('Applying HDPI scaling: 150% (DPI: 144)');
+    }).toContain('Applying HDPI desktop scaling: 150% (DPI: 144)');
 
     console.log('HDPI change verified in server logs.');
 

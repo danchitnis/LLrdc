@@ -336,14 +336,14 @@ touch "$READY_FILE"
 	waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR="+runDir, "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:99")
 
 	// Set initial resolution and apply HDPI
+	displayChangeMu.Lock()
 	w, h = GetScreenSize()
 	log.Printf("Setting initial Wayland resolution to %dx%d", w, h)
 
-	// Define it first (labwc/wlroots sometimes needs this)
-	_ = runWithEnv("wlr-randr", []string{"--output", "HEADLESS-1", "--custom-mode", fmt.Sprintf("%dx%d@60", w, h)}, waylandEnv)
-
 	_ = resizeDisplay(w, h)
 	applyHdpiSettings(waylandEnv)
+	displayChangeMu.Unlock()
+
 	if err := waitForDisplayState(w, h, 10*time.Second); err != nil {
 		return err
 	}

@@ -23,7 +23,7 @@ type WebRTCFrame struct {
 var (
 	webrtcUDPMux    ice.UDPMux
 	videoTrackMutex sync.RWMutex
-	webrtcFrameChan = make(chan WebRTCFrame, 1000)
+	webrtcFrameChan = make(chan WebRTCFrame, 2)
 )
 
 func InitWebRTCMux() {
@@ -68,27 +68,29 @@ func writeFrameToTrack(frame WebRTCFrame) {
 		return
 	}
 
-	if err := writer.WriteFrame(frame); err == nil {
-		recordVideoFrameWrite()
-	} else {
-		errMsg := err.Error()
-		if errMsg != "io: read/write on closed pipe" && errMsg != "Track not bound" {
-			log.Printf("WebRTC video write error: %v", err)
+	// Use a non-blocking write or short timeout to prevent pipeline stalls
+	// if the WebRTC connection is failing. 100ms is enough for local loopback.
+	done := make(chan struct{}, 1)
+	go func() {
+		if err := writer.WriteFrame(frame); err == nil {
+			recordVideoFrameWrite()
+		} else {
+			errMsg := err.Error()
+			if errMsg != "io: read/write on closed pipe" && errMsg != "Track not bound" {
+				log.Printf("WebRTC video write error: %v", err)
+			}
 		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		// Drop frame if write takes too long
 	}
 }
 
 func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string, trace *latencyProbeSendTrace) {
-	if WebRTCBufferSize <= 0 && WebRTCLowLatency {
-		writeFrameToTrack(WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec, LatencyTrace: trace})
-		return
-	}
-
-	limit := WebRTCBufferSize
-	if limit < 1 {
-		limit = 1
-	}
-
 	newFrame := WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec, LatencyTrace: trace}
 
 	select {
@@ -97,23 +99,20 @@ func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, code
 	default:
 	}
 
-	for {
+	// Channel is full. Drop oldest frame and try to insert the new one.
+	// This ensures we never block the encoder pipeline.
+	select {
+	case <-webrtcFrameChan:
 		select {
-		case <-webrtcFrameChan:
-			select {
-			case webrtcFrameChan <- newFrame:
-				return
-			default:
-				continue
-			}
+		case webrtcFrameChan <- newFrame:
 		default:
-			select {
-			case webrtcFrameChan <- newFrame:
-				return
-			default:
-				log.Printf("Warning: WriteWebRTCFrame failed to queue frame even after flushing channel")
-				return
-			}
+			// Extremely rare race where channel filled again immediately
+		}
+	default:
+		// Channel was full but then drained between select blocks
+		select {
+		case webrtcFrameChan <- newFrame:
+		default:
 		}
 	}
 }

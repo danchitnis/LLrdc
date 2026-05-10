@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/binary"
 	"io"
 	"log"
 	"net"
@@ -33,6 +32,11 @@ func startAgentRelay() {
 
 				go func(s net.Conn) {
 					defer s.Close()
+					
+					if tcpConn, ok := s.(*net.TCPConn); ok {
+						_ = tcpConn.SetNoDelay(true)
+					}
+
 					log.Printf("Agent relay: new connection from %v", s.RemoteAddr())
 					dst, err := net.Dial("tcp", AgentAddress)
 					if err != nil {
@@ -40,20 +44,24 @@ func startAgentRelay() {
 						return
 					}
 					defer dst.Close()
+					
+					if tcpDst, ok := dst.(*net.TCPConn); ok {
+						_ = tcpDst.SetNoDelay(true)
+					}
 
-					// Send resolution header first
-					w, h := GetScreenSize()
-					header := make([]byte, 16)
-					binary.BigEndian.PutUint64(header[0:8], uint64(w))
-					binary.BigEndian.PutUint64(header[8:16], uint64(h))
-					if _, err := dst.Write(header); err != nil {
+					// Send resolution header first using split protocol header
+					header := getSplitHeader()
+					if _, err := dst.Write(header.Encode()); err != nil {
 						log.Printf("Agent relay failed to write header: %v", err)
 						return
 					}
 
-					log.Printf("Agent relay forwarding %dx%d stream to host %s", w, h, AgentAddress)
+					log.Printf("Agent relay forwarding %dx%d stream (gen %d) to host %s", header.Width, header.Height, header.Generation, AgentAddress)
+					
+					NotifyFirstFrame(header.Generation)
+
 					_, _ = io.Copy(dst, s)
-					log.Printf("Agent relay stream finished for %dx%d", w, h)
+					log.Printf("Agent relay stream finished for %dx%d (gen %d)", header.Width, header.Height, header.Generation)
 				}(src)
 			}
 		}()

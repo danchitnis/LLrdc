@@ -23,9 +23,10 @@ var (
 func init() {
 	// Initialize server config with some defaults for macOS
 	server.Port = 8080
-	server.FPS = 60
+	server.FPS = 30
 	server.VideoCodec = "h264"
 	server.WebRTCLowLatency = true
+	server.HDPI = 100
 
 	// Initialize WebRTC track and mux
 	server.InitWebRTC()
@@ -54,6 +55,9 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 			"fps":        server.FPS,
 		},
 	})
+
+	var configMu sync.Mutex
+	var configTimer *time.Timer
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -86,14 +90,60 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 					configMap = c
 				}
 			}
+
+			log.Printf("Received %s message: %v", msg["type"], configMap)
+
 			if w, ok1 := configMap["width"].(float64); ok1 {
 				if h, ok2 := configMap["height"].(float64); ok2 {
-					server.SetScreenSize(int(w), int(h))
+					// macOS host enforces 32px alignment with exceptions for standard 720p/1080p heights
+					width := (int(w) / 32) * 32
+					height := int(h)
+					if height != 720 && height != 1080 {
+						height = (height / 32) * 32
+					}
+					server.SetScreenSize(width, height)
+				}
+			}
+			if maxResFloat, ok := configMap["max_res"].(float64); ok {
+				maxRes := int(maxResFloat)
+				if server.InitialRes != maxRes {
+					log.Printf("Received max resolution config: %dp", maxRes)
+					server.InitialRes = maxRes
+					if server.InitialRes > 0 {
+						server.UpdateScreenSizeFromInitialRes()
+					}
+				}
+			}
+			if fps, ok := configMap["framerate"].(float64); ok {
+				if fps > 0 && int(fps) != server.FPS {
+					server.FPS = int(fps)
+				}
+			} else if fps, ok := configMap["fps"].(float64); ok {
+				if fps > 0 && int(fps) != server.FPS {
+					server.FPS = int(fps)
+				}
+			}
+			if hdpi, ok := configMap["hdpi"].(float64); ok {
+				if hdpi > 0 && int(hdpi) != server.HDPI {
+					server.HDPI = int(hdpi)
 				}
 			}
 
-			// Forward the entire message to the agent so it can resize the display and restart FFmpeg
-			forwardAgentMsg(msg)
+			// Debounce applying the merged configuration to the agent
+			configMu.Lock()
+			if configTimer != nil {
+				configTimer.Stop()
+			}
+			configTimer = time.AfterFunc(100*time.Millisecond, func() {
+				width, height := server.GetScreenSize()
+				gen := nextGeneration()
+				log.Printf("Applying debounced config (gen %d): %dx%d @ %d FPS (HDPI %d%%)", gen, width, height, server.FPS, server.HDPI)
+				encMgr.Recreate(width, height, server.FPS, gen)
+				if globalControlClient != nil {
+					globalControlClient.ApplyConfig(width, height, server.FPS, server.HDPI, gen)
+				}
+			})
+			configMu.Unlock()
 
 		default:
 			// Route other messages (input) to HandleInputMessage

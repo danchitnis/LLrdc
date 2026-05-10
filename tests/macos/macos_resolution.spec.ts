@@ -15,7 +15,7 @@ test('macOS split architecture supports dynamic resolution switching', async ({ 
     await page.waitForFunction(() => {
         const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
         return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 0;
-    }, { timeout: 20000 });
+    }, { timeout: 15000 });
 
     // Capture initial resolution (default should be 1080p if not changed)
     let dims = await video.evaluate((v: HTMLVideoElement) => ({ w: v.videoWidth, h: v.videoHeight }));
@@ -40,7 +40,7 @@ test('macOS split architecture supports dynamic resolution switching', async ({ 
     await page.waitForFunction(() => {
         const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
         return vid && vid.videoWidth === 1280 && vid.videoHeight === 720;
-    }, { timeout: 30000 });
+    }, { timeout: 15000 });
 
     dims = await video.evaluate((v: HTMLVideoElement) => ({ w: v.videoWidth, h: v.videoHeight }));
     expect(dims.w).toBe(1280);
@@ -64,7 +64,7 @@ test('macOS split architecture supports dynamic resolution switching', async ({ 
     await page.waitForFunction(() => {
         const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
         return vid && vid.videoWidth === 1920 && vid.videoHeight === 1080;
-    }, { timeout: 30000 });
+    }, { timeout: 15000 });
 
     dims = await video.evaluate((v: HTMLVideoElement) => ({ w: v.videoWidth, h: v.videoHeight }));
     expect(dims.w).toBe(1920);
@@ -99,7 +99,7 @@ test('macOS split architecture supports dynamic resolution switching', async ({ 
         const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
         // In responsive mode, the video might be slightly smaller than viewport due to UI
         return vid && vid.videoWidth > 800 && vid.videoWidth <= 1000;
-    }, { width: customWidth, height: customHeight }, { timeout: 30000 });
+    }, { width: customWidth, height: customHeight }, { timeout: 15000 });
 
     dims = await video.evaluate((v: HTMLVideoElement) => ({ w: v.videoWidth, h: v.videoHeight }));
     console.log(`Responsive video resolution: ${dims.w}x${dims.h}`);

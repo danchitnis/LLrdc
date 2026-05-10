@@ -36,7 +36,9 @@ func Run() error {
 
 	InitWebRTC()
 	startStreaming(broadcastVideoFrame)
-	if CaptureMode != CaptureModeAgent {
+	if CaptureMode == CaptureModeAgent {
+		go startAgentControl()
+	} else {
 		startAudioStreaming()
 	}
 	startHTTPServer()

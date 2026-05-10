@@ -22,6 +22,9 @@ cleanup() {
         kill "$MACOS_SERVER_PID" 2>/dev/null || true
     fi
     
+    # Also catch any rogue instances
+    killall macos-server 2>/dev/null || true
+    
     # Stop the Docker container
     docker stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
     docker rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -32,6 +35,10 @@ cleanup() {
 
 # Trap SIGINT (Ctrl+C) and SIGTERM
 trap cleanup SIGINT SIGTERM
+
+echo "🧹 Cleaning up previous session..."
+killall macos-server 2>/dev/null || true
+docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
 echo "📦 Building components..."
 npm run build --silent
@@ -65,6 +72,7 @@ docker run -d \
   --shm-size=2gb \
   -e PULSE_SERVER=unix:/tmp/pulseaudio.socket \
   -p 12346:12346 \
+  -p 12348:12348 \
   --add-host host.docker.internal:host-gateway \
   "${IMAGE_NAME}:${IMAGE_TAG}" > /dev/null
 

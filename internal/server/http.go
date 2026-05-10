@@ -303,6 +303,9 @@ func broadcastConfig(restarted bool) {
 }
 
 func applyDisplayChange(previousStreamID uint32, width, height int, reason string) {
+	displayChangeMu.Lock()
+	defer displayChangeMu.Unlock()
+
 	if TestPattern {
 		RestartForResize()
 		return
@@ -314,11 +317,14 @@ func applyDisplayChange(previousStreamID uint32, width, height int, reason strin
 		log.Printf("Display resize failed for %s: %v", reason, err)
 	}
 
-	if err := waitForDisplayState(width, height, 5*time.Second); err != nil {
+	applyHdpiSettings(os.Environ())
+
+	if err := waitForDisplayState(width, height, 2*time.Second); err != nil {
 		log.Printf("Display change did not reach requested state for %s: %v", reason, err)
 	}
 
 	ResumeStreaming()
+
 	PrimeFrameGeneration(0, 5, 100*time.Millisecond)
 	if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
 		log.Printf("Display-changed stream did not become ready in time for %s: %v", reason, err)
@@ -331,7 +337,7 @@ func HandleInputMessage(msg map[string]interface{}) {
 	ts, _ := msg["ts"].(float64)
 	sentTime := int64(ts)
 
-	if UseDebugInput && sentTime > 0 {
+	if UseDebugInput && sentTime > 0 && msgType != "mousemove" {
 		log.Printf("HOST_RECV: type=%s, delay=%v ms", msgType, benchmarkClockNowMs()-sentTime)
 	}
 
@@ -467,7 +473,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					if HDPI != hdpi {
 						log.Printf("Received HDPI config: %d%%", hdpi)
 						HDPI = hdpi
-						applyHdpiSettings(os.Environ())
 						displayResizeRequested = true
 						displayChangeReason = "HDPI update"
 					}
