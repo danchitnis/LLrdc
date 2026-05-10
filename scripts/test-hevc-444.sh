@@ -21,8 +21,10 @@ docker run -d --name "${CONTAINER_NAME}" \
   --network host \
   --device /dev/dri:/dev/dri \
   -e USE_INTEL=true \
-  -e VIDEO_CODEC=h265 \
+  -e INTEL_RENDER_NODE=/dev/dri/renderD130 \
+  -e VIDEO_CODEC=h265_qsv \
   -e CHROMA=444 \
+  -e CAPTURE_MODE=direct \
   danchitnis/llrdc:intel \
   /app/llrdc --port "${SERVER_PORT}" > /tmp/hevc-444-server.log 2>&1
 
@@ -52,6 +54,13 @@ CLIENT_PID=$!
 for _ in {1..20}; do
   if grep -qE "Decoded|First frame|native frame presented" /tmp/hevc-444-client.log; then
     echo "✅ Stream successfully decoded."
+    if docker logs "${CONTAINER_NAME}" 2>&1 | grep -qE "profile=rext"; then
+      echo "✅ Rext profile confirmed in encoder arguments (high-quality 4:4:4)."
+    else
+      echo "❌ Rext profile NOT found in encoder arguments."
+      docker logs "${CONTAINER_NAME}" 2>&1 | grep -iE "codec|profile" | head -n 20
+      exit 1
+    fi
     exit 0
   fi
   if ! ps -p $CLIENT_PID > /dev/null; then
@@ -64,4 +73,3 @@ done
 
 echo "❌ Timeout waiting for stream."
 exit 1
-

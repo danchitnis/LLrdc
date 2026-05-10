@@ -48,6 +48,7 @@ func buildQSVH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrTh
 	return outputArgs
 }
 
+// internal/server/ffmpeg_intel.go
 func buildQSVH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int, chroma string) []string {
 	var outputArgs []string
 

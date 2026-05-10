@@ -290,8 +290,10 @@ func InitConfig() {
 		if QSVAvailable {
 			log.Printf("Intel QSV hardware acceleration detected")
 			renderNode := resolveIntelRenderNode()
-			checkCmd := fmt.Sprintf("TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -vf format=nv12,hwupload -vaapi_device %s -c:v hevc_vaapi -bf 0 -rc_mode CBR -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -aud 1 -f hevc \"$TMP\" >/dev/null 2>&1 && [ \"$(ffprobe -hide_banner -show_frames -select_streams v -print_format compact=nk=1:p=0 \"$TMP\" 2>/dev/null | wc -l)\" -gt 10 ] && echo true || echo false", renderNode)
-			outH265QSV, _ := exec.Command("bash", "-c", checkCmd).Output()
+			checkCmd := fmt.Sprintf("TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -init_hw_device vaapi=hw:%s -filter_hw_device hw -vf format=nv12,hwupload -c:v hevc_vaapi -bf 0 -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -f hevc \"$TMP\" >/dev/null 2>&1 && echo true || echo false", renderNode)
+			cmd := exec.Command("bash", "-c", checkCmd)
+			cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run")
+			outH265QSV, _ := cmd.Output()
 			H265QSVAvailable = strings.TrimSpace(string(outH265QSV)) == "true"
 			if H265QSVAvailable {
 				log.Printf("Intel H.265 hardware encode support detected")
@@ -308,7 +310,7 @@ func InitConfig() {
 		}
 	}
 
-	if UseIntel && VideoCodec == "h265_qsv" && !H265QSVAvailable {
+	if UseIntel && (VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi") && !H265QSVAvailable {
 		if CaptureMode == CaptureModeDirect {
 			log.Fatalf("Invalid direct-buffer configuration: Intel H.265 hardware encode is not supported on this FFmpeg/driver stack; use h264_qsv or av1_qsv for direct mode")
 		}

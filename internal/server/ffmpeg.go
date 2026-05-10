@@ -67,7 +67,7 @@ func ResumeStreaming() {
 }
 
 func isQSVCodec(codec string) bool {
-	return codec == "h264_qsv" || codec == "h265_qsv" || codec == "av1_qsv" || codec == "h264_vaapi" || codec == "hevc_vaapi" || codec == "av1_vaapi"
+	return codec == "h264_qsv" || codec == "h265_qsv" || codec == "hevc_qsv" || codec == "av1_qsv" || codec == "h264_vaapi" || codec == "hevc_vaapi" || codec == "av1_vaapi"
 }
 
 func SetChroma(chroma string) {
@@ -123,7 +123,7 @@ func resolveRequestedVideoCodec(codec string) string {
 			if H265QSVAvailable {
 				return "h265_qsv"
 			}
-			return "hevc_vaapi"
+			return "h265_vaapi"
 		}
 		if codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv" {
 			if QSVAvailable {
@@ -131,10 +131,11 @@ func resolveRequestedVideoCodec(codec string) string {
 			}
 			return "h264_vaapi"
 		}
-		if codec == "av1" || codec == "av1_qsv" {
+		if codec == "av1" || codec == "av1_qsv" || codec == "av1_vaapi" {
 			if AV1QSVAvailable {
 				return "av1_qsv"
 			}
+			return "av1_vaapi"
 		}
 	}
 	return codec
@@ -388,7 +389,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				codecName = "h264"
 				format = "h264"
 			} else if VideoCodec == "h264_qsv" {
-				codec = "h264_vaapi"
+				codec = "h264_qsv"
 				codecName = "h264"
 				format = "h264"
 			} else if VideoCodec == "h265" {
@@ -462,7 +463,14 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 
 					ffmpegArgs = append(ffmpegArgs, "-f", "pipe:1")
 
-					finalArgs := append([]string{"-y", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", w, h, FPS)}, ffmpegArgs...)
+					var hwArgs []string
+					if isQSVCodec(VideoCodec) {
+						renderNode := resolveIntelRenderNode()
+						hwArgs = []string{"-init_hw_device", fmt.Sprintf("qsv=hw:%s", renderNode), "-filter_hw_device", "hw"}
+					}
+
+					finalArgs := append(append([]string{"-y"}, hwArgs...), "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", w, h, FPS))
+					finalArgs = append(finalArgs, ffmpegArgs...)
 					log.Printf("FFmpeg testsrc command: ffmpeg %v", finalArgs)
 					cmd = exec.Command("ffmpeg", finalArgs...)
 				}
@@ -539,7 +547,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						args = append(args, "-p", "rc=vbr", "-p", "cq=30")
 					}
 
-					if codec == "h264_nvenc" || codec == "hevc_nvenc" {
+					if codec == "h264_nvenc" {
 						args = append(args, "-p", "aud=1")
 					}
 				} else if isQSVCodec(codec) {
@@ -562,6 +570,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					if Chroma == "444" {
 						filterFormat = "vuyx"
 					}
+
 					args = append(args, "-F", fmt.Sprintf("scale_vaapi=format=%s:out_range=full,fps=%d", filterFormat, FPS))
 
 					if codec == "h264_vaapi" {
@@ -612,7 +621,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						if codec == "libx264" {
 							args = append(args, "-p", fmt.Sprintf("x264-params=aud=1:fps=%d", FPS))
 						} else {
-							args = append(args, "-p", fmt.Sprintf("x265-params=aud=1:fps=%d", FPS))
+							args = append(args, "-p", fmt.Sprintf("x265-params=fps=%d", FPS))
 						}
 					} else if codec == "libaom-av1" {
 						args = append(args, "-p", "usage=realtime", "-p", "row-mt=1", "-p", "lag-in-frames=0", "-p", "error-resilient=1")
