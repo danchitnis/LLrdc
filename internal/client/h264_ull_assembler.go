@@ -1,6 +1,8 @@
 package client
 
 import (
+	"encoding/binary"
+	"fmt"
 	"strings"
 
 	"github.com/pion/rtp"
@@ -51,13 +53,30 @@ func (a *h264ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetR
 		a.reset()
 	}
 
-	payload, err := a.packetizer.Unmarshal(packet.Payload)
-	if err != nil {
+	if len(packet.Payload) < 1 {
 		a.reset()
-		return frame, false, true, err
+		return frame, false, true, fmt.Errorf("h264 RTP payload empty")
 	}
 
+	payload := packet.Payload
+	naluType := payload[0] & 0x1F
+
 	if !a.active {
+		// Only start if this is a valid NALU boundary.
+		// Valid starts: Single NALU (1-23), STAP-A (24), or FU-A Start (28 with S=1).
+		canStart := false
+		if naluType > 0 && naluType < 24 {
+			canStart = true
+		} else if naluType == 24 {
+			canStart = true
+		} else if naluType == 28 && len(payload) >= 2 && (payload[1]&0x80) != 0 {
+			canStart = true
+		}
+
+		if !canStart {
+			return frame, false, false, nil // Ignore middle-of-frame packets when not active
+		}
+
 		a.active = true
 		a.timestamp = packet.Timestamp
 		a.nextSequence = packet.SequenceNumber + 1
@@ -65,11 +84,41 @@ func (a *h264ULLAssembler) push(packet *rtp.Packet, timing packetTiming, packetR
 		a.firstDecryptedPacketQueuedAt = timing.firstDecryptedPacketQueuedAt
 		a.firstRemotePacketAt = timing.firstRemotePacketAt
 		a.firstPacketReadAt = packetReadAt
-
-		a.frame = append(a.frame[:0], 0, 0, 0, 1)
-		a.frame = append(a.frame, payload...)
+		a.frame = a.frame[:0]
 	} else {
 		a.nextSequence = packet.SequenceNumber + 1
+	}
+
+	switch {
+	case naluType == 28: // FU-A
+		if len(payload) < 2 {
+			a.reset()
+			return frame, false, true, fmt.Errorf("h264 FU-A payload too short")
+		}
+		fuHeader := payload[1]
+		isStart := (fuHeader & 0x80) != 0
+		if isStart {
+			a.frame = append(a.frame, 0, 0, 0, 1)
+			reconstructed := (payload[0] & 0xE0) | (fuHeader & 0x1F)
+			a.frame = append(a.frame, reconstructed)
+			a.frame = append(a.frame, payload[2:]...)
+		} else {
+			a.frame = append(a.frame, payload[2:]...)
+		}
+	case naluType == 24: // STAP-A
+		off := 1
+		for off+2 <= len(payload) {
+			size := int(binary.BigEndian.Uint16(payload[off : off+2]))
+			off += 2
+			if off+size > len(payload) {
+				break
+			}
+			a.frame = append(a.frame, 0, 0, 0, 1)
+			a.frame = append(a.frame, payload[off:off+size]...)
+			off += size
+		}
+	default: // Single NAL Unit
+		a.frame = append(a.frame, 0, 0, 0, 1)
 		a.frame = append(a.frame, payload...)
 	}
 

@@ -49,9 +49,10 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial config to browser to force H264 UI
 	safeWriteJSON(map[string]interface{}{
-		"type":       "config",
-		"videoCodec": "h264",
-		"framerate":  server.FPS,
+		"type":               "config",
+		"videoCodec":         "h264",
+		"framerate":          server.FPS,
+		"webrtc_low_latency": server.WebRTCLowLatency,
 	})
 
 	var configMu sync.Mutex

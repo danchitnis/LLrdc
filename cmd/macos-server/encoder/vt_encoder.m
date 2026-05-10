@@ -122,17 +122,17 @@ VTEncoder* vt_encoder_create(int width, int height, int fps, int bitrate_kbps, u
 
     // Set properties for low latency
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
-    VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Baseline_AutoLevel);
+    VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_High_AutoLevel);
     
     int bitrate = bitrate_kbps * 1000;
     CFNumberRef bitrateNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &bitrate);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_AverageBitRate, bitrateNum);
     CFRelease(bitrateNum);
 
-    int limitBytes = (bitrate_kbps * 1500) / 8; // 1.5x average bitrate in bytes
+    int limitBytes = (bitrate_kbps * 1200) / 8; // 1.2x average bitrate in bytes
     CFNumberRef bytesNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &limitBytes);
-    int limitSeconds = 1;
-    CFNumberRef secondsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &limitSeconds);
+    double limitSeconds = 1.0;
+    CFNumberRef secondsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &limitSeconds);
     CFTypeRef limitsArray[] = { bytesNum, secondsNum };
     CFArrayRef limits = CFArrayCreate(kCFAllocatorDefault, limitsArray, 2, &kCFTypeArrayCallBacks);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_DataRateLimits, limits);
@@ -140,13 +140,24 @@ VTEncoder* vt_encoder_create(int width, int height, int fps, int bitrate_kbps, u
     CFRelease(secondsNum);
     CFRelease(limits);
 
-    int gop = fps * 2; // 2 second GOP
+    int gop = fps; // 1 second GOP
     CFNumberRef gopNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &gop);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_MaxKeyFrameInterval, gopNum);
     CFRelease(gopNum);
 
     // Disable B-frames for lowest latency
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse);
+
+    // Set expected frame rate to help the rate controller
+    CFNumberRef fpsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &fps);
+    VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ExpectedFrameRate, fpsNum);
+    CFRelease(fpsNum);
+
+    // Ensure we don't delay frames for rate control
+    int zero = 0;
+    CFNumberRef zeroNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &zero);
+    VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_MaxFrameDelayCount, zeroNum);
+    CFRelease(zeroNum);
 
     VTCompressionSessionPrepareToEncodeFrames(encoder->session);
 

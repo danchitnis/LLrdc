@@ -183,10 +183,6 @@ func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 
 	if WebRTCLowLatency {
 		log.Printf("WebRTC creating peer connection in low-latency mode")
-		s.DisableSRTPReplayProtection(true)
-		s.DisableSRTCPReplayProtection(true)
-		s.SetLite(true)
-		s.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
 	}
 
 	publicIP := resolveAdvertisedIP(requestHost)

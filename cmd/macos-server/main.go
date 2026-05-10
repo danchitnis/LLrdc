@@ -40,6 +40,7 @@ func main() {
 	server.CaptureMode = server.CaptureModeAgent
 	server.HDPI = 100
 	server.VideoCodec = "h264"
+	server.WebRTCLowLatency = true
 
 	// Set initial macOS split mode dimensions (1280x720 is a safe default)
 	server.SetScreenSize(1280, 720)

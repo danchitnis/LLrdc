@@ -43,8 +43,8 @@ func (m *EncoderManager) Recreate(width, height, fps int, generation uint64) {
 	m.fps = fps
 	m.generation = generation
 
-	bitrateKbps := 8000
-	log.Printf("Creating new VTEncoder: %dx%d@%d FPS (gen %d)", width, height, fps, generation)
+	bitrateKbps := 20000
+	log.Printf("Creating new VTEncoder: %dx%d@%d FPS (gen %d), bitrate %d kbps", width, height, fps, generation, bitrateKbps)
 	m.current = encoder.NewVTEncoder(width, height, fps, bitrateKbps, func(data []byte, isKeyframe bool) {
 		broadcastVideoFrame(data, isKeyframe)
 	})
