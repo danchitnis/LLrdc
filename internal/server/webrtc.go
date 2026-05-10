@@ -23,7 +23,7 @@ type WebRTCFrame struct {
 var (
 	webrtcUDPMux    ice.UDPMux
 	videoTrackMutex sync.RWMutex
-	webrtcFrameChan = make(chan WebRTCFrame, 2)
+	webrtcFrameChan = make(chan WebRTCFrame, 1000)
 )
 
 func InitWebRTCMux() {
@@ -91,6 +91,16 @@ func writeFrameToTrack(frame WebRTCFrame) {
 }
 
 func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string, trace *latencyProbeSendTrace) {
+	if WebRTCBufferSize <= 0 && WebRTCLowLatency {
+		writeFrameToTrack(WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec, LatencyTrace: trace})
+		return
+	}
+
+	limit := WebRTCBufferSize
+	if limit < 1 {
+		limit = 1
+	}
+
 	newFrame := WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec, LatencyTrace: trace}
 
 	select {

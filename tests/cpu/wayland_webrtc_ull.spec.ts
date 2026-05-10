@@ -141,6 +141,7 @@ const TARGET_BANDWIDTH_MBPS = Number.parseInt(process.env.LLRDC_TARGET_BANDWIDTH
 const TARGET_VIEWPORT_WIDTH = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_WIDTH ?? '1280', 10);
 const TARGET_VIEWPORT_HEIGHT = Number.parseInt(process.env.LLRDC_TARGET_VIEWPORT_HEIGHT ?? '720', 10);
 const TARGET_VIDEO_CODEC = process.env.LLRDC_TARGET_VIDEO_CODEC ?? 'vp8';
+const TARGET_USE_INTEL = (process.env.LLRDC_USE_INTEL ?? 'false') === 'true';
 const WARMUP_TRIALS = Number.parseInt(process.env.LLRDC_ULL_WARMUP_TRIALS ?? '5', 10);
 const MEASURED_TRIALS = Number.parseInt(process.env.LLRDC_ULL_TRIALS ?? '30', 10);
 const MIN_VALID_TRIALS = Number.parseInt(process.env.LLRDC_ULL_MIN_VALID_TRIALS ?? Math.min(25, MEASURED_TRIALS).toString(), 10);
@@ -170,7 +171,8 @@ async function startContainer(mode: LatencyMode, port: number, containerName: st
     } catch (_error) {}
 
     const ullArgs = mode === 'ull' ? '--webrtc-low-latency --webrtc-buffer 0 ' : '';
-    execSync(`./docker-run.sh ${ullArgs}--res ${TARGET_MAX_RES}p --capture-mode compat --detach --name ${containerName} --host-net`, {
+    const intelArg = TARGET_USE_INTEL ? '--intel ' : '';
+    execSync(`./docker-run.sh ${ullArgs}${intelArg}--res ${TARGET_MAX_RES}p --capture-mode compat --detach --name ${containerName} --host-net`, {
         env: {
             ...process.env,
             PORT: port.toString(),
@@ -183,7 +185,7 @@ async function startContainer(mode: LatencyMode, port: number, containerName: st
             ENABLE_AUDIO: 'false',
             VIDEO_CODEC: TARGET_VIDEO_CODEC,
             USE_NVIDIA: 'false',
-            USE_INTEL: 'false',
+            USE_INTEL: TARGET_USE_INTEL.toString(),
         },
         stdio: 'inherit',
     });
