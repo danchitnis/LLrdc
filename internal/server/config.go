@@ -18,6 +18,7 @@ var (
 	Chroma      string
 	UseNVIDIA   bool
 	UseIntel    bool
+	IntelRenderNode string
 	CaptureMode string
 
 	AV1NVENCAvailable       bool
@@ -78,6 +79,10 @@ func InitConfig() {
 
 	defaultUseNVIDIA := os.Getenv("USE_NVIDIA") == "true"
 	defaultUseIntel := os.Getenv("USE_INTEL") == "true"
+	defaultIntelRenderNode := os.Getenv("INTEL_RENDER_NODE")
+	if defaultIntelRenderNode == "" {
+		defaultIntelRenderNode = "/dev/dri/renderD128"
+	}
 	defaultCaptureMode := os.Getenv("CAPTURE_MODE")
 	if defaultCaptureMode == "" {
 		defaultCaptureMode = CaptureModeCompat
@@ -178,6 +183,7 @@ func InitConfig() {
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-nvidia", "Enable NVIDIA acceleration if available", UseNVIDIA)
 		printFlag(os.Stderr, "use-intel", "Enable Intel QSV acceleration if available", UseIntel)
+		printFlag(os.Stderr, "intel-render-node", "Path to Intel render node (e.g. /dev/dri/renderD128)", IntelRenderNode)
 		printFlag(os.Stderr, "capture-mode", "Capture mode (compat, direct, or agent)", CaptureMode)
 		printFlag(os.Stderr, "agent-address", "TCP address for remote agent streaming (e.g. host.docker.internal:12345)", AgentAddress)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
@@ -214,6 +220,7 @@ func InitConfig() {
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseNVIDIA, "use-nvidia", defaultUseNVIDIA, "Enable NVIDIA acceleration if available")
 	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel QSV acceleration if available")
+	flag.StringVar(&IntelRenderNode, "intel-render-node", defaultIntelRenderNode, "Path to Intel render node (e.g. /dev/dri/renderD128)")
 	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat, direct, or agent)")
 	flag.StringVar(&AgentAddress, "agent-address", defaultAgentAddress, "TCP address for remote agent streaming (e.g. host.docker.internal:12345)")
 	flag.BoolVar(&UseDebugFFmpeg, "use-debug-ffmpeg", defaultUseDebugFFmpeg, "Enable FFmpeg debugging")

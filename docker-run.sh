@@ -41,8 +41,7 @@ WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
 SERVER_HDPI="${HDPI:-0}"
 HOST_RENDER_GID="${RENDER_GID:-}"
 HOST_VIDEO_GID="${VIDEO_GID:-}"
-PREFERRED_INTEL_RENDER_NODE="/dev/dri/renderD129"
-FALLBACK_INTEL_RENDER_NODE="/dev/dri/renderD128"
+INTEL_RENDER_NODE="${INTEL_RENDER_NODE:-/dev/dri/renderD128}"
 
 WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}"
 WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}"
@@ -76,6 +75,16 @@ while [[ $# -gt 0 ]]; do
     --intel)
       USE_INTEL="true"
       shift
+      ;;
+    --intel-device)
+      if [ -n "${2:-}" ]; then
+        INTEL_RENDER_NODE="/dev/dri/render$2"
+        USE_INTEL="true"
+        shift 2
+      else
+        echo "Error: --intel-device requires an argument (e.g., D130)."
+        exit 1
+      fi
       ;;
     --chroma-444)
       SERVER_CHROMA="444"
@@ -266,10 +275,8 @@ if [ "$USE_INTEL" = "true" ]; then
       fi
     done
     if [ -z "$HOST_RENDER_GID" ]; then
-      if [ -e "$PREFERRED_INTEL_RENDER_NODE" ]; then
-        HOST_RENDER_GID=$(stat -c '%g' "$PREFERRED_INTEL_RENDER_NODE")
-      elif [ -e "$FALLBACK_INTEL_RENDER_NODE" ]; then
-        HOST_RENDER_GID=$(stat -c '%g' "$FALLBACK_INTEL_RENDER_NODE")
+      if [ -e "$INTEL_RENDER_NODE" ]; then
+        HOST_RENDER_GID=$(stat -c '%g' "$INTEL_RENDER_NODE")
       fi
     fi
     if [ -z "$HOST_VIDEO_GID" ]; then
@@ -403,6 +410,7 @@ DOCKER_RUN_CMD+=(
   --env "VIDEO_CODEC=${SERVER_VIDEO_CODEC}"
   --env "USE_NVIDIA=${USE_NVIDIA}"
   --env "USE_INTEL=${USE_INTEL}"
+  --env "INTEL_RENDER_NODE=${INTEL_RENDER_NODE}"
   --env "LIBVA_DRIVER_NAME=iHD"
   --env "CAPTURE_MODE=${SERVER_CAPTURE_MODE}"
   --env "TEST_PATTERN=${TEST_PATTERN:-}"

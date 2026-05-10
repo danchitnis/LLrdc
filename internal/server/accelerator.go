@@ -1,15 +1,11 @@
 package server
 
-import "os"
-
 type acceleratorMode string
 
 const (
 	acceleratorCPU      acceleratorMode = "cpu"
 	acceleratorNVIDIA   acceleratorMode = "nvidia"
 	acceleratorIntel    acceleratorMode = "intel"
-	defaultIntelRender                  = "/dev/dri/renderD129"
-	fallbackIntelRender                 = "/dev/dri/renderD128"
 )
 
 func currentAcceleratorMode() acceleratorMode {
@@ -33,10 +29,7 @@ func resolveIntelRenderNode() string {
 			return state.RenderNode
 		}
 	}
-	if _, err := os.Stat(defaultIntelRender); err == nil {
-		return defaultIntelRender
-	}
-	return fallbackIntelRender
+	return IntelRenderNode
 }
 
 func splitAnnexB(data []byte) [][]byte {

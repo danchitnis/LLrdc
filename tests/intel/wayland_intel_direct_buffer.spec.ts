@@ -5,7 +5,8 @@ import { fetchReadyz, getContainerImage, waitForServerReady, waitForStreamingFra
 const PORT = 8250 + Math.floor(Math.random() * 500);
 const SERVER_URL = `http://localhost:${PORT}`;
 const CONTAINER_NAME = `llrdc-wayland-intel-direct-${PORT}`;
-const ARC_A380_RENDER_NODE = '/dev/dri/renderD129';
+const INTEL_RENDER_NODE = process.env.INTEL_RENDER_NODE || 'D130';
+const EXPECTED_RENDER_NODE = INTEL_RENDER_NODE.startsWith('/dev/dri/render') ? INTEL_RENDER_NODE : `/dev/dri/render${INTEL_RENDER_NODE}`;
 
 function killPort(port: number) {
     try {
@@ -22,8 +23,8 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
         } catch (e) {}
 
-        console.log(`Starting server with --intel --direct-buffer --host-net on port ${PORT}...`);
-        execSync(`./docker-run.sh --intel --direct-buffer --host-net --detach --name ${CONTAINER_NAME}`, {
+        console.log(`Starting server with --intel --intel-device ${INTEL_RENDER_NODE} --direct-buffer --host-net on port ${PORT}...`);
+        execSync(`./docker-run.sh --intel --intel-device ${INTEL_RENDER_NODE} --direct-buffer --host-net --detach --name ${CONTAINER_NAME}`, {
             env: {
                 ...process.env,
                 IMAGE_NAME: containerImage.name,
@@ -61,7 +62,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
                 supported: true,
                 active: true,
                 captureMode: 'direct',
-                renderNode: ARC_A380_RENDER_NODE,
+                renderNode: EXPECTED_RENDER_NODE,
             },
             useIntel: true,
         });
@@ -72,7 +73,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
         }).toContain('Direct-buffer probe passed');
 
         const logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
-        expect(logs).toContain(`Direct-buffer probe passed (render node: ${ARC_A380_RENDER_NODE}`);
+        expect(logs).toContain(`Direct-buffer probe passed (render node: ${EXPECTED_RENDER_NODE}`);
         expect(logs).toContain('hardware capture is active');
 
         await page.goto(SERVER_URL);

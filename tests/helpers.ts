@@ -83,7 +83,7 @@ export async function readClientStats(page: Page): Promise<ClientStats> {
     }) as ClientStats;
 }
 
-export async function waitForStreamingFrames(page: Page, message: string, timeoutMs = 45000): Promise<void> {
+export async function waitForStreamingFrames(page: Page, message: string, timeoutMs = 10000): Promise<void> {
     await expect.poll(async () => {
         const before = await readClientStats(page);
         await page.waitForTimeout(2000);
