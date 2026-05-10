@@ -264,7 +264,7 @@ func ExecTask(task inputTask) error {
 		return err
 
 	case "keydown", "keyup":
-		keyCode := getLinuxKeyCode(task.Key)
+		keyCode := GetLinuxKeyCode(task.Key)
 		if keyCode == 0 {
 			return nil
 		}
@@ -378,8 +378,8 @@ func spawnApp(command string) {
 	log.Printf("Spawning app (stubbed): %s", command)
 }
 
-// getLinuxKeyCode maps browser e.code to Linux input keycodes
-func getLinuxKeyCode(code string) int {
+// GetLinuxKeyCode maps browser e.code to Linux input keycodes
+func GetLinuxKeyCode(code string) int {
 	m := map[string]int{
 		"KeyA": 30, "KeyB": 48, "KeyC": 46, "KeyD": 32, "KeyE": 18, "KeyF": 33, "KeyG": 34, "KeyH": 35,
 		"KeyI": 23, "KeyJ": 36, "KeyK": 37, "KeyL": 38, "KeyM": 50, "KeyN": 49, "KeyO": 24, "KeyP": 25,

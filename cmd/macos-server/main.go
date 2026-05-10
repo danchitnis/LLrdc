@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
@@ -107,14 +107,23 @@ func main() {
 			}
 		}
 
-		if inputConnected && controlConnected && readyGen == getGeneration() {
+		ready := inputConnected && controlConnected && readyGen == getGeneration()
+		
+		w.Header().Set("Content-Type", "application/json")
+		if ready {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("READY"))
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, "NOT READY: input=%v, control=%v, readyGen=%d, targetGen=%d",
-				inputConnected, controlConnected, readyGen, getGeneration())
 		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ready": ready,
+			"conditions": map[string]bool{
+				"input":   inputConnected,
+				"control": controlConnected,
+				"genMatch": readyGen == getGeneration(),
+			},
+		})
 	})
 
 	log.Printf("macOS Native Server listening on :%d", server.Port)

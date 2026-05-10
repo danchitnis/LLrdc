@@ -78,8 +78,14 @@ func startInputProcessor() {
 			}
 			line = fmt.Sprintf("button %d %d\n", btnCode, state)
 		case "keydown", "keyup":
-			// For now, we skip keys as they are not used for priming.
-			continue
+			keyCode := server.GetLinuxKeyCode(task.Key)
+			if keyCode != 0 {
+				state := 1
+				if task.Type == "keyup" {
+					state = 0
+				}
+				line = fmt.Sprintf("key %d %d\n", keyCode, state)
+			}
 		case "wheel":
 			if task.DY != 0 {
 				line += fmt.Sprintf("axis 0 %f\n", task.DY)
