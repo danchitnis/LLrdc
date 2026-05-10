@@ -170,6 +170,8 @@ func resolveAdvertisedIP(requestHost string) string {
 	return ""
 }
 
+var OnForceKeyframe func()
+
 func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
 
@@ -271,7 +273,15 @@ func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 						// Use 10 seconds cooldown
 						if now.Sub(lastRestart) > 10*time.Second {
 							log.Printf("Received PLI on video track and last restart was %v ago, restarting video stream to force keyframe...", now.Sub(lastRestart))
-							killFFmpegWithTimestamp()
+							if OnForceKeyframe != nil {
+								OnForceKeyframe()
+								lastFFmpegRestartTime.Store(&now)
+							} else if CaptureMode == CaptureModeAgent {
+								log.Printf("ERROR: PLI received but OnForceKeyframe is not set for Agent mode!")
+								lastFFmpegRestartTime.Store(&now)
+							} else {
+								killFFmpegWithTimestamp()
+							}
 						} else {
 							// log.Printf("Received PLI on video track but last restart was only %v ago, sending pings instead...", now.Sub(lastRestart))
 							TriggerPing()

@@ -111,6 +111,11 @@ func (c *AgentControlClient) handleMessage(msg splitproto.Message) {
 			c.mu.Unlock()
 			log.Printf("Agent reported first frame for generation %d", c.firstFrameGen)
 		}
+	case splitproto.MsgForceKeyframe:
+		log.Printf("Agent requested force keyframe")
+		if enc, _ := encMgr.Get(); enc != nil {
+			enc.ForceKeyframe()
+		}
 	}
 }
 

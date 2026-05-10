@@ -79,9 +79,14 @@ func handleAgentControlConnection(conn net.Conn) {
 func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 	log.Printf("Agent control: applying config: %v", config)
 
+	configChangeRequested := false
 	splitStateMu.Lock()
 	if gen, ok := config["generation"].(float64); ok {
-		splitState.generation = uint64(gen)
+		if splitState.generation != uint64(gen) {
+			log.Printf("Agent received generation config: %d", uint64(gen))
+			splitState.generation = uint64(gen)
+			configChangeRequested = true
+		}
 	}
 	if width, ok := config["width"].(float64); ok {
 		splitState.width = int(width)
@@ -103,7 +108,6 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 	splitStateMu.Unlock()
 
 	// Apply Wayland changes
-	configChangeRequested := false
 	if hdpi, ok := config["hdpi"].(float64); ok {
 		if int(hdpi) != HDPI {
 			log.Printf("Agent received HDPI config: %d%%", int(hdpi))

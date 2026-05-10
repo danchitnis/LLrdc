@@ -19,13 +19,12 @@ type vp8ULLVideoWriter struct {
 
 	mu           sync.Mutex
 	sequence     uint16
-	timestamp    uint32
-	frameStep    uint32
+	timestampOffset uint32
 	initialized  bool
 	maxFramePart int
-}
+	}
 
-func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*vp8ULLVideoWriter, error) {
+	func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*vp8ULLVideoWriter, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(capability, "video", "pion")
 	if err != nil {
 		return nil, err
@@ -33,10 +32,9 @@ func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily stri
 	return &vp8ULLVideoWriter{
 		track:        track,
 		codecFamily:  codecFamily,
-		frameStep:    frameSamples(),
-		maxFramePart: webrtcVideoOutboundMTU - 12 - vp8PayloadDescriptorSize,
+		maxFramePart: webrtcVideoOutboundMTU - 12,
 	}, nil
-}
+	}
 
 func (w *vp8ULLVideoWriter) TrackLocal() webrtc.TrackLocal {
 	return w.track
@@ -60,17 +58,18 @@ func (w *vp8ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	baseTimestamp := uint32(frame.CaptureTime.UnixNano() * 90000 / 1e9)
 	if !w.initialized {
 		w.sequence = cryptoRandomUint16()
-		w.timestamp = cryptoRandomUint32()
+		w.timestampOffset = cryptoRandomUint32() - baseTimestamp
 		w.initialized = true
 	}
 	if w.maxFramePart <= 0 {
 		w.maxFramePart = 1
 	}
 
-	err := writeVP8FrameRTP(w.track, frame.Data, w.timestamp, &w.sequence, w.maxFramePart, trace)
-	w.timestamp += w.frameStep
+	currentTimestamp := baseTimestamp + w.timestampOffset
+	err := writeVP8FrameRTP(w.track, frame.Data, currentTimestamp, &w.sequence, w.maxFramePart, trace)
 	if err != nil {
 		finishLatencyProbeFrameSend(trace, 0)
 		return err

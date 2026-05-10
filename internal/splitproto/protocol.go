@@ -68,5 +68,6 @@ const (
 	MsgConfigApplied = "config_applied"
 	MsgStreamStarted = "stream_started"
 	MsgFirstFrame    = "first_frame"
+	MsgForceKeyframe = "force_keyframe"
 	MsgError         = "error"
 )

@@ -39,22 +39,11 @@ func main() {
 	server.InitConfig()
 	server.CaptureMode = server.CaptureModeAgent
 	server.HDPI = 100
+	server.VideoCodec = "h264"
 
-	// If screen size wasn't set by flags, use defaults (1280x720 for macOS host)
+	// Set initial macOS split mode dimensions (1280x720 is a safe default)
+	server.SetScreenSize(1280, 720)
 	width, height := server.GetScreenSize()
-	if width == 1920 && height == 1080 { // Default from internal/server/screen.go
-		width, height = 1280, 720
-	}
-	
-	// macOS host enforces 32px alignment with exceptions for standard 720p/1080p heights
-	width = (width / 32) * 32
-	if height != 720 && height != 1080 {
-		height = (height / 32) * 32
-	}
-	server.SetScreenSize(width, height)
-	
-	// Refresh width/height after SetScreenSize alignment
-	width, height = server.GetScreenSize()
 
 	// 2. Initialize VideoToolbox Encoder
 	gen := nextGeneration()
@@ -63,6 +52,13 @@ func main() {
 		log.Fatal("Failed to create initial VideoToolbox encoder")
 	}
 	defer encMgr.Close()
+
+	server.OnForceKeyframe = func() {
+		log.Printf("Forcing VideoToolbox IDR frame")
+		if enc, _ := encMgr.Get(); enc != nil {
+			enc.ForceKeyframe()
+		}
+	}
 
 	// 3. Set up input forwarding and control client
 	agentHost := "127.0.0.1"

@@ -78,11 +78,11 @@ set +e
 
 if [ -n "$TEST_TO_RUN" ]; then
     echo "Running specific test: $TEST_TO_RUN"
-    ./test.sh "tests/macos/$TEST_TO_RUN"
+    npx playwright test "tests/macos/$TEST_TO_RUN" --workers=1 --reporter=line
     TEST_EXIT=$?
 else
     echo "Running all macOS tests..."
-    ./test.sh tests/macos/
+    npx playwright test tests/macos/ --workers=1 --reporter=line
     TEST_EXIT=$?
 fi
 set -e

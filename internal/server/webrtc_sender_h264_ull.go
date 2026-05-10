@@ -17,8 +17,7 @@ type h264ULLVideoWriter struct {
 
 	mu           sync.Mutex
 	sequence     uint16
-	timestamp    uint32
-	frameStep    uint32
+	timestampOffset uint32
 	initialized  bool
 	maxFramePart int
 }
@@ -31,7 +30,6 @@ func newH264ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily str
 	return &h264ULLVideoWriter{
 		track:        track,
 		codecFamily:  codecFamily,
-		frameStep:    frameSamples(),
 		maxFramePart: webrtcVideoOutboundMTU - 12,
 	}, nil
 }
@@ -58,14 +56,17 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	baseTimestamp := uint32(frame.CaptureTime.UnixNano() * 90000 / 1e9)
 	if !w.initialized {
 		w.sequence = cryptoRandomUint16()
-		w.timestamp = cryptoRandomUint32()
+		w.timestampOffset = cryptoRandomUint32() - baseTimestamp
 		w.initialized = true
 	}
 	if w.maxFramePart <= 2 {
 		w.maxFramePart = 3
 	}
+
+	currentTimestamp := baseTimestamp + w.timestampOffset
 
 	nalus := splitAnnexB(frame.Data)
 	var filteredNALUs [][]byte
@@ -86,7 +87,7 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 		isLastNALU := (i == len(filteredNALUs)-1)
 		isFirst := !sentFirst
 
-		err = writeH264NALURTP(w.track, nalu, w.timestamp, &w.sequence, w.maxFramePart, trace, isFirst, isLastNALU)
+		err = writeH264NALURTP(w.track, nalu, currentTimestamp, &w.sequence, w.maxFramePart, trace, isFirst, isLastNALU)
 		if err == nil {
 			sentFirst = true
 		} else {
@@ -94,7 +95,6 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 		}
 	}
 
-	w.timestamp += w.frameStep
 	if err != nil {
 		finishLatencyProbeFrameSend(trace, 0)
 		return err
