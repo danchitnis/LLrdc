@@ -14,11 +14,11 @@ import (
 )
 
 type AgentControlClient struct {
-	mu           sync.Mutex
-	conn         net.Conn
-	agentAddr    string
-	pendingGen   uint64
-	appliedGen   uint64
+	mu            sync.Mutex
+	conn          net.Conn
+	agentAddr     string
+	pendingGen    uint64
+	appliedGen    uint64
 	firstFrameGen uint64
 	connectedOnce bool
 }
@@ -119,7 +119,7 @@ func (c *AgentControlClient) handleMessage(msg splitproto.Message) {
 	}
 }
 
-func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generation uint64) {
+func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generation uint64, chroma string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -130,6 +130,11 @@ func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generatio
 		return
 	}
 
+	pixfmt := 0
+	if chroma == "444" {
+		pixfmt = 1
+	}
+
 	msg := splitproto.Message{
 		Type: splitproto.MsgApplyConfig,
 		Config: map[string]interface{}{
@@ -138,7 +143,7 @@ func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generatio
 			"fps":        fps,
 			"hdpi":       hdpi,
 			"generation": generation,
-			"pixfmt":     0, // YUV420p
+			"pixfmt":     pixfmt,
 		},
 	}
 
@@ -151,9 +156,8 @@ func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generatio
 
 func (c *AgentControlClient) ApplyCurrentConfig() {
 	width, height := server.GetScreenSize()
-	c.ApplyConfig(width, height, server.FPS, server.HDPI, getGeneration())
+	c.ApplyConfig(width, height, server.FPS, server.HDPI, getGeneration(), server.Chroma)
 }
-
 func (c *AgentControlClient) IsReady(targetGen uint64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

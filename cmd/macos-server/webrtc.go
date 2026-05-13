@@ -47,11 +47,22 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		return conn.WriteJSON(v)
 	}
 
-	// Send initial config to browser to force H264 UI
+	// Send initial config based on current server state to avoid config loops
+	reportedCodec := server.VideoCodec
+	if server.Chroma == "444" {
+		if server.VideoCodec == "h264" {
+			reportedCodec = "h264-444"
+		} else if server.VideoCodec == "h265" {
+			reportedCodec = "h265-444"
+		}
+	}
+
 	safeWriteJSON(map[string]interface{}{
 		"type":               "config",
-		"videoCodec":         "h264",
+		"videoCodec":         reportedCodec,
+		"chroma":             server.Chroma,
 		"framerate":          server.FPS,
+		"hdpi":               server.HDPI,
 		"webrtc_low_latency": server.WebRTCLowLatency,
 	})
 
@@ -92,25 +103,11 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 
 			log.Printf("Received %s message: %v", msg["type"], configMap)
 
+			reconnectNeeded := false
+
 			if w, ok1 := configMap["width"].(float64); ok1 {
 				if h, ok2 := configMap["height"].(float64); ok2 {
-					// macOS host enforces 32px alignment with exceptions for standard 720p/1080p heights
-					width := (int(w) / 32) * 32
-					height := int(h)
-					if height != 720 && height != 1080 {
-						height = (height / 32) * 32
-					}
-					server.SetScreenSize(width, height)
-				}
-			}
-			if maxResFloat, ok := configMap["max_res"].(float64); ok {
-				maxRes := int(maxResFloat)
-				if server.InitialRes != maxRes {
-					log.Printf("Received max resolution config: %dp", maxRes)
-					server.InitialRes = maxRes
-					if server.InitialRes > 0 {
-						server.UpdateScreenSizeFromInitialRes()
-					}
+					server.SetScreenSize(int(w), int(h))
 				}
 			}
 			if fps, ok := configMap["framerate"].(float64); ok {
@@ -128,6 +125,44 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			if codec, ok := configMap["videoCodec"].(string); ok {
+				oldCodec := server.VideoCodec
+				oldChroma := server.Chroma
+
+				if codec == "h264-444" {
+					server.Chroma = "444"
+					server.VideoCodec = "h264"
+				} else if codec == "h265-444" {
+					server.Chroma = "444"
+					server.VideoCodec = "h265"
+				} else {
+					server.VideoCodec = codec
+					if chroma, ok := configMap["chroma"].(string); ok {
+						server.Chroma = chroma
+					} else {
+						server.Chroma = "420"
+					}
+				}
+
+				if server.VideoCodec != oldCodec || server.Chroma != oldChroma {
+					log.Printf("Codec/Chroma changed detected: %s -> %s, %s -> %s", oldCodec, server.VideoCodec, oldChroma, server.Chroma)
+					reconnectNeeded = true
+				}
+			} else if chroma, ok := configMap["chroma"].(string); ok {
+				oldChroma := server.Chroma
+				server.Chroma = chroma
+				if server.Chroma != oldChroma {
+					log.Printf("Chroma change detected: %s -> %s", oldChroma, server.Chroma)
+					reconnectNeeded = true
+				}
+			}
+
+			if reconnectNeeded {
+				log.Printf("Re-initializing WebRTC track for new capabilities...")
+				server.InitWebRTCTrack()
+				server.KillFFmpegWithTimestamp() // No-op on macos-server but good practice
+			}
+
 			// Debounce applying the merged configuration to the agent
 			configMu.Lock()
 			if configTimer != nil {
@@ -136,13 +171,37 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 			configTimer = time.AfterFunc(100*time.Millisecond, func() {
 				width, height := server.GetScreenSize()
 				gen := nextGeneration()
-				log.Printf("Applying debounced config (gen %d): %dx%d @ %d FPS (HDPI %d%%)", gen, width, height, server.FPS, server.HDPI)
-				encMgr.Recreate(width, height, server.FPS, gen)
+				pixFmt := 0
+				if server.Chroma == "444" {
+					pixFmt = 1
+				}
+				log.Printf("Applying debounced config (gen %d): %s %dx%d (fmt %d)", gen, server.VideoCodec, width, height, pixFmt)
+				encMgr.Recreate(server.VideoCodec, width, height, server.FPS, pixFmt, gen)
 				if globalControlClient != nil {
-					globalControlClient.ApplyConfig(width, height, server.FPS, server.HDPI, gen)
+					globalControlClient.ApplyConfig(width, height, server.FPS, server.HDPI, gen, server.Chroma)
 				}
 			})
 			configMu.Unlock()
+
+			// Report current effective config back to client
+			// This confirms the choice and triggers client-side re-negotiation if needed
+			reportedCodec = server.VideoCodec
+			if server.Chroma == "444" {
+				if server.VideoCodec == "h264" {
+					reportedCodec = "h264-444"
+				} else if server.VideoCodec == "h265" {
+					reportedCodec = "h265-444"
+				}
+			}
+
+			safeWriteJSON(map[string]interface{}{
+				"type":               "config",
+				"videoCodec":         reportedCodec,
+				"chroma":             server.Chroma,
+				"framerate":          server.FPS,
+				"hdpi":               server.HDPI,
+				"webrtc_low_latency": server.WebRTCLowLatency,
+			})
 
 		default:
 			// Route other messages (input) to HandleInputMessage
@@ -151,10 +210,10 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func broadcastVideoFrame(data []byte, isKeyframe bool) {
+func broadcastVideoFrame(data []byte, isKeyframe bool, codec string) {
 	// Convert AVCC (4-byte length) to Annex-B (00 00 00 01)
 	annexB := avccToAnnexB(data)
-	server.WriteWebRTCFrame(annexB, 0, time.Now(), "h264", nil)
+	server.WriteWebRTCFrame(annexB, 0, time.Now(), codec, nil)
 }
 
 func avccToAnnexB(data []byte) []byte {

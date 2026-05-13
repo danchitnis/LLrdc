@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danchitnis/llrdc/internal/server"
 	"github.com/danchitnis/llrdc/internal/splitproto"
 )
 
@@ -55,12 +56,13 @@ func startVideoReceiver() {
 				return
 			}
 
+			codecFamily := server.VideoCodec
+			pixFmt := int(h.PixFmt)
 			enc, encGen := encMgr.Get()
-
 			// If the encoder state doesn't match the incoming stream, recreate it (synchronously in encMgr)
-			if enc == nil || enc.Width != width || enc.Height != height || encGen != generation {
-				log.Printf("Encoder mismatch: stream %dx%d (gen %d), encoder %v (gen %d). Recreating...", width, height, generation, enc, encGen)
-				encMgr.Recreate(width, height, int(h.FPS), generation)
+			if enc == nil || enc.Width != width || enc.Height != height || encGen != generation || enc.PixFmt != pixFmt {
+				log.Printf("Encoder mismatch: stream %dx%d (fmt %d, gen %d), encoder %v (gen %d). Recreating...", width, height, pixFmt, generation, enc, encGen)
+				encMgr.Recreate(codecFamily, width, height, int(h.FPS), pixFmt, generation)
 				enc, encGen = encMgr.Get()
 			}
 
@@ -69,7 +71,11 @@ func startVideoReceiver() {
 				return
 			}
 
-			frameSize := int(float64(width) * float64(height) * 1.5)
+			frameSizeMultiplier := 1.5
+			if h.PixFmt == 1 {
+				frameSizeMultiplier = 3.0
+			}
+			frameSize := int(float64(width) * float64(height) * frameSizeMultiplier)
 			buf := make([]byte, frameSize)
 
 			frameCount := 0

@@ -31,6 +31,8 @@
                         <select id="video-codec-select">
                             <option value="vp8">VP8</option>
                             <option value="h264">H.264 (CPU)</option>
+                            <option value="h264-444">H.264 (4:4:4 Screen Profile)</option>
+                            <option value="h265-444">HEVC (4:4:4 Screen Profile)</option>
                             <option value="h264_nvenc" class="codec-opt-gpu">H.264 (NVIDIA NVENC)</option>
                             <option value="h264_qsv" class="codec-opt-gpu">H.264 (Intel QSV)</option>
                             <option value="h265">H.265 (CPU)</option>
@@ -117,7 +119,7 @@
                             <input type="range" id="tile-size-slider" min="64" max="1024" step="64" value="512" style="flex: 1; margin: 0 10px;">
                             <span id="tile-size-value">512</span>
                         </div>
-                        <label title="Improve text clarity by avoiding chroma subsampling (H.264/AV1 only)"><input type="checkbox" id="chroma-checkbox"> Enable YUV 4:4:4 Chroma</label>
+                        <label title="Improve text clarity by avoiding chroma subsampling (H.264/AV1 only)" style="display: none;"><input type="checkbox" id="chroma-checkbox" disabled> Enable YUV 4:4:4 Chroma</label>
                     </div>
                     <div class="config-group">
                         <label for="keyframe-interval-select" title="How often a full frame is sent (WebRTC only)">Keyframe Interval</label>

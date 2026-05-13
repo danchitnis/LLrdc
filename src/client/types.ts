@@ -32,6 +32,8 @@ export interface ConfigMessage {
     directBufferSupported?: boolean;
     directBufferActive?: boolean;
     directBufferReason?: string;
+    h264Nvenc444Available?: boolean;
+    h265Nvenc444Available?: boolean;
 }
 
 export interface PresentedFrameMeta {
@@ -54,4 +56,15 @@ export interface BrowserClientState {
     webrtcLatency: number;
     webSocketBytesReceived: number;
     lastPresentedFrame: PresentedFrameMeta | null;
+}
+
+export interface BrowserStats {
+    fps: number;
+    latency: number;
+    totalDecoded: number;
+    webrtcFps: number;
+    bytesReceived: number;
+    jitterBufferDelay?: number;
+    jitterBufferTarget?: number;
+    webrtcLowLatency?: boolean;
 }

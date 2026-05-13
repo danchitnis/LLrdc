@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	encMgr          *EncoderManager
+	encMgr            *EncoderManager
 	currentGeneration uint64
-	generationMu    sync.Mutex
+	generationMu      sync.Mutex
 )
 
 func nextGeneration() uint64 {
@@ -48,7 +48,11 @@ func main() {
 
 	// 2. Initialize VideoToolbox Encoder
 	gen := nextGeneration()
-	encMgr.Recreate(width, height, server.FPS, gen)
+	pixFmt := 0
+	if server.Chroma == "444" {
+		pixFmt = 1
+	}
+	encMgr.Recreate(server.VideoCodec, width, height, server.FPS, pixFmt, gen)
 	if enc, _ := encMgr.Get(); enc == nil {
 		log.Fatal("Failed to create initial VideoToolbox encoder")
 	}
@@ -105,7 +109,7 @@ func main() {
 		}
 
 		ready := inputConnected && controlConnected && readyGen == getGeneration()
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		if ready {
 			w.WriteHeader(http.StatusOK)
@@ -116,8 +120,8 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"ready": ready,
 			"conditions": map[string]bool{
-				"input":   inputConnected,
-				"control": controlConnected,
+				"input":    inputConnected,
+				"control":  controlConnected,
 				"genMatch": readyGen == getGeneration(),
 			},
 		})

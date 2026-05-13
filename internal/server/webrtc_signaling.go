@@ -111,6 +111,11 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			"sdp":  (*pc).LocalDescription(),
 		})
 
+		if OnForceKeyframe != nil {
+			log.Println("New WebRTC peer connected, triggering immediate keyframe...")
+			OnForceKeyframe()
+		}
+
 		go func(previousStreamID uint32) {
 			restarted := false
 			ffmpegMutex.Lock()

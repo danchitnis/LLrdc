@@ -4,18 +4,7 @@ import { WebRTCManager } from '../webrtc';
 import { ClientEventEmitter } from './hooks';
 import { detectKeyFrame, parseBinaryVideoPacket } from './protocol';
 import { updateStatusText, videoEl, displayEl } from '../ui';
-import type { BrowserClientState, ConfigMessage, PresentedFrameMeta } from './types';
-
-interface BrowserStats {
-    fps: number;
-    latency: number;
-    totalDecoded: number;
-    webrtcFps: number;
-    bytesReceived: number;
-    jitterBufferDelay?: number;
-    jitterBufferTarget?: number;
-    webrtcLowLatency?: boolean;
-}
+import type { BrowserClientState, ConfigMessage, PresentedFrameMeta, BrowserStats } from './types';
 
 export interface BrowserClientEvents {
     connected: undefined;

@@ -16,7 +16,6 @@ export class WebCodecsManager {
     private getIsWebRtcActive: () => boolean;
     private getNetworkLatency: () => number;
     private getWsBandwidthMbps: () => number;
-    private statsInterval: ReturnType<typeof setInterval> | null = null;
 
     constructor(getIsWebRtcActive: () => boolean, getNetworkLatency: () => number, getWsBandwidthMbps: () => number) {
         this.getIsWebRtcActive = getIsWebRtcActive;
@@ -36,7 +35,15 @@ export class WebCodecsManager {
     }
 
     public initDecoder() {
-        if (this.isInitializing) return;
+        if (this.isInitializing) {
+            if (this.decoderInitTimeout === null) {
+                this.decoderInitTimeout = setTimeout(() => {
+                    this.decoderInitTimeout = null;
+                    this.initDecoder();
+                }, 100);
+            }
+            return;
+        }
         this.isInitializing = true;
 
         if (this.decoderInitTimeout !== null) {
@@ -45,13 +52,7 @@ export class WebCodecsManager {
         }
 
         if (typeof VideoDecoder === 'undefined') {
-            if (!isSecureContext) {
-                log('WebCodecs API requires a Secure Context (HTTPS or localhost). Falling back to WebRTC (if available)...');
-                if (!this.getIsWebRtcActive() && statusEl) statusEl.textContent = 'WebCodecs: Requires HTTPS/localhost';
-            } else {
-                log('WebCodecs API not supported by this browser. Use Chrome or Edge.');
-                if (!this.getIsWebRtcActive() && statusEl) statusEl.textContent = 'WebCodecs Not Supported';
-            }
+            log('WebCodecs API not supported by this browser.');
             this.isInitializing = false;
             return;
         }
@@ -69,16 +70,11 @@ export class WebCodecsManager {
                 output: (frame) => this.handleFrame(frame),
                 error: (e: Error) => {
                     log(`WebCodecs Decoder Error: ${e.message}`);
-                    // Only show on UI if we aren't using WebRTC
-                    if (!this.getIsWebRtcActive() && statusEl) {
-                        statusEl.textContent = `Decoder Err: ${e.message}`;
-                    }
-
                     if (this.decoderInitTimeout === null) {
                         this.decoderInitTimeout = setTimeout(() => {
                             this.decoderInitTimeout = null;
                             this.initDecoder();
-                        }, 2000); // Wait longer before retry
+                        }, 2000);
                     }
                 }
             });
@@ -89,47 +85,76 @@ export class WebCodecsManager {
             
             let codecStr = 'vp8';
             if (isH264) {
-                if (this.chroma === '444') {
-                    // avc1.F40034 is High 4:4:4 Predictive profile, level 5.2
-                    codecStr = 'avc1.F40034';
-                } else {
-                    // avc1.42E034 is Baseline profile, level 5.2 - supports 4K @ 120fps
-                    codecStr = 'avc1.42E034';
-                }
+                codecStr = (this.chroma === '444') ? 'avc1.F40032' : 'avc1.42E034';
             } else if (isH265) {
-                if (this.chroma === '444') {
-                    // hev1.2.4.L120.90 is Main 4:4:4 10 profile
-                    codecStr = 'hev1.2.4.L120.90';
-                } else {
-                    // hev1.1.6.L120.90 is Main profile, Level 4.0, Main tier
-                    codecStr = 'hev1.1.6.L120.90';
-                }
+                codecStr = (this.chroma === '444') ? 'hev1.4.10.L150.B0' : 'hev1.1.6.L120.90';
             } else if (isAV1) {
-                if (this.chroma === '444') {
-                    // av01.1.08M.08 - High profile, level 4.0, Main tier, 8-bit
-                    codecStr = 'av01.1.08M.08';
-                } else {
-                    // av01.0.08M.08 - Main profile, level 4.0, Main tier, 8-bit
-                    codecStr = 'av01.0.08M.08';
-                }
+                codecStr = (this.chroma === '444') ? 'av01.1.08M.08' : 'av01.0.08M.08';
             }
 
-            const config: VideoDecoderConfig = {
+            const hardwareAcceleration = clientGpuCheckbox && clientGpuCheckbox.checked ? 'prefer-hardware' : 'prefer-software';
+            const baseConfig: VideoDecoderConfig = {
                 codec: codecStr,
                 optimizeForLatency: true,
-                hardwareAcceleration: clientGpuCheckbox && clientGpuCheckbox.checked ? 'prefer-hardware' : 'prefer-software'
+                hardwareAcceleration
             };
 
-            this.decoder.configure(config);
-            window.hasReceivedKeyFrame = false;
-            log(`Decoder configured (${this.videoCodec}: ${codecStr}, chroma: ${this.chroma}). Waiting for Keyframe...`);
+            if (isH265 && this.chroma === '444') {
+                this.probeHEVC444(baseConfig).finally(() => {
+                    this.isInitializing = false;
+                });
+            } else {
+                this.configureDecoder(baseConfig);
+                this.isInitializing = false;
+            }
+
         } catch (e: unknown) {
             log('Failed to initialize decoder: ' + (e as Error).message);
-            if (statusEl) statusEl.textContent = 'Decoder Init Error';
             console.error(e);
-        } finally {
             this.isInitializing = false;
         }
+    }
+
+    private configureDecoder(config: VideoDecoderConfig) {
+        if (!this.decoder) return;
+        try {
+            this.decoder.configure(config);
+            window.hasReceivedKeyFrame = false;
+            log(`Decoder configured (${this.videoCodec}: ${config.codec}, chroma: ${this.chroma}). Waiting for Keyframe...`);
+        } catch (e: unknown) {
+            log(`Configuration failed: ${(e as Error).message}`);
+        }
+    }
+
+    private async probeHEVC444(baseConfig: VideoDecoderConfig) {
+        const candidates = [
+            'hev1.4.10.L150.B0', // Profile 4 (Main 4:4:4 8), L5.0
+            'hvc1.4.10.L150.B0',
+            'hev1.6.10.L150.B0', // Profile 6 (Main 4:4:4 10), L5.0
+            'hvc1.6.10.L150.B0',
+            'hev1.2.4.L150.B0',  // Main 10
+            'hvc1.2.4.L150.B0',
+            'hev1.1.6.L150.B0',  // Main
+        ];
+
+        log(`Probing HEVC 4:4:4 support across ${candidates.length} codec strings...`);
+
+        for (const codec of candidates) {
+            const config = { ...baseConfig, codec };
+            try {
+                const res = await VideoDecoder.isConfigSupported(config);
+                if (res.supported) {
+                    log(`Found supported HEVC string: ${codec}`);
+                    this.configureDecoder(res.config!);
+                    return;
+                }
+            } catch {
+                // Ignore error and try next
+            }
+        }
+
+        log('None of the HEVC 4:4:4 codec strings are supported by this browser.');
+        if (statusEl) statusEl.textContent = 'HEVC 4:4:4 Not Supported';
     }
 
     private handleFrame(frame: VideoFrame) {
@@ -153,13 +178,7 @@ export class WebCodecsManager {
         }
 
         frame.close();
-
         this.frameCount++;
-        this.updateStats();
-    }
-
-    public updateStats() {
-        // No longer calls updateStatusText here to avoid fighting with the pollStats interval
     }
 
     public decodeChunk(isKey: boolean, timestamp: number, chunkData: Uint8Array) {
@@ -172,17 +191,13 @@ export class WebCodecsManager {
                 }));
             } catch (e: unknown) {
                 console.error('Decode exception:', (e as Error).message);
-                if (statusEl) statusEl.textContent = 'Decode Exc: ' + (e as Error).message;
                 if (!this.isInitializing && this.decoderInitTimeout === null) {
                     this.initDecoder();
                 }
             }
-        } else {
-            if (this.decoder && (this.decoder.state === 'closed' || this.decoder.state === 'unconfigured')) {
-                if (!this.isInitializing && this.decoderInitTimeout === null) {
-                    log('Decoder stuck/closed. Re-initializing...');
-                    this.initDecoder();
-                }
+        } else if (this.decoder && (this.decoder.state === 'closed' || this.decoder.state === 'unconfigured')) {
+            if (!this.isInitializing && this.decoderInitTimeout === null) {
+                this.initDecoder();
             }
         }
     }

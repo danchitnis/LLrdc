@@ -75,14 +75,18 @@ func videoTrackCapability(codec string) (webrtc.RTPCodecCapability, string) {
 	capability := webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}
 	switch codecFamily {
 	case "h264":
+		profileLevelID := "42E034" // Constrained Baseline
+		if Chroma == "444" {
+			profileLevelID = "f40032" // High 4:4:4 Predictive Level 5.0
+		}
 		capability = webrtc.RTPCodecCapability{
 			MimeType:    webrtc.MimeTypeH264,
-			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42E034",
+			SDPFmtpLine: fmt.Sprintf("level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=%s", profileLevelID),
 		}
 	case "h265":
-		sdpFmtp := "profile-id=1" // Main profile
+		sdpFmtp := "profile-id=1;tier-flag=0;level-id=120" // Main profile
 		if Chroma == "444" {
-			sdpFmtp = "profile-id=4" // Main 4:4:4
+			sdpFmtp = "profile-id=4;tier-flag=0;level-id=123" // Main 4:4:4, Main tier, Level 4.1
 		}
 		capability = webrtc.RTPCodecCapability{
 			MimeType:    "video/H265",

@@ -40,7 +40,7 @@ func getLastFFmpegRestartTime() time.Time {
 	return *t
 }
 
-func killFFmpegWithTimestamp() {
+func KillFFmpegWithTimestamp() {
 	now := time.Now()
 	lastFFmpegRestartTime.Store(&now)
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
@@ -53,7 +53,7 @@ func PauseStreaming() {
 	defer ffmpegMutex.Unlock()
 	isResizing = true
 	log.Println("Pausing wf-recorder for resize...")
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
 		log.Println("Pausing audio ffmpeg for resize...")
 		ffmpegAudioCmd.Process.Kill()
@@ -82,7 +82,7 @@ func SetChroma(chroma string) {
 	Chroma = chroma
 	log.Printf("Received chroma config: %s", chroma)
 
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetVideoCodec(codec string) {
@@ -92,7 +92,7 @@ func SetVideoCodec(codec string) {
 	}
 
 	requestedCodec := codec
-	codec = resolveRequestedVideoCodec(codec)
+	codec = ResolveRequestedVideoCodec(codec)
 	if requestedCodec != codec {
 		log.Printf("Mapping requested codec %s to %s for Intel acceleration", requestedCodec, codec)
 	}
@@ -114,10 +114,10 @@ func SetVideoCodec(codec string) {
 
 	InitWebRTCTrack() // Re-create track
 
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
-func resolveRequestedVideoCodec(codec string) string {
+func ResolveRequestedVideoCodec(codec string) string {
 	if UseIntel {
 		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv" {
 			if H265QSVAvailable {
@@ -157,7 +157,7 @@ func SetKeyframeInterval(interval int) {
 	targetKeyframeInterval = interval
 
 	log.Printf("Received keyframe interval config: %d", interval)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetMpdecimate(mpdecimate bool) {
@@ -171,7 +171,7 @@ func SetMpdecimate(mpdecimate bool) {
 	targetMpdecimate = mpdecimate
 
 	log.Printf("Received mpdecimate config: %v", mpdecimate)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetCpuEffort(effort int) {
@@ -185,7 +185,7 @@ func SetCpuEffort(effort int) {
 	targetCpuEffort = effort
 
 	log.Printf("Received CPU effort config: %d", effort)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetCpuThreads(threads int) {
@@ -199,7 +199,7 @@ func SetCpuThreads(threads int) {
 	targetCpuThreads = threads
 
 	log.Printf("Received CPU threads config: %d", threads)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetDrawMouse(draw bool) {
@@ -213,7 +213,7 @@ func SetDrawMouse(draw bool) {
 	targetDrawMouse = draw
 
 	log.Printf("Received Enable Desktop Mouse config: %v", draw)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetVBR(vbr bool) {
@@ -227,7 +227,7 @@ func SetVBR(vbr bool) {
 	targetVBR = vbr
 
 	log.Printf("Received VBR config: %v", vbr)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetVBRThreshold(threshold int) {
@@ -241,7 +241,7 @@ func SetVBRThreshold(threshold int) {
 	targetVBRThreshold = threshold
 
 	log.Printf("Received VBR Threshold config: %d", threshold)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetDamageTracking(dt bool) {
@@ -255,7 +255,7 @@ func SetDamageTracking(dt bool) {
 	targetDamageTracking = dt
 
 	log.Printf("Received Damage Tracking config: %v", dt)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetBandwidth(bwMbps int) {
@@ -270,7 +270,7 @@ func SetBandwidth(bwMbps int) {
 	targetBandwidthMbps = bwMbps
 
 	log.Printf("Received bandwidth config: %d Mbps", bwMbps)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetQuality(quality int) {
@@ -285,7 +285,7 @@ func SetQuality(quality int) {
 	targetQuality = quality
 
 	log.Printf("Received quality config: %d", quality)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func SetFramerate(fps int) {
@@ -299,7 +299,7 @@ func SetFramerate(fps int) {
 	FPS = fps
 
 	log.Printf("Received framerate config: %d fps", fps)
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 }
 
 func RestartForResize() {
@@ -307,7 +307,7 @@ func RestartForResize() {
 	defer ffmpegMutex.Unlock()
 
 	log.Println("Screen size changed, restarting ffmpeg...")
-	killFFmpegWithTimestamp()
+	KillFFmpegWithTimestamp()
 
 	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
 		log.Println("Screen size changed, restarting audio ffmpeg...")
@@ -355,7 +355,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 		defer ffmpegMutex.Unlock()
 		ffmpegShouldRun = false
 		log.Println("Killing wf-recorder (cleanup)...")
-		killFFmpegWithTimestamp()
+		KillFFmpegWithTimestamp()
 	})
 	go func() {
 		for {
@@ -502,13 +502,22 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					// Override encoder args to stream raw video to the macOS host
 					// Use -g to force strict capture dimensions matching the requested size
 					gw, gh := GetScreenSize()
+
+					splitStateMu.RLock()
+					agentPixfmt := splitState.pixFmt
+					splitStateMu.RUnlock()
+
+					xParam := "yuv420p"
+					if agentPixfmt == 1 {
+						xParam = "yuv444p"
+					}
+
 					args = []string{
 						"wf-recorder",
 						"-c", "rawvideo",
 						"-m", "rawvideo",
-						"-x", "yuv420p",
-						"-g", fmt.Sprintf("0,0 %dx%d", gw, gh),
-						"-r", fmt.Sprintf("%d", FPS),
+						"-x", xParam,
+						"-g", fmt.Sprintf("0,0 %dx%d", gw, gh), "-r", fmt.Sprintf("%d", FPS),
 						"-F", fmt.Sprintf("fps=%d", FPS),
 						"-B", "5",
 						"-f", "tcp://" + AgentAddress,

@@ -286,7 +286,7 @@ func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 								log.Printf("ERROR: PLI received but OnForceKeyframe is not set for Agent mode!")
 								lastFFmpegRestartTime.Store(&now)
 							} else {
-								killFFmpegWithTimestamp()
+								KillFFmpegWithTimestamp()
 							}
 						} else {
 							// log.Printf("Received PLI on video track but last restart was only %v ago, sending pings instead...", now.Sub(lastRestart))

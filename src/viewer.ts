@@ -4,7 +4,7 @@ import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
 import { setupInput } from './input';
 import { BrowserClientSession } from './client/session';
-import type { ConfigMessage } from './client/types';
+import type { ConfigMessage, BrowserStats } from './client/types';
 import { normalizeCodecFamily } from './client/protocol';
 import { updateDirectBufferUi } from './direct-buffer-ui';
 import { handleDisplayEffectMessage } from './display-effects';
@@ -14,7 +14,7 @@ export { };
 
 declare global {
     interface Window {
-        getStats: () => { fps: number; latency: number; totalDecoded: number; webrtcFps: number; bytesReceived: number; jitterBufferDelay?: number; jitterBufferTarget?: number; webrtcLowLatency?: boolean; };
+        getStats: () => BrowserStats;
         hasReceivedKeyFrame: boolean;
         rtcPeer: RTCPeerConnection | null;
         hardwareAccelerationAvailable: boolean;
@@ -22,6 +22,8 @@ declare global {
         webrtcManager: WebRTCManager;
         webcodecsManager: WebCodecsManager;
         networkManager: NetworkManager;
+        sendConfig: () => void;
+        buildConfigMessage: () => ConfigMessage;
     }
 }
 
@@ -51,8 +53,8 @@ let hasReceivedInitialConfig = false;
 let pendingHdpi: number | null = null;
 let pendingMaxRes: number | null = null;
 
-(window as any).sendConfig = sendConfig;
-(window as any).buildConfigMessage = buildConfigMessage;
+window.sendConfig = sendConfig;
+window.buildConfigMessage = buildConfigMessage;
 
 function sendConfig() {
     if (isReinitializingWebRTC) {
@@ -128,8 +130,15 @@ function buildConfigMessage(): ConfigMessage {
         config.enable_desktop_mouse = desktopMouseCheckbox.checked;
     }
 
-    if (chromaCheckbox) {
-        config.chroma = chromaCheckbox.checked ? '444' : '420';
+    if (videoCodecSelect) {
+        config.videoCodec = videoCodecSelect.value;
+        if (videoCodecSelect.value === 'h264-444' || videoCodecSelect.value === 'h265-444') {
+            config.chroma = '444';
+            log(`UI selecting pseudo-codec ${videoCodecSelect.value}, setting chroma to 444`);
+        } else {
+            config.chroma = '420';
+            log(`UI selecting codec ${videoCodecSelect.value}, setting chroma to 420`);
+        }
     }
 
     if (hybridCheckbox) {
@@ -142,10 +151,6 @@ function buildConfigMessage(): ConfigMessage {
 
     if (tileSizeSlider) {
         config.tile_size = parseInt(tileSizeSlider.value, 10);
-    }
-
-    if (videoCodecSelect) {
-        config.videoCodec = videoCodecSelect.value;
     }
 
     if (enableAudioCheckbox) {

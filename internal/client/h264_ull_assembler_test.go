@@ -10,7 +10,7 @@ import (
 func TestH264ULLAssemblerMultiNALU(t *testing.T) {
 	a := newH264ULLAssembler()
 	timing := packetTiming{}
-	
+
 	// SPS (Single NALU, type 7)
 	p1 := &rtp.Packet{
 		Header: rtp.Header{
@@ -20,7 +20,7 @@ func TestH264ULLAssemblerMultiNALU(t *testing.T) {
 		},
 		Payload: []byte{0x07, 0x01, 0x02, 0x03},
 	}
-	
+
 	// PPS (Single NALU, type 8)
 	p2 := &rtp.Packet{
 		Header: rtp.Header{
@@ -30,7 +30,7 @@ func TestH264ULLAssemblerMultiNALU(t *testing.T) {
 		},
 		Payload: []byte{0x08, 0x04, 0x05},
 	}
-	
+
 	// IDR Slice (FU-A Start, type 28, S=1, nalType=5)
 	p3 := &rtp.Packet{
 		Header: rtp.Header{
@@ -75,7 +75,7 @@ func TestH264ULLAssemblerMultiNALU(t *testing.T) {
 func TestH264ULLAssemblerFUAFragmentation(t *testing.T) {
 	a := newH264ULLAssembler()
 	timing := packetTiming{}
-	
+
 	// FU-A Start (type 28, S=1, nalType=5)
 	p1 := &rtp.Packet{
 		Header: rtp.Header{
@@ -85,7 +85,7 @@ func TestH264ULLAssemblerFUAFragmentation(t *testing.T) {
 		},
 		Payload: []byte{0x1C, 0x85, 0x01, 0x02},
 	}
-	
+
 	// FU-A Mid (type 28, S=0, E=0, nalType=5)
 	p2 := &rtp.Packet{
 		Header: rtp.Header{
@@ -95,7 +95,7 @@ func TestH264ULLAssemblerFUAFragmentation(t *testing.T) {
 		},
 		Payload: []byte{0x1C, 0x05, 0x03, 0x04},
 	}
-	
+
 	// FU-A End (type 28, S=0, E=1, nalType=5)
 	p3 := &rtp.Packet{
 		Header: rtp.Header{
@@ -165,7 +165,7 @@ func TestH264ULLAssemblerRobustness(t *testing.T) {
 func TestH264ULLAssemblerSTAPA(t *testing.T) {
 	a := newH264ULLAssembler()
 	timing := packetTiming{}
-	
+
 	// STAP-A (type 24) containing SPS and PPS
 	// Payload: [24] [size1:2] [NAL1] [size2:2] [NAL2]
 	p1 := &rtp.Packet{
@@ -176,8 +176,8 @@ func TestH264ULLAssemblerSTAPA(t *testing.T) {
 			Marker:         true,
 		},
 		Payload: []byte{
-			0x18, 
-			0x00, 0x02, 0x07, 0x01, 
+			0x18,
+			0x00, 0x02, 0x07, 0x01,
 			0x00, 0x02, 0x08, 0x02,
 		},
 	}

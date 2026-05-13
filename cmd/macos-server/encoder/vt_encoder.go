@@ -6,7 +6,7 @@ package encoder
 #include <stdint.h>
 
 typedef struct VTEncoder VTEncoder;
-VTEncoder* vt_encoder_create(int width, int height, int fps, int bitrate_kbps, uintptr_t handle);
+VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, int bitrate_kbps, int pix_fmt, uintptr_t handle);
 int vt_encoder_encode(VTEncoder* encoder, uint8_t* yuv_data, int force_keyframe);
 void vt_encoder_destroy(VTEncoder* encoder);
 */
@@ -24,6 +24,7 @@ type VTEncoder struct {
 	forceNextIDR  atomic.Bool
 	Width, Height int
 	FPS           int
+	PixFmt        int
 }
 
 //export goEncodedFrameCallback
@@ -36,22 +37,24 @@ func goEncodedFrameCallback(handle C.uintptr_t, data unsafe.Pointer, length C.in
 	}
 }
 
-func NewVTEncoder(width, height, fps, bitrateKbps int, onFrame func(data []byte, isKeyframe bool)) *VTEncoder {
+func NewVTEncoder(codec string, width, height, fps, bitrateKbps int, pixFmt int, onFrame func(data []byte, isKeyframe bool)) *VTEncoder {
 	enc := &VTEncoder{
 		onFrame: onFrame,
 		Width:   width,
 		Height:  height,
 		FPS:     fps,
+		PixFmt:  pixFmt,
 	}
 	enc.handle = cgo.NewHandle(enc)
-	enc.ptr = C.vt_encoder_create(C.int(width), C.int(height), C.int(fps), C.int(bitrateKbps), C.uintptr_t(enc.handle))
+	cCodec := C.CString(codec)
+	defer C.free(unsafe.Pointer(cCodec))
+	enc.ptr = C.vt_encoder_create(cCodec, C.int(width), C.int(height), C.int(fps), C.int(bitrateKbps), C.int(pixFmt), C.uintptr_t(enc.handle))
 	if enc.ptr == nil {
 		enc.handle.Delete()
 		return nil
 	}
 	return enc
 }
-
 func (e *VTEncoder) Encode(yuvData []byte) int {
 	force := 0
 	if e.forceNextIDR.CompareAndSwap(true, false) {

@@ -15,11 +15,11 @@ type h265ULLVideoWriter struct {
 	track       *webrtc.TrackLocalStaticRTP
 	codecFamily string
 
-	mu           sync.Mutex
-	sequence     uint16
+	mu              sync.Mutex
+	sequence        uint16
 	timestampOffset uint32
-	initialized  bool
-	maxFramePart int
+	initialized     bool
+	maxFramePart    int
 }
 
 func newH265ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*h265ULLVideoWriter, error) {
@@ -95,7 +95,6 @@ func (w *h265ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 		}
 	}
 
-	
 	if err != nil {
 		finishLatencyProbeFrameSend(trace, 0)
 		return err

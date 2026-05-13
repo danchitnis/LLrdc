@@ -1,17 +1,22 @@
 import { log, statusEl, videoEl, displayEl, sharpnessLayerEl, ctx, applySmoothingSettings } from './ui';
-import type { PresentedFrameMeta } from './client/types';
+import type { PresentedFrameMeta, BrowserStats } from './client/types';
 
-interface LowLatencyReceiver {
-    playoutDelayHint?: number;
-    jitterBufferTarget?: number | null;
+declare global {
+    interface Window {
+        rtcPeer: RTCPeerConnection | null;
+        webrtcPeerConnection: RTCPeerConnection | null;
+        getStats: () => BrowserStats;
+        __llrdcLatestFrameMeta?: PresentedFrameMeta;
+        audioStats?: {
+            hasAudioTrack: boolean;
+            bytesReceived: number;
+        };
+    }
 }
 
-interface WebRTCDebugWindow extends Window {
-    __llrdcLatestFrameMeta?: PresentedFrameMeta;
-    audioStats?: {
-        hasAudioTrack: boolean;
-        bytesReceived: number;
-    };
+interface LowLatencyReceiver extends RTCRtpReceiver {
+    playoutDelayHint?: number;
+    jitterBufferTarget: number | null;
 }
 
 export class WebRTCManager {
@@ -81,22 +86,23 @@ export class WebRTCManager {
         this.jitterBufferTarget = 0;
     }
 
-    private applyLowLatencyHints(receiver: LowLatencyReceiver) {
+    private applyLowLatencyHints(receiver: RTCRtpReceiver) {
+        const llReceiver = receiver as LowLatencyReceiver;
         if (this.lowLatencyMode) {
             log('Applying low-latency hints to receiver');
-            if ('playoutDelayHint' in receiver) (receiver as any).playoutDelayHint = 0;
-            if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = 0;
+            if ('playoutDelayHint' in llReceiver) llReceiver.playoutDelayHint = 0;
+            if ('jitterBufferTarget' in llReceiver) llReceiver.jitterBufferTarget = 0;
         } else {
             log('Standard mode: skipping low-latency hints');
             // Revert to defaults if possible, though mostly they will stay at browser defaults
-            if ('playoutDelayHint' in receiver) delete (receiver as any).playoutDelayHint;
-            if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = null;
+            if ('playoutDelayHint' in llReceiver) delete llReceiver.playoutDelayHint;
+            if ('jitterBufferTarget' in llReceiver) llReceiver.jitterBufferTarget = null;
         }
     }
 
     public refreshLowLatencyHints() {
         this.rtcPeer?.getReceivers().forEach(receiver => {
-            this.applyLowLatencyHints(receiver as LowLatencyReceiver);
+            this.applyLowLatencyHints(receiver);
         });
     }
 
@@ -125,6 +131,7 @@ export class WebRTCManager {
             bundlePolicy: 'max-bundle'
         });
         window.rtcPeer = this.rtcPeer;
+        window.webrtcPeerConnection = this.rtcPeer;
 
         this.inputChannel = this.rtcPeer.createDataChannel('input', {
             ordered: false,
@@ -261,7 +268,7 @@ export class WebRTCManager {
                     presentedFrames: metadata.presentedFrames,
                     rtpTimestamp: browserMetadata.rtpTimestamp
                 };
-                (window as WebRTCDebugWindow).__llrdcLatestFrameMeta = frameMeta;
+                window.__llrdcLatestFrameMeta = frameMeta;
             } else {
                 if (videoEl.currentTime !== this.lastVideoFrameTime) {
                     this.lastVideoFrameTime = videoEl.currentTime;
@@ -329,7 +336,7 @@ export class WebRTCManager {
                 }
             });
 
-            (window as WebRTCDebugWindow).audioStats = {
+            window.audioStats = {
                 hasAudioTrack: hasAudioTrack,
                 bytesReceived: audioBytes
             };

@@ -3,9 +3,9 @@ package server
 type acceleratorMode string
 
 const (
-	acceleratorCPU      acceleratorMode = "cpu"
-	acceleratorNVIDIA   acceleratorMode = "nvidia"
-	acceleratorIntel    acceleratorMode = "intel"
+	acceleratorCPU    acceleratorMode = "cpu"
+	acceleratorNVIDIA acceleratorMode = "nvidia"
+	acceleratorIntel  acceleratorMode = "intel"
 )
 
 func currentAcceleratorMode() acceleratorMode {

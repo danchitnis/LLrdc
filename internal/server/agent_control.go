@@ -79,29 +79,42 @@ func handleAgentControlConnection(conn net.Conn) {
 func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 	log.Printf("Agent control: applying config: %v", config)
 
-	configChangeRequested := false
+	displayChangeRequested := false
+	captureChangeRequested := false
+
 	splitStateMu.Lock()
 	if gen, ok := config["generation"].(float64); ok {
 		if splitState.generation != uint64(gen) {
 			log.Printf("Agent received generation config: %d", uint64(gen))
 			splitState.generation = uint64(gen)
-			configChangeRequested = true
+			captureChangeRequested = true
 		}
 	}
 	if width, ok := config["width"].(float64); ok {
-		splitState.width = int(width)
+		if splitState.width != int(width) {
+			splitState.width = int(width)
+			displayChangeRequested = true
+		}
 	}
 	if height, ok := config["height"].(float64); ok {
-		splitState.height = int(height)
+		if splitState.height != int(height) {
+			splitState.height = int(height)
+			displayChangeRequested = true
+		}
 	}
 	if fps, ok := config["fps"].(float64); ok {
 		if int(fps) != splitState.fps {
 			log.Printf("Agent received FPS config: %d", int(fps))
 			splitState.fps = int(fps)
+			displayChangeRequested = true
 		}
 	}
 	if pixFmt, ok := config["pixfmt"].(float64); ok {
-		splitState.pixFmt = int(pixFmt)
+		if int(pixFmt) != splitState.pixFmt {
+			log.Printf("Agent received PixFmt config: %d", int(pixFmt))
+			splitState.pixFmt = int(pixFmt)
+			captureChangeRequested = true
+		}
 	}
 	w, h := splitState.width, splitState.height
 	fps := splitState.fps
@@ -115,35 +128,34 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 			// Apply HDPI changes to Wayland
 			waylandEnv := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0", "DISPLAY=:99")
 			applyHdpiSettings(waylandEnv)
-			configChangeRequested = true
+			displayChangeRequested = true
 		}
 	}
 
 	if SetScreenSize(w, h) {
-		configChangeRequested = true
+		displayChangeRequested = true
 	}
 	if FPS != fps {
 		FPS = fps
-		configChangeRequested = true
+		displayChangeRequested = true
 	}
 
-	// For split path, we don't use the shared broadcastConfig/applyDisplayChange
-	// We handle it here explicitly.
-	if configChangeRequested {
+	if displayChangeRequested {
 		actualW, actualH := GetScreenSize()
 		_ = resizeDisplay(actualW, actualH)
-		
-		// Wait for display to be ready before restarting capture
-		// Increased timeout to 5s for better stability in Docker/CI
-		_ = waitForDisplayState(actualW, actualH, 5*time.Second)
 
-		// Kill wf-recorder to trigger restart with new dimensions
-		killFFmpegWithTimestamp()
-		
+		// Wait for display to be ready before restarting capture
+		_ = waitForDisplayState(actualW, actualH, 5*time.Second)
+		captureChangeRequested = true
+	}
+
+	if captureChangeRequested {
+		// Kill wf-recorder to trigger restart with new dimensions/format
+		KillFFmpegWithTimestamp()
+
 		// Brief pause to allow wf-recorder to fully exit and Wayland to settle
 		time.Sleep(200 * time.Millisecond)
 	}
-
 	// Send ConfigApplied
 	resp := splitproto.Message{
 		Type: splitproto.MsgConfigApplied,
@@ -158,7 +170,7 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 func getSplitHeader() splitproto.Header {
 	splitStateMu.RLock()
 	defer splitStateMu.RUnlock()
-	
+
 	w, h := GetScreenSize()
 
 	return splitproto.Header{

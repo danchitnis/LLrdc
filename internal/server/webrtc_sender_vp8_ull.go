@@ -17,14 +17,14 @@ type vp8ULLVideoWriter struct {
 	track       *webrtc.TrackLocalStaticRTP
 	codecFamily string
 
-	mu           sync.Mutex
-	sequence     uint16
+	mu              sync.Mutex
+	sequence        uint16
 	timestampOffset uint32
-	initialized  bool
-	maxFramePart int
-	}
+	initialized     bool
+	maxFramePart    int
+}
 
-	func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*vp8ULLVideoWriter, error) {
+func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*vp8ULLVideoWriter, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(capability, "video", "pion")
 	if err != nil {
 		return nil, err
@@ -34,7 +34,7 @@ type vp8ULLVideoWriter struct {
 		codecFamily:  codecFamily,
 		maxFramePart: webrtcVideoOutboundMTU - 12,
 	}, nil
-	}
+}
 
 func (w *vp8ULLVideoWriter) TrackLocal() webrtc.TrackLocal {
 	return w.track

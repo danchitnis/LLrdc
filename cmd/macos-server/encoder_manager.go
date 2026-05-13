@@ -8,11 +8,13 @@ import (
 )
 
 type EncoderManager struct {
-	mu          sync.RWMutex
-	current     *encoder.VTEncoder
-	generation  uint64
+	mu            sync.RWMutex
+	current       *encoder.VTEncoder
+	generation    uint64
 	width, height int
-	fps         int
+	fps           int
+	pixFmt        int
+	codec         string
 }
 
 func NewEncoderManager() *EncoderManager {
@@ -25,32 +27,34 @@ func (m *EncoderManager) Get() (*encoder.VTEncoder, uint64) {
 	return m.current, m.generation
 }
 
-func (m *EncoderManager) Recreate(width, height, fps int, generation uint64) {
+func (m *EncoderManager) Recreate(codec string, width, height, fps, pixFmt int, generation uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.current != nil && m.width == width && m.height == height && m.fps == fps && m.generation == generation {
+	if m.current != nil && m.codec == codec && m.width == width && m.height == height && m.fps == fps && m.pixFmt == pixFmt && m.generation == generation {
 		return
 	}
 
 	if m.current != nil {
-		log.Printf("Closing old VTEncoder (%dx%d@%d FPS, gen %d) synchronously", m.width, m.height, m.fps, m.generation)
+		log.Printf("Closing old VTEncoder (%s %dx%d@%d FPS, fmt %d, gen %d) synchronously", m.codec, m.width, m.height, m.fps, m.pixFmt, m.generation)
 		m.current.Close()
 	}
 
+	m.codec = codec
 	m.width = width
 	m.height = height
 	m.fps = fps
+	m.pixFmt = pixFmt
 	m.generation = generation
 
 	bitrateKbps := 20000
-	log.Printf("Creating new VTEncoder: %dx%d@%d FPS (gen %d), bitrate %d kbps", width, height, fps, generation, bitrateKbps)
-	m.current = encoder.NewVTEncoder(width, height, fps, bitrateKbps, func(data []byte, isKeyframe bool) {
-		broadcastVideoFrame(data, isKeyframe)
+	log.Printf("Creating new VTEncoder: %s %dx%d@%d FPS (fmt %d, gen %d), bitrate %d kbps", codec, width, height, fps, pixFmt, generation, bitrateKbps)
+	m.current = encoder.NewVTEncoder(codec, width, height, fps, bitrateKbps, pixFmt, func(data []byte, isKeyframe bool) {
+		broadcastVideoFrame(data, isKeyframe, codec)
 	})
 
 	if m.current == nil {
-		log.Printf("ERROR: Failed to create VideoToolbox encoder for %dx%d", width, height)
+		log.Printf("ERROR: Failed to create VideoToolbox encoder for %s %dx%d", codec, width, height)
 	} else {
 		m.current.ForceKeyframe()
 	}

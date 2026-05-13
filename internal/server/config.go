@@ -12,14 +12,14 @@ import (
 )
 
 var (
-	Port        int
-	FPS         int
-	VideoCodec  string
-	Chroma      string
-	UseNVIDIA   bool
-	UseIntel    bool
+	Port            int
+	FPS             int
+	VideoCodec      string
+	Chroma          string
+	UseNVIDIA       bool
+	UseIntel        bool
 	IntelRenderNode string
-	CaptureMode string
+	CaptureMode     string
 
 	AV1NVENCAvailable       bool
 	H264NVENC444Available   bool
@@ -318,7 +318,7 @@ func InitConfig() {
 		VideoCodec = "h265"
 	}
 
-	VideoCodec = resolveRequestedVideoCodec(VideoCodec)
+	VideoCodec = ResolveRequestedVideoCodec(VideoCodec)
 
 	if err := validateCaptureModeConfig(); err != nil {
 		log.Fatalf("Invalid direct-buffer configuration: %v", err)

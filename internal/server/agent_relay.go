@@ -32,7 +32,7 @@ func startAgentRelay() {
 
 				go func(s net.Conn) {
 					defer s.Close()
-					
+
 					if tcpConn, ok := s.(*net.TCPConn); ok {
 						_ = tcpConn.SetNoDelay(true)
 					}
@@ -44,7 +44,7 @@ func startAgentRelay() {
 						return
 					}
 					defer dst.Close()
-					
+
 					if tcpDst, ok := dst.(*net.TCPConn); ok {
 						_ = tcpDst.SetNoDelay(true)
 					}
@@ -57,7 +57,7 @@ func startAgentRelay() {
 					}
 
 					log.Printf("Agent relay forwarding %dx%d stream (gen %d) to host %s", header.Width, header.Height, header.Generation, AgentAddress)
-					
+
 					NotifyFirstFrame(header.Generation)
 
 					_, _ = io.Copy(dst, s)
