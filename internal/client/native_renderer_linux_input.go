@@ -158,6 +158,42 @@ func sdlScancodeToDOM(code sdl.Scancode) string {
 		return "AltRight"
 	case sdl.SCANCODE_RGUI:
 		return "MetaRight"
+	case sdl.SCANCODE_KP_0:
+		return "Numpad0"
+	case sdl.SCANCODE_KP_1:
+		return "Numpad1"
+	case sdl.SCANCODE_KP_2:
+		return "Numpad2"
+	case sdl.SCANCODE_KP_3:
+		return "Numpad3"
+	case sdl.SCANCODE_KP_4:
+		return "Numpad4"
+	case sdl.SCANCODE_KP_5:
+		return "Numpad5"
+	case sdl.SCANCODE_KP_6:
+		return "Numpad6"
+	case sdl.SCANCODE_KP_7:
+		return "Numpad7"
+	case sdl.SCANCODE_KP_8:
+		return "Numpad8"
+	case sdl.SCANCODE_KP_9:
+		return "Numpad9"
+	case sdl.SCANCODE_KP_PERIOD:
+		return "NumpadDecimal"
+	case sdl.SCANCODE_KP_DIVIDE:
+		return "NumpadDivide"
+	case sdl.SCANCODE_KP_MULTIPLY:
+		return "NumpadMultiply"
+	case sdl.SCANCODE_KP_MINUS:
+		return "NumpadSubtract"
+	case sdl.SCANCODE_KP_PLUS:
+		return "NumpadAdd"
+	case sdl.SCANCODE_KP_ENTER:
+		return "NumpadEnter"
+	case sdl.SCANCODE_KP_EQUALS:
+		return "NumpadEqual"
+	case sdl.SCANCODE_NUMLOCKCLEAR:
+		return "NumLock"
 	default:
 		return ""
 	}

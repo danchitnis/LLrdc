@@ -394,6 +394,8 @@ func GetLinuxKeyCode(code string) int {
 		"F1": 59, "F2": 60, "F3": 61, "F4": 62, "F5": 63, "F6": 64, "F7": 65, "F8": 66, "F9": 67, "F10": 68, "F11": 87, "F12": 88,
 		"Insert": 110, "Delete": 111, "Home": 102, "End": 107, "PageUp": 104, "PageDown": 109,
 		"CapsLock": 58, "ScrollLock": 70, "NumLock": 69, "PrintScreen": 99, "Pause": 119,
+		"Numpad0": 82, "Numpad1": 79, "Numpad2": 80, "Numpad3": 81, "Numpad4": 75, "Numpad5": 76, "Numpad6": 77, "Numpad7": 71, "Numpad8": 72, "Numpad9": 73,
+		"NumpadDecimal": 83, "NumpadDivide": 98, "NumpadMultiply": 55, "NumpadSubtract": 74, "NumpadAdd": 78, "NumpadEnter": 96, "NumpadEqual": 117,
 	}
 	return m[code]
 }

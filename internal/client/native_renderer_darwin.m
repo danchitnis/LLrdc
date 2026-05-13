@@ -40,6 +40,7 @@ int llrdc_test_mouse_payload(double contentW, double contentH, double videoW, do
 @property (nonatomic, assign) CGPoint debugCursorPoint;
 @property (nonatomic, assign) NSSize videoContentSize;
 @property (nonatomic, assign) NSSize remoteTargetSize;
+@property (nonatomic, assign) NSEventModifierFlags lastModifierFlags;
 @property (nonatomic, assign) NSInteger menuItemCount;
 - (NSDictionary *)mouseMovePayloadForEvent:(NSEvent *)event;
 - (NSDictionary *)mouseButtonPayloadForEvent:(NSEvent *)event button:(NSNumber *)button action:(NSString *)action;
@@ -296,10 +297,26 @@ static NSString* nseventToDOMKey(NSEvent *event) {
         case 0x17: return @"Digit5"; case 0x16: return @"Digit6"; case 0x1A: return @"Digit7"; case 0x1C: return @"Digit8";
         case 0x19: return @"Digit9"; case 0x1D: return @"Digit0";
         case 0x31: return @"Space"; case 0x24: return @"Enter"; case 0x35: return @"Escape"; case 0x33: return @"Backspace";
-        case 0x30: return @"Tab"; case 0x2B: return @"Comma";
+        case 0x30: return @"Tab"; case 0x2B: return @"Comma"; case 0x2F: return @"Period";
+        case 0x1B: return @"Minus"; case 0x18: return @"Equal";
+        case 0x2C: return @"Slash"; case 0x29: return @"Semicolon"; case 0x27: return @"Quote";
+        case 0x21: return @"BracketLeft"; case 0x1E: return @"BracketRight"; case 0x2A: return @"Backslash";
+        case 0x32: return @"Backquote";
         case 0x7E: return @"ArrowUp"; case 0x7D: return @"ArrowDown"; case 0x7B: return @"ArrowLeft"; case 0x7C: return @"ArrowRight";
-        case 0x7A: return @"F1";
+        case 0x7A: return @"F1"; case 0x78: return @"F2"; case 0x63: return @"F3"; case 0x76: return @"F4";
+        case 0x60: return @"F5"; case 0x61: return @"F6"; case 0x62: return @"F7"; case 0x64: return @"F8";
+        case 0x65: return @"F9"; case 0x6D: return @"F10"; case 0x67: return @"F11"; case 0x6F: return @"F12";
+        case 0x72: return @"Insert"; case 0x75: return @"Delete"; case 0x73: return @"Home"; case 0x77: return @"End";
+        case 0x74: return @"PageUp"; case 0x79: return @"PageDown";
         case 0x3B: return @"ControlLeft"; case 0x38: return @"ShiftLeft"; case 0x3A: return @"AltLeft"; case 0x37: return @"MetaLeft";
+        case 0x3E: return @"ControlRight"; case 0x3C: return @"ShiftRight"; case 0x3D: return @"AltRight"; case 0x36: return @"MetaRight";
+        case 0x39: return @"CapsLock";
+        case 0x52: return @"Numpad0"; case 0x53: return @"Numpad1"; case 0x54: return @"Numpad2"; case 0x55: return @"Numpad3";
+        case 0x56: return @"Numpad4"; case 0x57: return @"Numpad5"; case 0x58: return @"Numpad6"; case 0x59: return @"Numpad7";
+        case 0x5B: return @"Numpad8"; case 0x5C: return @"Numpad9";
+        case 0x41: return @"NumpadDecimal"; case 0x4B: return @"NumpadDivide"; case 0x43: return @"NumpadMultiply";
+        case 0x4E: return @"NumpadSubtract"; case 0x45: return @"NumpadAdd"; case 0x4C: return @"NumpadEnter";
+        case 0x51: return @"NumpadEqual";
         default: return nil;
     }
 }
@@ -573,6 +590,25 @@ static NSString* nseventToDOMKey(NSEvent *event) {
 - (void)keyUp:(NSEvent *)event {
     NSString *key = nseventToDOMKey(event);
     if (key) [self sendInput:@{@"type": @"keyup", @"key": key}];
+}
+
+- (void)flagsChanged:(NSEvent *)event {
+    NSEventModifierFlags currentFlags = [event modifierFlags];
+    NSString *key = nseventToDOMKey(event);
+    
+    if (key) {
+        BOOL isPressed = NO;
+        if ([key containsString:@"Shift"]) { isPressed = (currentFlags & NSEventModifierFlagShift) != 0; }
+        else if ([key containsString:@"Control"]) { isPressed = (currentFlags & NSEventModifierFlagControl) != 0; }
+        else if ([key containsString:@"Alt"]) { isPressed = (currentFlags & NSEventModifierFlagOption) != 0; }
+        else if ([key containsString:@"Meta"]) { isPressed = (currentFlags & NSEventModifierFlagCommand) != 0; }
+        else if ([key isEqualToString:@"CapsLock"]) { isPressed = (currentFlags & NSEventModifierFlagCapsLock) != 0; }
+        
+        if ([key containsString:@"Shift"] || [key containsString:@"Control"] || [key containsString:@"Alt"] || [key containsString:@"Meta"] || [key isEqualToString:@"CapsLock"]) {
+             [self sendInput:@{@"type": isPressed ? @"keydown" : @"keyup", @"key": key}];
+        }
+    }
+    self.lastModifierFlags = currentFlags;
 }
 @end
 
