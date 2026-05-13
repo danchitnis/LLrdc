@@ -40,6 +40,8 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	log.Printf("New signaling connection from %s", r.RemoteAddr)
+
 	var wsMu sync.Mutex
 	safeWriteJSON := func(v interface{}) error {
 		wsMu.Lock()
@@ -47,16 +49,14 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		return conn.WriteJSON(v)
 	}
 
-	// Send initial config based on current server state to avoid config loops
 	reportedCodec := server.VideoCodec
 	if server.Chroma == "444" {
 		if server.VideoCodec == "h264" {
 			reportedCodec = "h264-444"
-		} else if server.VideoCodec == "h265" {
+		} else if server.VideoCodec == "h265" || server.VideoCodec == "hevc" {
 			reportedCodec = "h265-444"
 		}
 	}
-
 	safeWriteJSON(map[string]interface{}{
 		"type":               "config",
 		"videoCodec":         reportedCodec,
@@ -161,6 +161,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Re-initializing WebRTC track for new capabilities...")
 				server.InitWebRTCTrack()
 				server.KillFFmpegWithTimestamp() // No-op on macos-server but good practice
+				_ = safeWriteJSON(map[string]interface{}{"type": "reconnect_hint"})
 			}
 
 			// Debounce applying the merged configuration to the agent
@@ -189,7 +190,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 			if server.Chroma == "444" {
 				if server.VideoCodec == "h264" {
 					reportedCodec = "h264-444"
-				} else if server.VideoCodec == "h265" {
+				} else if server.VideoCodec == "h265" || server.VideoCodec == "hevc" {
 					reportedCodec = "h265-444"
 				}
 			}

@@ -28,7 +28,7 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 		codecFamily := normalizeCodecFamily(VideoCodec)
 		if !remoteOfferSupportsCodec(sdp.SDP, codecFamily) {
 			fallbackCodec := fallbackCodecForRemoteOffer()
-			log.Printf("Remote WebRTC offer does not support %s for requested codec %s; falling back to %s", codecFamily, VideoCodec, fallbackCodec)
+			log.Printf("Remote WebRTC offer (SDP size %d) does not support %s for requested codec %s (Chroma %s); falling back to %s", len(sdp.SDP), codecFamily, VideoCodec, Chroma, fallbackCodec)
 			if fallbackCodec != VideoCodec {
 				SetVideoCodec(fallbackCodec)
 				broadcastConfig(true)
@@ -36,7 +36,6 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			_ = writeJSON(map[string]interface{}{"type": "reconnect_hint"})
 			return
 		}
-
 		log.Println("Creating new PeerConnection")
 		newPC, err := CreatePeerConnection(requestHost)
 		if err != nil {
@@ -52,7 +51,6 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 				TriggerPing()
 			}
 		})
-
 		(*pc).OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
 			log.Printf("WebRTC ICE connection state changed: %s", s.String())
 		})

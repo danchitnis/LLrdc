@@ -264,9 +264,11 @@ func defaultCodecOptions() []codecOption {
 	return []codecOption{
 		{Label: "VP8", Value: "vp8"},
 		{Label: "H.264 (CPU)", Value: "h264"},
+		{Label: "H.264 (4:4:4)", Value: "h264-444", Chroma: "444"},
 		{Label: "H.264 (NVIDIA 4:4:4)", Value: "h264_nvenc", Chroma: "444"},
 		{Label: "H.264 (Intel QSV)", Value: "h264_qsv"},
 		{Label: "H.265 (CPU)", Value: "h265"},
+		{Label: "H.265 (4:4:4)", Value: "h265-444", Chroma: "444"},
 		{Label: "H.265 (NVIDIA 4:4:4)", Value: "h265_nvenc", Chroma: "444"},
 		{Label: "H.265 (Intel QSV)", Value: "h265_qsv"},
 		{Label: "HEVC (Intel 4:4:4)", Value: "hevc_vaapi", Chroma: "444"},

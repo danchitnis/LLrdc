@@ -214,7 +214,7 @@ func (r *NativeRenderer) PreferredVideoCodec() string {
 }
 
 func (r *NativeRenderer) SupportedVideoCodecs() []string {
-	return []string{"h265", "hevc", "h264"}
+	return []string{"h265", "hevc", "h264", "h264-444", "h265-444"}
 }
 
 func (r *NativeRenderer) SupportsWebSocketVideoFallback() bool {

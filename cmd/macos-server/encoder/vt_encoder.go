@@ -13,10 +13,10 @@ void vt_encoder_destroy(VTEncoder* encoder);
 import "C"
 import (
 	"runtime/cgo"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 )
-
 type VTEncoder struct {
 	ptr           *C.VTEncoder
 	handle        cgo.Handle
@@ -25,6 +25,7 @@ type VTEncoder struct {
 	Width, Height int
 	FPS           int
 	PixFmt        int
+	mu            sync.RWMutex
 }
 
 //export goEncodedFrameCallback
@@ -56,6 +57,12 @@ func NewVTEncoder(codec string, width, height, fps, bitrateKbps int, pixFmt int,
 	return enc
 }
 func (e *VTEncoder) Encode(yuvData []byte) int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.ptr == nil {
+		return -1
+	}
+
 	force := 0
 	if e.forceNextIDR.CompareAndSwap(true, false) {
 		force = 1
@@ -68,6 +75,8 @@ func (e *VTEncoder) ForceKeyframe() {
 }
 
 func (e *VTEncoder) Close() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	if e.ptr != nil {
 		C.vt_encoder_destroy(e.ptr)
 		e.ptr = nil

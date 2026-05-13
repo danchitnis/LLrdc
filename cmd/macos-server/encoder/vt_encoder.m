@@ -156,6 +156,7 @@ VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, 
     CFRelease(sourceAttributes);
 
     if (status != noErr) {
+        fprintf(stderr, "VTCompressionSessionCreate failed: %d\n", (int)status);
         free(encoder);
         return NULL;
     }
@@ -165,19 +166,21 @@ VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, 
     
     if (codecType == kCMVideoCodecType_H264) {
         if (pix_fmt == 1) {
-            VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, CFSTR("H264_High444Predictive_AutoLevel"));
+            status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, CFSTR("H264_High444Predictive_AutoLevel"));
         } else {
-            VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_High_AutoLevel);
+            status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_High_AutoLevel);
         }
     } else {
         // HEVC
         if (pix_fmt == 1) {
-            // For HEVC 4:4:4, we use Main 4:4:4 profile (8-bit)
-            // Note: HEVC_Main444_AutoLevel is profile_idc 4
-            VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, CFSTR("HEVC_Main444_AutoLevel"));
+            status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, CFSTR("HEVC_Main444_AutoLevel"));
         } else {
-            VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel);
+            status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel);
         }
+    }
+
+    if (status != noErr) {
+        fprintf(stderr, "Warning: Failed to set ProfileLevel: %d\n", (int)status);
     }
     
     // Set color space for screen capture

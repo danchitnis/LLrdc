@@ -91,7 +91,11 @@ func (a *NativeApp) attachSessionHooks() {
 			if a.session.State().ShutdownRequested {
 				return
 			}
-			a.scheduleReconnect()
+			// If we are already in the middle of a reconnection, ignore this disconnect event
+			// as it is likely a side effect of the new connection attempt.
+			if !a.reconnecting.Load() {
+				a.scheduleReconnect()
+			}
 		}
 		a.refreshOverlay()
 	})
@@ -99,20 +103,33 @@ func (a *NativeApp) attachSessionHooks() {
 		a.mu.Lock()
 		a.codecOptions = a.buildCodecOptions()
 		currentCodec := a.session.State().VideoCodec
-		found := false
-		for i, opt := range a.codecOptions {
-			if opt.Value == currentCodec {
-				a.codecIndex = i
-				found = true
-				break
+
+		// If the current codec index is valid and the labels match, don't force a reset.
+		// This prevents automatic fallbacks during reconnect loops.
+		isSameCodec := false
+		if a.codecIndex >= 0 && a.codecIndex < len(a.codecOptions) {
+			if a.codecOptions[a.codecIndex].Value == currentCodec {
+				isSameCodec = true
 			}
 		}
-		if !found && len(a.codecOptions) > 0 {
-			a.codecIndex = 0
+
+		if !isSameCodec {
+			found := false
+			for i, opt := range a.codecOptions {
+				if opt.Value == currentCodec {
+					a.codecIndex = i
+					found = true
+					break
+				}
+			}
+			if !found && len(a.codecOptions) > 0 {
+				a.codecIndex = 0
+			}
 		}
 		a.mu.Unlock()
 		a.refreshOverlay()
 	})
+
 	a.session.Hooks().On(EventStats, func(_ EventPayload) {
 		a.refreshOverlay()
 	})
@@ -234,25 +251,16 @@ func (a *NativeApp) startConnectLoop() {
 					time.Sleep(2 * time.Second)
 					continue
 				}
+
 				log.Printf("connected to %s", a.desiredServerURL)
 				a.sendInitialConfig()
-				a.drainReconnectRequests()
 				a.reconnecting.Store(false)
 				a.refreshOverlay()
+				time.Sleep(100 * time.Millisecond)
 				break
 			}
 		}
 	}()
-}
-
-func (a *NativeApp) drainReconnectRequests() {
-	for {
-		select {
-		case <-a.reconnectRequests:
-		default:
-			return
-		}
-	}
 }
 
 func (a *NativeApp) sendInitialConfig() {
@@ -262,9 +270,19 @@ func (a *NativeApp) sendInitialConfig() {
 	if hdpi := a.currentHDPIValue(); hdpi >= 0 {
 		configMap["hdpi"] = hdpi
 	}
-	if codec := a.currentCodecValue(); codec != "" {
-		configMap["videoCodec"] = codec
+
+	a.mu.RLock()
+	if a.codecIndex >= 0 && a.codecIndex < len(a.codecOptions) {
+		opt := a.codecOptions[a.codecIndex]
+		configMap["videoCodec"] = opt.Value
+		if opt.Chroma != "" {
+			configMap["chroma"] = opt.Chroma
+		} else {
+			configMap["chroma"] = "420"
+		}
 	}
+	a.mu.RUnlock()
+
 	if len(configMap) > 0 {
 		if err := a.session.SendConfig(configMap); err != nil {
 			log.Printf("failed to send initial config: %v", err)
@@ -289,9 +307,6 @@ func (a *NativeApp) scheduleReconnect() {
 	default:
 	}
 	if a.session.State().ShutdownRequested {
-		return
-	}
-	if a.reconnecting.Load() {
 		return
 	}
 	select {

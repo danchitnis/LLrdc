@@ -238,7 +238,39 @@ func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 		log.Printf("WebRTC Setting InterfaceFilter: allow=%v, exclude=%v", interfaces, excludeInterfaces)
 	}
 
-	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
+	m := &webrtc.MediaEngine{}
+
+	// Register H.264 4:4:4 profile (High 4:4:4 Predictive, Level 5.0) FIRST to prioritize it
+	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeH264,
+			ClockRate:   90000,
+			Channels:    0,
+			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f40032",
+		},
+		PayloadType: 120,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		return nil, err
+	}
+
+	// Register H.265 4:4:4 profile (Main 4:4:4, Level 4.1)
+	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    "video/H265",
+			ClockRate:   90000,
+			Channels:    0,
+			SDPFmtpLine: "profile-id=4;tier-flag=0;level-id=123",
+		},
+		PayloadType: 121,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		return nil, err
+	}
+
+	if err := m.RegisterDefaultCodecs(); err != nil {
+		return nil, err
+	}
+
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(s), webrtc.WithMediaEngine(m))
 
 	var iceServers []webrtc.ICEServer
 	if !WebRTCLowLatency && !strings.HasPrefix(publicIP, "127.") && publicIP != "::1" && publicIP != "" {
