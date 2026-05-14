@@ -13,6 +13,7 @@ type EncoderManager struct {
 	generation    uint64
 	width, height int
 	fps           int
+	bitrateKbps   int
 	pixFmt        int
 	codec         string
 }
@@ -27,16 +28,22 @@ func (m *EncoderManager) Get() (*encoder.VTEncoder, uint64) {
 	return m.current, m.generation
 }
 
-func (m *EncoderManager) Recreate(codec string, width, height, fps, pixFmt int, generation uint64) {
+func (m *EncoderManager) Codec() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.codec
+}
+
+func (m *EncoderManager) Recreate(codec string, width, height, fps, bitrateKbps, pixFmt int, generation uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.current != nil && m.codec == codec && m.width == width && m.height == height && m.fps == fps && m.pixFmt == pixFmt && m.generation == generation {
+	if m.current != nil && m.codec == codec && m.width == width && m.height == height && m.fps == fps && m.bitrateKbps == bitrateKbps && m.pixFmt == pixFmt && m.generation == generation {
 		return
 	}
 
 	if m.current != nil {
-		log.Printf("Closing old VTEncoder (%s %dx%d@%d FPS, fmt %d, gen %d) synchronously", m.codec, m.width, m.height, m.fps, m.pixFmt, m.generation)
+		log.Printf("Closing old VTEncoder (%s %dx%d@%d FPS, %d kbps, fmt %d, gen %d) synchronously", m.codec, m.width, m.height, m.fps, m.bitrateKbps, m.pixFmt, m.generation)
 		m.current.Close()
 	}
 
@@ -44,10 +51,10 @@ func (m *EncoderManager) Recreate(codec string, width, height, fps, pixFmt int, 
 	m.width = width
 	m.height = height
 	m.fps = fps
+	m.bitrateKbps = bitrateKbps
 	m.pixFmt = pixFmt
 	m.generation = generation
 
-	bitrateKbps := 20000
 	log.Printf("Creating new VTEncoder: %s %dx%d@%d FPS (fmt %d, gen %d), bitrate %d kbps", codec, width, height, fps, pixFmt, generation, bitrateKbps)
 	m.current = encoder.NewVTEncoder(codec, width, height, fps, bitrateKbps, pixFmt, func(data []byte, isKeyframe bool) {
 		broadcastVideoFrame(data, isKeyframe, codec)

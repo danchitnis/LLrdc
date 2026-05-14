@@ -60,7 +60,7 @@ func configPayload(restarted bool) map[string]interface{} {
 		"h265QsvAvailable":       H265QSVAvailable,
 		"av1QsvAvailable":        AV1QSVAvailable,
 		"framerate":              FPS,
-		"bandwidth":              targetBandwidthMbps,
+		"bandwidth":              TargetBandwidthMbps,
 		"quality":                targetQuality,
 		"vbr":                    targetVBR,
 		"vbr_threshold":          targetVBRThreshold,
@@ -612,7 +612,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 				if bwFloat, ok := configMsg["bandwidth"].(float64); ok {
 					bandwidth := int(bwFloat)
-					if targetMode != "bandwidth" || targetBandwidthMbps != bandwidth {
+					if targetMode != "bandwidth" || TargetBandwidthMbps != bandwidth {
 						restartRequested = true
 					}
 					SetBandwidth(bandwidth)

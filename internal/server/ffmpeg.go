@@ -13,7 +13,7 @@ import (
 
 var (
 	targetMode             = "bandwidth" // "bandwidth" or "quality"
-	targetBandwidthMbps    = 5           // Initial default: 5 Mbps
+	TargetBandwidthMbps    = 5           // Initial default: 5 Mbps
 	targetQuality          = 70          // 10-100
 	targetVBR              = false       // Default VBR to false
 	targetVBRThreshold     = 0           // Default VBR threshold to 0
@@ -262,12 +262,12 @@ func SetBandwidth(bwMbps int) {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
 
-	if targetMode == "bandwidth" && targetBandwidthMbps == bwMbps {
+	if targetMode == "bandwidth" && TargetBandwidthMbps == bwMbps {
 		return
 	}
 
 	targetMode = "bandwidth"
-	targetBandwidthMbps = bwMbps
+	TargetBandwidthMbps = bwMbps
 
 	log.Printf("Received bandwidth config: %d Mbps", bwMbps)
 	KillFFmpegWithTimestamp()
@@ -446,19 +446,19 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				} else {
 					var ffmpegArgs []string
 					if VideoCodec == "vp8" {
-						ffmpegArgs = buildVP8Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+						ffmpegArgs = buildVP8Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 					} else if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
-						ffmpegArgs = buildH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+						ffmpegArgs = buildH264Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 					} else if VideoCodec == "h264_qsv" {
-						ffmpegArgs = buildQSVH264Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+						ffmpegArgs = buildQSVH264Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 					} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
-						ffmpegArgs = buildH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+						ffmpegArgs = buildH265Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 					} else if VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi" {
-						ffmpegArgs = buildQSVH265Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval, Chroma)
+						ffmpegArgs = buildQSVH265Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval, Chroma)
 					} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
-						ffmpegArgs = buildAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+						ffmpegArgs = buildAV1Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 					} else if VideoCodec == "av1_qsv" {
-						ffmpegArgs = buildQSVAV1Args(targetMode, targetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+						ffmpegArgs = buildQSVAV1Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
 					}
 
 					ffmpegArgs = append(ffmpegArgs, "-f", "pipe:1")
@@ -542,9 +542,9 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						"-p", "spatial-aq=0",
 						"-p", "temporal-aq=0",
 						"-p", "strict_gop=1",
-						"-p", fmt.Sprintf("b=%dM", targetBandwidthMbps),
-						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
-						"-p", fmt.Sprintf("bufsize=%dM", targetBandwidthMbps*2),
+						"-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps),
+						"-p", fmt.Sprintf("maxrate=%dM", TargetBandwidthMbps),
+						"-p", fmt.Sprintf("bufsize=%dM", TargetBandwidthMbps*2),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
 					if NVENCLatencyMode {
@@ -564,8 +564,8 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					args = append(args, "-d", resolveIntelRenderNode())
 
 					args = append(args,
-						"-p", fmt.Sprintf("b=%dk", targetBandwidthMbps*1000),
-						"-p", fmt.Sprintf("maxrate=%dk", targetBandwidthMbps*1000),
+						"-p", fmt.Sprintf("b=%dk", TargetBandwidthMbps*1000),
+						"-p", fmt.Sprintf("maxrate=%dk", TargetBandwidthMbps*1000),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 						"-p", "async_depth=2",
 						"-p", "bf=0",
@@ -609,10 +609,10 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						)
 						if targetVBR {
 							// For VBR: set a target maxrate and use static-thresh for bit saving
-							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=30", "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=30", "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
 						} else {
 							// For CBR: target, maxrate, and minrate should match
-							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", TargetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
 						}
 					} else if codec == "libx264" || codec == "libx265" {
 						args = append(args, "-p", "tune=zerolatency")
@@ -622,9 +622,9 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 							if crf > 51 {
 								crf = 51
 							}
-							args = append(args, "-p", fmt.Sprintf("crf=%d", crf), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+							args = append(args, "-p", fmt.Sprintf("crf=%d", crf), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
 						} else {
-							args = append(args, "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+							args = append(args, "-p", fmt.Sprintf("minrate=%dM", TargetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
 						}
 
 						if codec == "libx264" {
@@ -635,17 +635,17 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					} else if codec == "libaom-av1" {
 						args = append(args, "-p", "usage=realtime", "-p", "row-mt=1", "-p", "lag-in-frames=0", "-p", "error-resilient=1")
 						if targetVBR {
-							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
 						} else {
-							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", targetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", targetBandwidthMbps))
+							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", TargetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
 						}
 					}
 
 					args = append(args,
 						"-p", "cpu-used=8",
 						"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
-						"-p", fmt.Sprintf("maxrate=%dM", targetBandwidthMbps),
-						"-p", fmt.Sprintf("bufsize=%dM", targetBandwidthMbps*2),
+						"-p", fmt.Sprintf("maxrate=%dM", TargetBandwidthMbps),
+						"-p", fmt.Sprintf("bufsize=%dM", TargetBandwidthMbps*2),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
 				}

@@ -62,7 +62,7 @@ func InitConfig() {
 		defaultFPS = f
 	}
 
-	defaultBandwidth := targetBandwidthMbps
+	defaultBandwidth := TargetBandwidthMbps
 	if bw, err := strconv.Atoi(os.Getenv("BANDWIDTH")); err == nil {
 		defaultBandwidth = bw
 	}
@@ -178,7 +178,7 @@ func InitConfig() {
 		fmt.Fprintf(os.Stderr, "User Flags:\n")
 		printFlag(os.Stderr, "port", "Port for HTTP and WebRTC UDP", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
-		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", targetBandwidthMbps)
+		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", TargetBandwidthMbps)
 		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-nvidia", "Enable NVIDIA acceleration if available", UseNVIDIA)
@@ -215,7 +215,7 @@ func InitConfig() {
 	// Define flags
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
-	flag.IntVar(&targetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
+	flag.IntVar(&TargetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
 	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h264_vaapi, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseNVIDIA, "use-nvidia", defaultUseNVIDIA, "Enable NVIDIA acceleration if available")

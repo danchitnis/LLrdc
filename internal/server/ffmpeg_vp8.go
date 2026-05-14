@@ -14,7 +14,7 @@ func buildVP8Args(mode string, bw int, quality int, fps int, cpuEffort int, cpuT
 
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
-		bufSizeStr := fmt.Sprintf("%dk", bw*200)
+		bufSizeStr := fmt.Sprintf("%dk", bw*2000)
 
 		if vbr {
 			// libvpx VBR: use CRF with a maxrate cap, and a high static-thresh

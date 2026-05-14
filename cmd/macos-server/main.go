@@ -38,7 +38,6 @@ func main() {
 	// 1. Initialize server config and flags
 	server.InitConfig()
 	server.CaptureMode = server.CaptureModeAgent
-	server.HDPI = 100
 	server.VideoCodec = "h264"
 	server.WebRTCLowLatency = true
 
@@ -52,7 +51,7 @@ func main() {
 	if server.Chroma == "444" {
 		pixFmt = 1
 	}
-	encMgr.Recreate(server.VideoCodec, width, height, server.FPS, pixFmt, gen)
+	encMgr.Recreate(server.VideoCodec, width, height, server.FPS, server.TargetBandwidthMbps*1000, pixFmt, gen)
 	if enc, _ := encMgr.Get(); enc == nil {
 		log.Fatal("Failed to create initial VideoToolbox encoder")
 	}

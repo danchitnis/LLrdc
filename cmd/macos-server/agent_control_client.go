@@ -119,7 +119,7 @@ func (c *AgentControlClient) handleMessage(msg splitproto.Message) {
 	}
 }
 
-func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generation uint64, chroma string) {
+func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi, bandwidth int, generation uint64, chroma string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -142,6 +142,7 @@ func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generatio
 			"height":     height,
 			"fps":        fps,
 			"hdpi":       hdpi,
+			"bandwidth":  bandwidth,
 			"generation": generation,
 			"pixfmt":     pixfmt,
 		},
@@ -156,7 +157,7 @@ func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi int, generatio
 
 func (c *AgentControlClient) ApplyCurrentConfig() {
 	width, height := server.GetScreenSize()
-	c.ApplyConfig(width, height, server.FPS, server.HDPI, getGeneration(), server.Chroma)
+	c.ApplyConfig(width, height, server.FPS, server.HDPI, server.TargetBandwidthMbps, getGeneration(), server.Chroma)
 }
 func (c *AgentControlClient) IsReady(targetGen uint64) bool {
 	c.mu.Lock()

@@ -267,6 +267,7 @@ func (a *NativeApp) sendInitialConfig() {
 	configMap := make(map[string]any)
 	configMap["framerate"] = a.currentFramerateValue()
 	configMap["max_res"] = a.currentResolution().Value
+	configMap["bandwidth"] = a.currentBitrateValue()
 	if hdpi := a.currentHDPIValue(); hdpi >= 0 {
 		configMap["hdpi"] = hdpi
 	}

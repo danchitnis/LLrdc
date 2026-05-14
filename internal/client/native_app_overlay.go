@@ -150,7 +150,7 @@ func rollingVideoMbps(now time.Time, samples []TimedByteSample) float64 {
 		totalBytes += sample.Bytes
 	}
 	seconds := float64(statsMetricWindowMs) / 1000.0
-	return float64(totalBytes) * 8 / 1024 / 1024 / seconds
+	return float64(totalBytes) * 8 / 1000 / 1000 / seconds
 }
 
 func rollingLatencyMs(now time.Time, samples []LatencyBreakdown) float64 {

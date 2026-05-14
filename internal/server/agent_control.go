@@ -116,6 +116,9 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 			captureChangeRequested = true
 		}
 	}
+	if bw, ok := config["bandwidth"].(float64); ok {
+		SetBandwidth(int(bw))
+	}
 	w, h := splitState.width, splitState.height
 	fps := splitState.fps
 	splitStateMu.Unlock()

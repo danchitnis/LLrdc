@@ -33,7 +33,7 @@ func InitWebRTCMux() {
 		return
 	}
 
-	const bufferSize = 4 * 1024 * 1024
+	const bufferSize = 16 * 1024 * 1024
 	if err := udpConn.SetReadBuffer(bufferSize); err != nil {
 		log.Printf("Warning: Failed to set UDP read buffer: %v", err)
 	}
@@ -46,7 +46,7 @@ func InitWebRTCMux() {
 	})
 
 	webrtcUDPMux = mux
-	log.Printf("WebRTC UDP Mux initialized on port %d with 4MB buffers", Port)
+	log.Printf("WebRTC UDP Mux initialized on port %d with 16MB buffers", Port)
 }
 
 func InitWebRTC() {
@@ -85,8 +85,9 @@ func writeFrameToTrack(frame WebRTCFrame) {
 
 	select {
 	case <-done:
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		// Drop frame if write takes too long
+		log.Printf("Warning: WebRTC video write TIMEOUT (500ms) - dropping frame of size %d", len(frame.Data))
 	}
 }
 
@@ -298,6 +299,7 @@ func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		go func() {
 			for {
 				packets, _, rtcpErr := rtpSender.ReadRTCP()

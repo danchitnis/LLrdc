@@ -193,17 +193,6 @@ VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, 
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_AverageBitRate, bitrateNum);
     CFRelease(bitrateNum);
 
-    int limitBytes = (bitrate_kbps * 1200) / 8; // 1.2x average bitrate in bytes
-    CFNumberRef bytesNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &limitBytes);
-    double limitSeconds = 1.0;
-    CFNumberRef secondsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &limitSeconds);
-    CFTypeRef limitsArray[] = { bytesNum, secondsNum };
-    CFArrayRef limits = CFArrayCreate(kCFAllocatorDefault, limitsArray, 2, &kCFTypeArrayCallBacks);
-    VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_DataRateLimits, limits);
-    CFRelease(bytesNum);
-    CFRelease(secondsNum);
-    CFRelease(limits);
-
     int gop = fps; // 1 second GOP
     CFNumberRef gopNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &gop);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_MaxKeyFrameInterval, gopNum);

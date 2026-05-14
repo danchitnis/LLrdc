@@ -15,7 +15,7 @@ import (
 
 func videoSampleBuilderConfig(lowLatency bool) (uint16, time.Duration) {
 	if lowLatency {
-		return 8, 12 * time.Millisecond
+		return 512, 12 * time.Millisecond
 	}
 	return 256, 0
 }

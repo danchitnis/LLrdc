@@ -84,8 +84,8 @@ func (s *Session) recordVideoByteSampleLocked(at time.Time, size int) {
 		AtMs:  at.UnixMilli(),
 		Bytes: size,
 	})
-	if len(s.state.RecentVideoByteSamples) > 600 {
-		s.state.RecentVideoByteSamples = s.state.RecentVideoByteSamples[len(s.state.RecentVideoByteSamples)-600:]
+	if len(s.state.RecentVideoByteSamples) > 12000 {
+		s.state.RecentVideoByteSamples = s.state.RecentVideoByteSamples[len(s.state.RecentVideoByteSamples)-12000:]
 	}
 }
 

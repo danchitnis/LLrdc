@@ -26,6 +26,7 @@ type ClientConfig struct {
 	Codec      *string `yaml:"codec"`
 	VideoCodec *string `yaml:"videoCodec"`
 	DPI        *int    `yaml:"dpi"`
+	Bitrate    *int    `yaml:"bitrate"`
 }
 
 func LoadClientConfig(path string) (ClientConfig, error) {
@@ -82,6 +83,11 @@ type framerateOption struct {
 	Value int
 }
 
+type bitrateOption struct {
+	Label string
+	Value int
+}
+
 type MenuItemSnapshot struct {
 	ID         string `json:"id"`
 	Label      string `json:"label"`
@@ -122,6 +128,8 @@ type NativeApp struct {
 	codecIndex       int
 	framerateOptions []framerateOption
 	framerateIndex   int
+	bitrateOptions   []bitrateOption
+	bitrateIndex     int
 	resolutionOpts   []resolutionOption
 	resolutionIndex  int
 	hdpiOptions      []hdpiOption
@@ -227,6 +235,7 @@ func NewNativeApp(opts NativeAppOptions) *NativeApp {
 		modifiers:         make(map[string]bool),
 		codecOptions:      defaultCodecOptions(),
 		framerateOptions:  defaultFramerateOptions(),
+		bitrateOptions:    defaultBitrateOptions(),
 		resolutionOpts:    defaultResolutionOptions(),
 		hdpiOptions:       defaultHDPIOptions(),
 		reconnectRequests: make(chan struct{}, 1),
@@ -237,6 +246,7 @@ func NewNativeApp(opts NativeAppOptions) *NativeApp {
 	app.codecOptions = app.buildCodecOptions()
 	app.codecIndex = app.codecIndexForConfig()
 	app.framerateIndex = app.framerateIndexForConfig()
+	app.bitrateIndex = app.bitrateIndexForConfig()
 	app.resolutionIndex = app.resolutionIndexForRenderer()
 	app.hdpiIndex = app.hdpiIndexForConfig()
 	app.lastHUDColor = OverlayColor{R: 68, G: 255, B: 68, A: 255}
@@ -296,6 +306,40 @@ func defaultFramerateOptions() []framerateOption {
 		{Label: "90 FPS", Value: 90},
 		{Label: "120 FPS", Value: 120},
 	}
+}
+
+func defaultBitrateOptions() []bitrateOption {
+	return []bitrateOption{
+		{Label: "1 Mbps", Value: 1},
+		{Label: "2 Mbps", Value: 2},
+		{Label: "5 Mbps", Value: 5},
+		{Label: "10 Mbps", Value: 10},
+		{Label: "20 Mbps", Value: 20},
+		{Label: "50 Mbps", Value: 50},
+		{Label: "100 Mbps", Value: 100},
+	}
+}
+
+func (a *NativeApp) bitrateIndexForConfig() int {
+	value := 10
+	if a.opts.Config.Bitrate != nil {
+		value = *a.opts.Config.Bitrate
+	}
+	for i, opt := range a.bitrateOptions {
+		if opt.Value == value {
+			return i
+		}
+	}
+	return 3 // Default to 10 Mbps (index 3)
+}
+
+func (a *NativeApp) currentBitrateValue() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.bitrateIndex >= 0 && a.bitrateIndex < len(a.bitrateOptions) {
+		return a.bitrateOptions[a.bitrateIndex].Value
+	}
+	return 5
 }
 
 func defaultHDPIOptions() []hdpiOption {

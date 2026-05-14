@@ -8,7 +8,7 @@ import (
 	"github.com/pion/transport/v4/packetio"
 )
 
-const latencyBufferSize = 1000 * 1000
+const latencyBufferSize = 16 * 1024 * 1024
 
 type latencyBufferFactory func(packetType packetio.BufferPacketType, ssrc uint32) io.ReadWriteCloser
 

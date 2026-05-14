@@ -26,7 +26,6 @@ func init() {
 	server.FPS = 30
 	server.VideoCodec = "h264"
 	server.WebRTCLowLatency = true
-	server.HDPI = 100
 
 	// Initialize WebRTC track and mux
 	server.InitWebRTC()
@@ -63,11 +62,13 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		"chroma":             server.Chroma,
 		"framerate":          server.FPS,
 		"hdpi":               server.HDPI,
+		"bandwidth":          server.TargetBandwidthMbps,
 		"webrtc_low_latency": server.WebRTCLowLatency,
 	})
 
 	var configMu sync.Mutex
 	var configTimer *time.Timer
+	lastAppliedHDPI := -1
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -111,17 +112,23 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if fps, ok := configMap["framerate"].(float64); ok {
-				if fps > 0 && int(fps) != server.FPS {
+				if int(fps) > 0 && int(fps) != server.FPS {
 					server.FPS = int(fps)
 				}
 			} else if fps, ok := configMap["fps"].(float64); ok {
-				if fps > 0 && int(fps) != server.FPS {
+				if int(fps) > 0 && int(fps) != server.FPS {
 					server.FPS = int(fps)
 				}
 			}
 			if hdpi, ok := configMap["hdpi"].(float64); ok {
 				if hdpi > 0 && int(hdpi) != server.HDPI {
 					server.HDPI = int(hdpi)
+					reconnectNeeded = true
+				}
+			}
+			if bw, ok := configMap["bandwidth"].(float64); ok {
+				if bw > 0 && int(bw) != server.TargetBandwidthMbps {
+					server.TargetBandwidthMbps = int(bw)
 				}
 			}
 
@@ -145,41 +152,45 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if server.VideoCodec != oldCodec || server.Chroma != oldChroma {
-					log.Printf("Codec/Chroma changed detected: %s -> %s, %s -> %s", oldCodec, server.VideoCodec, oldChroma, server.Chroma)
-					reconnectNeeded = true
-				}
-			} else if chroma, ok := configMap["chroma"].(string); ok {
-				oldChroma := server.Chroma
-				server.Chroma = chroma
-				if server.Chroma != oldChroma {
-					log.Printf("Chroma change detected: %s -> %s", oldChroma, server.Chroma)
 					reconnectNeeded = true
 				}
 			}
 
-			if reconnectNeeded {
-				log.Printf("Re-initializing WebRTC track for new capabilities...")
-				server.InitWebRTCTrack()
-				server.KillFFmpegWithTimestamp() // No-op on macos-server but good practice
-				_ = safeWriteJSON(map[string]interface{}{"type": "reconnect_hint"})
-			}
-
-			// Debounce applying the merged configuration to the agent
 			configMu.Lock()
 			if configTimer != nil {
 				configTimer.Stop()
 			}
+
 			configTimer = time.AfterFunc(100*time.Millisecond, func() {
+				if reconnectNeeded {
+					pcMu.Lock()
+					if pc != nil {
+						pc.Close()
+						pc = nil
+					}
+					pcMu.Unlock()
+				}
+
 				width, height := server.GetScreenSize()
-				gen := nextGeneration()
 				pixFmt := 0
 				if server.Chroma == "444" {
 					pixFmt = 1
 				}
-				log.Printf("Applying debounced config (gen %d): %s %dx%d (fmt %d)", gen, server.VideoCodec, width, height, pixFmt)
-				encMgr.Recreate(server.VideoCodec, width, height, server.FPS, pixFmt, gen)
-				if globalControlClient != nil {
-					globalControlClient.ApplyConfig(width, height, server.FPS, server.HDPI, gen, server.Chroma)
+
+				// Only increment generation if something actually changed on the server side
+				// that requires an agent restart or encoder recreation.
+				gen := getGeneration()
+				enc, encGen := encMgr.Get()
+				if enc == nil || enc.Width != width || enc.Height != height || encGen != gen || enc.PixFmt != pixFmt || server.TargetBandwidthMbps*1000 != enc.BitrateKbps() || server.FPS != enc.FPS || encMgr.Codec() != server.VideoCodec || lastAppliedHDPI != server.HDPI {
+					gen = nextGeneration()
+					lastAppliedHDPI = server.HDPI
+					log.Printf("Applying debounced config (gen %d): %s %dx%d@%d FPS (fmt %d), %d Mbps, %d%% HDPI", gen, server.VideoCodec, width, height, server.FPS, pixFmt, server.TargetBandwidthMbps, server.HDPI)
+					encMgr.Recreate(server.VideoCodec, width, height, server.FPS, server.TargetBandwidthMbps*1000, pixFmt, gen)
+					if globalControlClient != nil {
+						globalControlClient.ApplyConfig(width, height, server.FPS, server.HDPI, server.TargetBandwidthMbps, gen, server.Chroma)
+					}
+				} else {
+					log.Printf("Debounced config received but no functional changes detected (gen %d).", gen)
 				}
 			})
 			configMu.Unlock()
@@ -195,18 +206,20 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			width, height := server.GetScreenSize()
+			gen := getGeneration()
 			safeWriteJSON(map[string]interface{}{
 				"type":               "config",
 				"videoCodec":         reportedCodec,
-				"chroma":             server.Chroma,
-				"framerate":          server.FPS,
+				"width":              width,
+				"height":             height,
+				"fps":                server.FPS,
 				"hdpi":               server.HDPI,
+				"bandwidth":          server.TargetBandwidthMbps,
+				"generation":         gen,
+				"chroma":             server.Chroma,
 				"webrtc_low_latency": server.WebRTCLowLatency,
 			})
-
-		default:
-			// Route other messages (input) to HandleInputMessage
-			server.HandleInputMessage(msg)
 		}
 	}
 }

@@ -24,8 +24,13 @@ type VTEncoder struct {
 	forceNextIDR  atomic.Bool
 	Width, Height int
 	FPS           int
+	bitrateKbps   int
 	PixFmt        int
 	mu            sync.RWMutex
+}
+
+func (e *VTEncoder) BitrateKbps() int {
+	return e.bitrateKbps
 }
 
 //export goEncodedFrameCallback
@@ -40,11 +45,12 @@ func goEncodedFrameCallback(handle C.uintptr_t, data unsafe.Pointer, length C.in
 
 func NewVTEncoder(codec string, width, height, fps, bitrateKbps int, pixFmt int, onFrame func(data []byte, isKeyframe bool)) *VTEncoder {
 	enc := &VTEncoder{
-		onFrame: onFrame,
-		Width:   width,
-		Height:  height,
-		FPS:     fps,
-		PixFmt:  pixFmt,
+		onFrame:     onFrame,
+		Width:       width,
+		Height:      height,
+		FPS:         fps,
+		bitrateKbps: bitrateKbps,
+		PixFmt:      pixFmt,
 	}
 	enc.handle = cgo.NewHandle(enc)
 	cCodec := C.CString(codec)

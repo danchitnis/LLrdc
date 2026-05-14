@@ -253,6 +253,8 @@ func (a *NativeApp) executeValueCommand(id string) error {
 		return a.setCodec(strings.TrimPrefix(id, "codec.set:"))
 	case strings.HasPrefix(id, "framerate.set:"):
 		return a.setFramerate(strings.TrimPrefix(id, "framerate.set:"))
+	case strings.HasPrefix(id, "bitrate.set:"):
+		return a.setBitrate(strings.TrimPrefix(id, "bitrate.set:"))
 	case strings.HasPrefix(id, "resolution.set:"):
 		return a.setResolution(strings.TrimPrefix(id, "resolution.set:"))
 	case strings.HasPrefix(id, "hdpi.set:"):
@@ -322,6 +324,30 @@ func (a *NativeApp) setFramerate(value string) error {
 	a.mu.Unlock()
 
 	if err := a.session.SendConfig(map[string]any{"framerate": targetValue}); err != nil && !strings.Contains(err.Error(), "not connected") {
+		return err
+	}
+	return nil
+}
+
+func (a *NativeApp) setBitrate(value string) error {
+	targetValue := intFromString(value)
+	a.mu.Lock()
+	target := -1
+	for idx, option := range a.bitrateOptions {
+		if option.Value == targetValue {
+			target = idx
+			break
+		}
+	}
+	if target < 0 {
+		a.mu.Unlock()
+		return fmt.Errorf("unknown bitrate option: %s", value)
+	}
+	a.bitrateIndex = target
+	a.refreshOverlayLocked()
+	a.mu.Unlock()
+
+	if err := a.session.SendConfig(map[string]any{"bandwidth": targetValue}); err != nil && !strings.Contains(err.Error(), "not connected") {
 		return err
 	}
 	return nil
@@ -539,11 +565,13 @@ func (a *NativeApp) firstEnabledVisibleMenuItemLocked(items []MenuItemSnapshot) 
 func (a *NativeApp) menuItemsLocked() []MenuItemSnapshot {
 	codec := a.codecOptions[a.codecIndex]
 	framerate := a.framerateOptions[a.framerateIndex]
+	bitrate := a.bitrateOptions[a.bitrateIndex]
 	resolution := a.resolutionOpts[a.resolutionIndex]
 	hdpi := a.hdpiOptions[a.hdpiIndex]
 	return []MenuItemSnapshot{
 		{ID: "codec.menu", Label: "Codec", Value: codec.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "codec.menu"},
 		{ID: "framerate.menu", Label: "Frame Rate", Value: framerate.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "framerate.menu"},
+		{ID: "bitrate.menu", Label: "Bitrate", Value: bitrate.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "bitrate.menu"},
 		{ID: "resolution.menu", Label: "Max Resolution", Value: resolution.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "resolution.menu"},
 		{ID: "hdpi.menu", Label: "HDPI", Value: hdpi.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "hdpi.menu"},
 		{ID: "stats.menu", Label: "Stats HUD", Value: onOff(a.showStats), Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "stats.menu"},
@@ -578,6 +606,17 @@ func (a *NativeApp) visibleMenuItemsLocked() []MenuItemSnapshot {
 					Label:    option.Label,
 					Enabled:  true,
 					Current:  idx == a.framerateIndex,
+					Depth:    1,
+					ParentID: item.ID,
+				})
+			}
+		case "bitrate.menu":
+			for idx, option := range a.bitrateOptions {
+				items = append(items, MenuItemSnapshot{
+					ID:       fmt.Sprintf("bitrate.set:%d", option.Value),
+					Label:    option.Label,
+					Enabled:  true,
+					Current:  idx == a.bitrateIndex,
 					Depth:    1,
 					ParentID: item.ID,
 				})

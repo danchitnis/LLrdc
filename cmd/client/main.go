@@ -30,6 +30,7 @@ func main() {
 	headless := flag.Bool("headless", false, "Run without creating a native window")
 	showStats := flag.Bool("stats", false, "Show stats overlay on the screen")
 	videoCodec := flag.String("video-codec", "", "Preferred video codec (vp8, h264, h265, av1)")
+	bandwidth := flag.Int("bandwidth", 0, "Target bandwidth in Mbps (1, 2, 5, 10, 20)")
 	defaultAutoStart := runtime.GOOS == "darwin"
 	autoStart := flag.Bool("auto-start", defaultAutoStart, "Start streaming automatically without waiting for click")
 	latencyProbe := flag.Bool("latency-probe", false, "Enable internal latency probe (checks center pixel brightness)")
@@ -46,6 +47,9 @@ func main() {
 
 	if *videoCodec != "" {
 		cfg.Codec = videoCodec
+	}
+	if *bandwidth != 0 {
+		cfg.Bitrate = bandwidth
 	}
 
 	if cfg.Resolution != nil {
