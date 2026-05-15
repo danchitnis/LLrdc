@@ -48,6 +48,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/danchitnis/llrdc/client"
 )
 
 var (
@@ -84,9 +86,9 @@ type NativeRenderer struct {
 
 	mu           sync.RWMutex
 	inputSink    func(map[string]any) error
-	lifecycle    func(NativeWindowLifecycle)
-	present      func(NativeFramePresented)
-	overlay      OverlayState
+	lifecycle    func(client.NativeWindowLifecycle)
+	present      func(client.NativeFramePresented)
+	overlay      client.OverlayState
 	latencyProbe bool
 	debugCursor  bool
 	lowLatency   bool
@@ -98,7 +100,7 @@ type NativeRenderer struct {
 	doneCh chan struct{}
 }
 
-func NewNativeRenderer(opts NativeRendererOptions) (WindowRenderer, error) {
+func NewNativeRenderer(opts client.NativeRendererOptions) (client.WindowRenderer, error) {
 	return &NativeRenderer{
 		title:        opts.Title,
 		width:        opts.Width,
@@ -118,21 +120,21 @@ func (r *NativeRenderer) SetInputSink(fn func(map[string]any) error) {
 	r.inputSink = fn
 }
 
-func (r *NativeRenderer) SetLifecycleSink(fn func(NativeWindowLifecycle)) {
+func (r *NativeRenderer) SetLifecycleSink(fn func(client.NativeWindowLifecycle)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.lifecycle = fn
 }
 
-func (r *NativeRenderer) SetPresentSink(fn func(NativeFramePresented)) {
+func (r *NativeRenderer) SetPresentSink(fn func(client.NativeFramePresented)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.present = fn
 }
 
-func (r *NativeRenderer) SetOverlayState(state OverlayState) {
+func (r *NativeRenderer) SetOverlayState(state client.OverlayState) {
 	r.mu.Lock()
-	r.overlay = cloneOverlayState(state)
+	r.overlay = client.CloneOverlayState(state)
 	r.mu.Unlock()
 
 	hudText := strings.Join(state.HUDLines, "\n")
@@ -249,7 +251,7 @@ func (r *NativeRenderer) handleH264(frame []byte, packetTimestamp uint32) error 
 		return nil
 	}
 
-	unit, err := buildH264AccessUnit(frame)
+	unit, err := client.BuildH264AccessUnit(frame)
 	if err != nil {
 		return err
 	}
@@ -292,7 +294,7 @@ func (r *NativeRenderer) handleHEVC(frame []byte, packetTimestamp uint32) error 
 		return nil
 	}
 
-	unit, err := buildH265AccessUnit(frame)
+	unit, err := client.BuildH265AccessUnit(frame)
 	if err != nil {
 		return err
 	}
@@ -391,7 +393,7 @@ func (r *NativeRenderer) Run() error {
 	return nil
 }
 
-func (r *NativeRenderer) emitLifecycle(event NativeWindowLifecycle) {
+func (r *NativeRenderer) emitLifecycle(event client.NativeWindowLifecycle) {
 	r.mu.RLock()
 	fn := r.lifecycle
 	r.mu.RUnlock()
@@ -400,7 +402,7 @@ func (r *NativeRenderer) emitLifecycle(event NativeWindowLifecycle) {
 	}
 }
 
-func (r *NativeRenderer) emitPresent(event NativeFramePresented) {
+func (r *NativeRenderer) emitPresent(event client.NativeFramePresented) {
 	r.mu.RLock()
 	fn := r.present
 	r.mu.RUnlock()
@@ -426,7 +428,7 @@ func llrdc_window_callback(idPtr unsafe.Pointer, eventType C.int, data1 C.int, d
 	if r == nil {
 		return
 	}
-	event := NativeWindowLifecycle{}
+	event := client.NativeWindowLifecycle{}
 	switch eventType {
 	case 1:
 		event.Event = "created"
@@ -488,8 +490,8 @@ func llrdc_present_callback(idPtr unsafe.Pointer, width C.int, height C.int, ts 
 	if r == nil {
 		return
 	}
-	now := benchmarkClockNowMs()
-	r.emitPresent(NativeFramePresented{
+	now := client.BenchmarkClockNowMs()
+	r.emitPresent(client.NativeFramePresented{
 		Width:             int(width),
 		Height:            int(height),
 		PacketTimestamp:   uint32(ts),

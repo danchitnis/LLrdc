@@ -276,15 +276,13 @@ func defaultCodecOptions() []codecOption {
 		{Label: "H.264 (CPU)", Value: "h264"},
 		{Label: "H.264 (4:4:4)", Value: "h264-444", Chroma: "444"},
 		{Label: "H.264 (NVIDIA 4:4:4)", Value: "h264_nvenc", Chroma: "444"},
-		{Label: "H.264 (Intel QSV)", Value: "h264_qsv"},
+		{Label: "H.264 (Intel)", Value: "h264_qsv"},
 		{Label: "H.265 (CPU)", Value: "h265"},
 		{Label: "H.265 (4:4:4)", Value: "h265-444", Chroma: "444"},
 		{Label: "H.265 (NVIDIA 4:4:4)", Value: "h265_nvenc", Chroma: "444"},
-		{Label: "H.265 (Intel QSV)", Value: "h265_qsv"},
-		{Label: "HEVC (Intel 4:4:4)", Value: "hevc_vaapi", Chroma: "444"},
+		{Label: "HEVC 4:4:4 (Intel)", Value: "h265_qsv-444", Chroma: "444"},
 		{Label: "AV1 (CPU)", Value: "av1"},
 		{Label: "AV1 (NVIDIA NVENC)", Value: "av1_nvenc"},
-		{Label: "AV1 (Intel QSV)", Value: "av1_qsv"},
 	}
 }
 

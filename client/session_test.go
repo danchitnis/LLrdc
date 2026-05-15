@@ -68,7 +68,7 @@ func TestBuildH264AccessUnitFromAnnexB(t *testing.T) {
 		0x00, 0x00, 0x00, 0x01, 0x65, 0x88, 0x84,
 	}
 
-	unit, err := buildH264AccessUnit(frame)
+	unit, err := BuildH264AccessUnit(frame)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

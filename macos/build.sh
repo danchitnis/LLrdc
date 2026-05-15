@@ -22,7 +22,7 @@ mkdir -p "${RESOURCES_DIR}"
 
 # Compile Go binary
 # We use -tags native to enable the AppKit/VideoToolbox renderer
-go build -tags native -o "${MACOS_DIR}/llrdc-client" cmd/client/main.go
+go build -tags native -o "${MACOS_DIR}/llrdc-client" ./cmd/client
 
 # Copy Info.plist (if not exists, we'll create it below)
 if [ ! -f "macos/Info.plist" ]; then

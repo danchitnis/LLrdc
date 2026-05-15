@@ -103,12 +103,23 @@ func (a *NativeApp) attachSessionHooks() {
 		a.mu.Lock()
 		a.codecOptions = a.buildCodecOptions()
 		currentCodec := a.session.State().VideoCodec
+		chroma := "420"
+		if lc := a.session.State().LastConfig; lc != nil {
+			if c, ok := lc["chroma"].(string); ok && c != "" {
+				chroma = c
+			}
+		}
 
-		// If the current codec index is valid and the labels match, don't force a reset.
-		// This prevents automatic fallbacks during reconnect loops.
+		targetValue := currentCodec
+		if currentCodec == "h265_qsv" && chroma == "444" {
+			targetValue = "h265_qsv-444"
+		} else if (currentCodec == "h264" || currentCodec == "h265") && chroma == "444" {
+			targetValue = currentCodec + "-444"
+		}
+
 		isSameCodec := false
 		if a.codecIndex >= 0 && a.codecIndex < len(a.codecOptions) {
-			if a.codecOptions[a.codecIndex].Value == currentCodec {
+			if a.codecOptions[a.codecIndex].Value == targetValue {
 				isSameCodec = true
 			}
 		}
@@ -116,7 +127,7 @@ func (a *NativeApp) attachSessionHooks() {
 		if !isSameCodec {
 			found := false
 			for i, opt := range a.codecOptions {
-				if opt.Value == currentCodec {
+				if opt.Value == targetValue {
 					a.codecIndex = i
 					found = true
 					break
@@ -275,7 +286,11 @@ func (a *NativeApp) sendInitialConfig() {
 	a.mu.RLock()
 	if a.codecIndex >= 0 && a.codecIndex < len(a.codecOptions) {
 		opt := a.codecOptions[a.codecIndex]
-		configMap["videoCodec"] = opt.Value
+		videoCodecToSend := opt.Value
+		if strings.HasSuffix(videoCodecToSend, "-444") {
+			videoCodecToSend = strings.TrimSuffix(videoCodecToSend, "-444")
+		}
+		configMap["videoCodec"] = videoCodecToSend
 		if opt.Chroma != "" {
 			configMap["chroma"] = opt.Chroma
 		} else {

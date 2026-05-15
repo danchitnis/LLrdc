@@ -5,25 +5,25 @@ import (
 	"errors"
 )
 
-// h264AccessUnit represents a parsed H.264 access unit.
+// H264AccessUnit represents a parsed H.264 access unit.
 // This is primarily used for the macOS VideoToolbox renderer, which requires
 // explicit parameter sets and length-prefixed NAL units (AVCC format).
-type h264AccessUnit struct {
+type H264AccessUnit struct {
 	AVCC []byte
 	SPS  []byte
 	PPS  []byte
 }
 
-// buildH264AccessUnit parses an Annex-B H.264 frame and extracts the parameter sets.
+// BuildH264AccessUnit parses an Annex-B H.264 frame and extracts the parameter sets.
 // It also converts the stream to length-prefixed NALUs required by VideoToolbox.
-func buildH264AccessUnit(frame []byte) (h264AccessUnit, error) {
+func BuildH264AccessUnit(frame []byte) (H264AccessUnit, error) {
 	nalus := splitH264NALUs(frame)
 	if len(nalus) == 0 {
-		return h264AccessUnit{}, errors.New("h264 access unit did not contain any NAL units")
+		return H264AccessUnit{}, errors.New("h264 access unit did not contain any NAL units")
 	}
 
 	avcc := make([]byte, 0, len(frame)+len(nalus)*4)
-	unit := h264AccessUnit{}
+	unit := H264AccessUnit{}
 	for _, nalu := range nalus {
 		if len(nalu) == 0 {
 			continue
@@ -42,7 +42,7 @@ func buildH264AccessUnit(frame []byte) (h264AccessUnit, error) {
 	}
 
 	if len(avcc) == 0 {
-		return h264AccessUnit{}, errors.New("h264 access unit only contained empty NAL units")
+		return H264AccessUnit{}, errors.New("h264 access unit only contained empty NAL units")
 	}
 	unit.AVCC = avcc
 	return unit, nil

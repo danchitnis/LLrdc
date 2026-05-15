@@ -292,8 +292,12 @@ func (a *NativeApp) setCodec(value string) error {
 		if opt.Chroma != "" {
 			chroma = opt.Chroma
 		}
+		videoCodecToSend := value
+		if strings.HasSuffix(videoCodecToSend, "-444") {
+			videoCodecToSend = strings.TrimSuffix(videoCodecToSend, "-444")
+		}
 		config := map[string]any{
-			"videoCodec": value,
+			"videoCodec": videoCodecToSend,
 			"chroma":     chroma,
 		}
 		if err := a.session.SendConfig(config); err != nil && !strings.Contains(err.Error(), "not connected") {

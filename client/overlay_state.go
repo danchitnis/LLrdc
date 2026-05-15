@@ -1,6 +1,6 @@
 package client
 
-func cloneOverlayState(state OverlayState) OverlayState {
+func CloneOverlayState(state OverlayState) OverlayState {
 	copyState := state
 	if state.HUDLines != nil {
 		copyState.HUDLines = append([]string(nil), state.HUDLines...)
