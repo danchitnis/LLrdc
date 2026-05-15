@@ -388,8 +388,8 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				codec = "h264_nvenc"
 				codecName = "h264"
 				format = "h264"
-			} else if VideoCodec == "h264_qsv" {
-				codec = "h264_qsv"
+			} else if VideoCodec == "h264_qsv" || VideoCodec == "h264_vaapi" {
+				codec = "h264_vaapi"
 				codecName = "h264"
 				format = "h264"
 			} else if VideoCodec == "h265" {
@@ -571,27 +571,27 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						"-p", "bf=0",
 					)
 
-					if codec == "h264_vaapi" || codec == "h264_qsv" {
+					if codec == "h264_vaapi" || codec == "h264_qsv" || codec == "h265_qsv" || (codec == "hevc_vaapi" && Chroma != "444") {
 						args = append(args, "-p", "aud=1")
 					}
 
-					filterFormat := "nv12"
 					if Chroma == "444" {
-						filterFormat = "vuyx"
+						args = append(args, "-F", fmt.Sprintf("scale_vaapi=format=vuyx:out_range=full,fps=%d", FPS))
+					} else {
+						// wf-recorder automatically handles hwupload and scale_vaapi=format=nv12 when -d is passed
+						// We just need to force the FPS filter if needed, but wf-recorder handles -F fps=30 inherently if we pass -r
 					}
 
-					args = append(args, "-F", fmt.Sprintf("scale_vaapi=format=%s:out_range=full,fps=%d", filterFormat, FPS))
-
-					if codec == "h264_vaapi" {
-						args = append(args, "-p", "profile=77") // main
-					} else if codec == "hevc_vaapi" {
+					if codec == "h264_vaapi" || codec == "h264_qsv" {
+						args = append(args, "-p", "profile=main")
+					} else if codec == "hevc_vaapi" || codec == "h265_vaapi" || codec == "hevc_qsv" || codec == "h265_qsv" {
 						if Chroma == "444" {
 							args = append(args, "-p", "profile=rext")
 						} else {
 							args = append(args, "-p", "profile=main")
 						}
-					} else if codec == "av1_vaapi" {
-						args = append(args, "-p", "profile=0") // main
+					} else if codec == "av1_vaapi" || codec == "av1_qsv" {
+						args = append(args, "-p", "profile=main")
 					}
 				} else {
 					// CPU encoding
