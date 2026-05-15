@@ -48,6 +48,8 @@ export async function waitForServerReady(baseUrl: string, timeoutMs = 45000): Pr
 export interface ReadyzPayload {
     ready?: boolean;
     conditions?: Record<string, boolean>;
+    chroma?: string;
+    videoCodec?: string;
     directBuffer?: {
         requested?: boolean;
         supported?: boolean;

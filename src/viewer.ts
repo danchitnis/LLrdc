@@ -132,7 +132,10 @@ function buildConfigMessage(): ConfigMessage {
 
     if (videoCodecSelect) {
         config.videoCodec = videoCodecSelect.value;
-        if (videoCodecSelect.value === 'h264-444' || videoCodecSelect.value === 'h265-444') {
+        if (videoCodecSelect.value === 'h264-444' || videoCodecSelect.value === 'h265-444' || videoCodecSelect.value === 'h265_qsv-444') {
+            if (videoCodecSelect.value === 'h265_qsv-444') {
+                config.videoCodec = 'h265_qsv';
+            }
             config.chroma = '444';
             log(`UI selecting pseudo-codec ${videoCodecSelect.value}, setting chroma to 444`);
         } else {
@@ -405,7 +408,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                     
                     gpuOptionsList.forEach(opt => {
                         const isNVENC = opt.value.endsWith('_nvenc');
-                        const isQSV = opt.value.endsWith('_qsv');
+                        const isQSV = opt.value.includes('_qsv');
                         const isAV1 = opt.value.startsWith('av1');
                         const isH265 = opt.value.startsWith('h265');
                         
@@ -413,7 +416,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                         if (isNVENC) {
                             shouldShow = nvencAvailable && (!isAV1 || av1NvencAvailable);
                         } else if (isQSV) {
-                            shouldShow = qsvAvailable && (!isAV1 || av1QsvAvailable) && (!isH265 || h265QsvAvailable);
+                            shouldShow = qsvAvailable;
                         }
                         
                         if (shouldShow) {
@@ -430,7 +433,13 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             }
 
             if (videoCodecSelect) {
-                videoCodecSelect.value = msg.videoCodec as string;
+                if (msg.videoCodec === 'h265_qsv' && msg.chroma === '444') {
+                    videoCodecSelect.value = 'h265_qsv-444';
+                } else if ((msg.videoCodec === 'h264' || msg.videoCodec === 'h265') && msg.chroma === '444') {
+                    videoCodecSelect.value = `${msg.videoCodec}-444`;
+                } else {
+                    videoCodecSelect.value = msg.videoCodec as string;
+                }
                 if (cpuEffortSlider) {
                     cpuEffortSlider.disabled = videoCodecSelect.value !== 'vp8';
                 }
