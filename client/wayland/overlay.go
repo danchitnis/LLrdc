@@ -79,7 +79,7 @@ func (r *NativeRenderer) drawOverlay(renderer *sdl.Renderer) {
 	if err != nil {
 		return
 	}
-	layout := client.ComputeMenuLayout(int(outputW), int(outputH), len(state.MenuItems))
+	layout := ComputeMenuLayout(int(outputW), int(outputH), len(state.MenuItems))
 	itemHeight := int32(layout.ItemHeight)
 	panel := sdl.Rect{
 		X: int32(layout.PanelX),
@@ -169,7 +169,7 @@ func drawBitmapText(renderer *sdl.Renderer, x, y, scale int32, text string, c cl
 	_ = renderer.SetDrawColor(c.R, c.G, c.B, c.A)
 	cursorX := x
 	for _, raw := range strings.ToUpper(text) {
-		glyph := client.GlyphForRune(raw)
+		glyph := GlyphForRune(raw)
 		for row := int32(0); row < 7; row++ {
 			for col := int32(0); col < 5; col++ {
 				if glyph[row][col] != '1' {

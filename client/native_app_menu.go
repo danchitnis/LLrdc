@@ -174,9 +174,8 @@ func (a *NativeApp) updateMenuHover(x, y float64) {
 	if a.renderer == nil {
 		return
 	}
-	width, height := a.renderer.Size()
 	items := a.visibleMenuItemsLocked()
-	idx := menuItemIndexAt(width, height, x, y, len(items))
+	idx := a.renderer.MenuItemIndexAt(x, y, len(items))
 	if idx >= 0 && idx < len(items) && items[idx].Enabled {
 		a.menuSelected = idx
 		a.refreshOverlayLocked()
@@ -189,11 +188,10 @@ func (a *NativeApp) activateMenuPointer(x, y float64) error {
 		a.mu.RUnlock()
 		return nil
 	}
-	width, height := a.renderer.Size()
 	items := a.visibleMenuItemsLocked()
 	a.mu.RUnlock()
 
-	idx := menuItemIndexAt(width, height, x, y, len(items))
+	idx := a.renderer.MenuItemIndexAt(x, y, len(items))
 	if idx < 0 || idx >= len(items) || !items[idx].Enabled {
 		return nil
 	}

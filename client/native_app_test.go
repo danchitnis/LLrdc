@@ -246,10 +246,9 @@ func TestNativeAppMenuPointerSelectsResolutionOption(t *testing.T) {
 			t.Fatalf("menu item %q not found", targetID)
 		}
 
-		layout := ComputeMenuLayout(renderer.width, renderer.height, len(menu.Items))
-		x := float64(layout.PanelX+layout.PanelW/2) / float64(renderer.width)
-		y := float64(layout.PanelY+layout.ItemsStart+targetIndex*layout.ItemHeight+layout.ItemHeight/2) / float64(renderer.height)
-
+		panelX, panelY, panelW, _, itemsStart, itemHeight := computeTestMenuLayout(renderer.width, renderer.height, len(menu.Items))
+		x := float64(panelX+panelW/2) / float64(renderer.width)
+		y := float64(panelY+itemsStart+targetIndex*itemHeight+itemHeight/2) / float64(renderer.height)
 		if err := app.handleRendererInput(map[string]any{
 			"type": "mousemove",
 			"x":    x,
@@ -436,4 +435,29 @@ func TestOverlayStatePreservesHUDTextCase(t *testing.T) {
 	if len(overlay.HUDLines) != 1 || overlay.HUDLines[0] != app.lastHUDText {
 		t.Fatalf("expected HUD text case to be preserved, got %#v", overlay.HUDLines)
 	}
+}
+
+func (r *testWindowRenderer) MenuItemIndexAt(x, y float64, itemCount int) int {
+        // Simplified mock logic mirroring the standard layout for testing
+        panelW := r.width - 40
+        if panelW > 640 { panelW = 640 }
+        panelH := 108 + itemCount*22
+        if panelH > r.height-40 { panelH = r.height - 40 }
+        panelY := (r.height - panelH) / 2
+        itemsStart := 86
+        itemHeight := 22
+        rawY := int(y * float64(r.height))
+        idx := (rawY - (panelY + itemsStart)) / itemHeight
+        if idx < 0 || idx >= itemCount { return -1 }
+        return idx
+}
+
+func computeTestMenuLayout(width, height, itemCount int) (int, int, int, int, int, int) {
+        panelW := width - 40
+        if panelW > 640 { panelW = 640 }
+        panelH := 108 + itemCount*22
+        if panelH > height-40 { panelH = height - 40 }
+        panelX := (width - panelW) / 2
+        panelY := (height - panelH) / 2
+        return panelX, panelY, panelW, panelH, 86, 22
 }

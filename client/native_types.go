@@ -14,8 +14,8 @@ type WindowRenderer interface {
 	SetWindowSize(width, height int) error
 	CaptureSnapshotPNG() ([]byte, error)
 	Size() (int, int)
-}
-
+	MenuItemIndexAt(x, y float64, itemCount int) int
+	}
 type VideoStreamResetter interface {
 	ResetVideoStream(codec string)
 }

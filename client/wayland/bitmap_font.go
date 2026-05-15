@@ -1,4 +1,4 @@
-package client
+package wayland
 
 var bitmapFont5x7 = map[rune][7]string{
 	' ': {"00000", "00000", "00000", "00000", "00000", "00000", "00000"},

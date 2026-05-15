@@ -263,3 +263,10 @@ type nativeSnapshotResult struct {
 	body []byte
 	err  error
 }
+
+func (r *NativeRenderer) MenuItemIndexAt(x, y float64, itemCount int) int {
+        r.mu.RLock()
+        w, h := r.width, r.height
+        r.mu.RUnlock()
+        return menuItemIndexAt(w, h, x, y, itemCount)
+}

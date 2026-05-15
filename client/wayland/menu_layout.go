@@ -1,4 +1,4 @@
-package client
+package wayland
 
 type MenuLayout struct {
         PanelX     int
