@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 PACKAGE_ROOT="${PACKAGE_ROOT:-${ROOT_DIR}/dist}"
 PACKAGE_NAME="${PACKAGE_NAME:-llrdc-client-linux-amd64}"
 CLIENT_BIN="${PACKAGE_ROOT}/${PACKAGE_NAME}/bin/llrdc-client"

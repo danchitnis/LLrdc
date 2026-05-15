@@ -1,6 +1,6 @@
-//go:build native && linux && cgo
+//go:build (linux && native && cgo)
 
-package client
+package wayland
 
 import (
 	"bytes"
@@ -12,8 +12,10 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/danchitnis/llrdc/client"
 	"github.com/veandco/go-sdl2/sdl"
 )
+
 
 func (r *NativeRenderer) drawClickToStart(renderer *sdl.Renderer) {
 	var w, h int32
@@ -50,7 +52,7 @@ func (r *NativeRenderer) drawClickToStart(renderer *sdl.Renderer) {
 
 func (r *NativeRenderer) drawOverlay(renderer *sdl.Renderer) {
 	r.mu.RLock()
-	state := cloneOverlayState(r.overlay)
+	state := r.overlay
 	r.mu.RUnlock()
 
 	if len(state.HUDLines) > 0 {
@@ -63,7 +65,7 @@ func (r *NativeRenderer) drawOverlay(renderer *sdl.Renderer) {
 			}
 		}
 		panel := sdl.Rect{X: 8, Y: 8, W: maxWidth + 16, H: int32(len(state.HUDLines))*lineHeight + 8}
-		drawOverlayPanel(renderer, panel, OverlayColor{R: 0, G: 0, B: 0, A: 160}, OverlayColor{R: state.HUDColor.R, G: state.HUDColor.G, B: state.HUDColor.B, A: 220})
+		drawOverlayPanel(renderer, panel, client.OverlayColor{R: 0, G: 0, B: 0, A: 160}, client.OverlayColor{R: state.HUDColor.R, G: state.HUDColor.G, B: state.HUDColor.B, A: 220})
 		for idx, line := range state.HUDLines {
 			drawBitmapText(renderer, panel.X+8, panel.Y+6+int32(idx)*lineHeight, 2, line, state.HUDColor)
 		}
@@ -77,25 +79,25 @@ func (r *NativeRenderer) drawOverlay(renderer *sdl.Renderer) {
 	if err != nil {
 		return
 	}
-	layout := computeMenuLayout(int(outputW), int(outputH), len(state.MenuItems))
-	itemHeight := int32(layout.itemHeight)
+	layout := client.ComputeMenuLayout(int(outputW), int(outputH), len(state.MenuItems))
+	itemHeight := int32(layout.ItemHeight)
 	panel := sdl.Rect{
-		X: int32(layout.panelX),
-		Y: int32(layout.panelY),
-		W: int32(layout.panelW),
-		H: int32(layout.panelH),
+		X: int32(layout.PanelX),
+		Y: int32(layout.PanelY),
+		W: int32(layout.PanelW),
+		H: int32(layout.PanelH),
 	}
-	drawOverlayPanel(renderer, panel, OverlayColor{R: 12, G: 14, B: 18, A: 220}, OverlayColor{R: 96, G: 124, B: 255, A: 255})
-	drawBitmapText(renderer, panel.X+16, panel.Y+14, 3, state.MenuTitle, OverlayColor{R: 255, G: 255, B: 255, A: 255})
-	drawBitmapText(renderer, panel.X+16, panel.Y+42, 2, state.MenuHint, OverlayColor{R: 180, G: 188, B: 204, A: 255})
+	drawOverlayPanel(renderer, panel, client.OverlayColor{R: 12, G: 14, B: 18, A: 220}, client.OverlayColor{R: 96, G: 124, B: 255, A: 255})
+	drawBitmapText(renderer, panel.X+16, panel.Y+14, 3, state.MenuTitle, client.OverlayColor{R: 255, G: 255, B: 255, A: 255})
+	drawBitmapText(renderer, panel.X+16, panel.Y+42, 2, state.MenuHint, client.OverlayColor{R: 180, G: 188, B: 204, A: 255})
 
 	for idx, line := range state.MenuItems {
-		y := panel.Y + int32(layout.itemsStart) + int32(idx)*itemHeight
+		y := panel.Y + int32(layout.ItemsStart) + int32(idx)*itemHeight
 		if idx == state.SelectedIndex {
 			highlight := sdl.Rect{X: panel.X + 10, Y: y - 2, W: panel.W - 20, H: itemHeight}
-			drawOverlayPanel(renderer, highlight, OverlayColor{R: 34, G: 52, B: 98, A: 180}, OverlayColor{R: 86, G: 118, B: 230, A: 255})
+			drawOverlayPanel(renderer, highlight, client.OverlayColor{R: 34, G: 52, B: 98, A: 180}, client.OverlayColor{R: 86, G: 118, B: 230, A: 255})
 		}
-		drawBitmapText(renderer, panel.X+20, y, 2, line, OverlayColor{R: 240, G: 244, B: 255, A: 255})
+		drawBitmapText(renderer, panel.X+20, y, 2, line, client.OverlayColor{R: 240, G: 244, B: 255, A: 255})
 	}
 }
 
@@ -159,7 +161,7 @@ func measureBitmapText(text string, scale int32) (int32, int32) {
 	return width, 7 * scale
 }
 
-func drawBitmapText(renderer *sdl.Renderer, x, y, scale int32, text string, c OverlayColor) {
+func drawBitmapText(renderer *sdl.Renderer, x, y, scale int32, text string, c client.OverlayColor) {
 	if scale <= 0 {
 		scale = 2
 	}
@@ -167,7 +169,7 @@ func drawBitmapText(renderer *sdl.Renderer, x, y, scale int32, text string, c Ov
 	_ = renderer.SetDrawColor(c.R, c.G, c.B, c.A)
 	cursorX := x
 	for _, raw := range strings.ToUpper(text) {
-		glyph := glyphForRune(raw)
+		glyph := client.GlyphForRune(raw)
 		for row := int32(0); row < 7; row++ {
 			for col := int32(0); col < 5; col++ {
 				if glyph[row][col] != '1' {
@@ -185,7 +187,7 @@ func drawBitmapText(renderer *sdl.Renderer, x, y, scale int32, text string, c Ov
 	}
 }
 
-func drawOverlayPanel(renderer *sdl.Renderer, rect sdl.Rect, fill OverlayColor, border OverlayColor) {
+func drawOverlayPanel(renderer *sdl.Renderer, rect sdl.Rect, fill client.OverlayColor, border client.OverlayColor) {
 	_ = renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 	_ = renderer.SetDrawColor(fill.R, fill.G, fill.B, fill.A)
 	_ = renderer.FillRect(&rect)

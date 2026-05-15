@@ -76,13 +76,14 @@ RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     go mod download
 
 COPY internal ./internal
+COPY client ./client
 COPY cmd ./cmd
 
 
 FROM builder AS test
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
-    CGO_ENABLED=1 go test -tags "${GO_BUILD_TAGS}" ./internal/client ./cmd/client
+    CGO_ENABLED=1 go test -tags "${GO_BUILD_TAGS}" ./client ./cmd/client
 
 FROM builder AS build
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \

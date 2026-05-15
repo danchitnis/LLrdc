@@ -52,7 +52,7 @@ func buildH265AccessUnit(frame []byte) (h265AccessUnit, error) {
 	return unit, nil
 }
 
-func isH265KeyframePayload(data []byte) bool {
+func IsH265KeyframePayload(data []byte) bool {
 	if len(data) == 0 {
 		return false
 	}

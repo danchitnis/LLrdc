@@ -11,7 +11,7 @@ export LLRDC_VIDEO_CODEC="h264_qsv"
 
 # Create a temporary benchmark script in the scripts directory to preserve path resolution
 TEMP_BENCH="${ROOT_DIR}/scripts/benchmark-intel-tmp.sh"
-cp "${ROOT_DIR}/scripts/benchmark-native-latency.sh" "${TEMP_BENCH}"
+cp "${ROOT_DIR}/tests/linux-wayland-native/benchmark-wayland-native-latency.sh" "${TEMP_BENCH}"
 chmod +x "${TEMP_BENCH}"
 
 cleanup() {

@@ -1,6 +1,6 @@
-//go:build native && linux && cgo
+//go:build (linux && native && cgo)
 
-package client
+package wayland
 
 import (
 	"testing"

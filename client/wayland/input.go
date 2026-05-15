@@ -1,10 +1,11 @@
-//go:build native && linux && cgo
+//go:build (linux && native && cgo)
 
-package client
+package wayland
 
 import (
 	"strings"
 
+	"github.com/danchitnis/llrdc/client"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -16,10 +17,10 @@ func isKeyframe(codec string, data []byte) bool {
 		return data[0]&0x01 == 0
 	}
 	if strings.Contains(strings.ToLower(codec), "h264") {
-		return isH264KeyframePayload(data)
+		return client.IsH264KeyframePayload(data)
 	}
 	if strings.Contains(strings.ToLower(codec), "hevc") || strings.Contains(strings.ToLower(codec), "h265") {
-		return isH265KeyframePayload(data)
+		return client.IsH265KeyframePayload(data)
 	}
 	return false
 }

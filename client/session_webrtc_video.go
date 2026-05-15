@@ -39,18 +39,6 @@ func newVideoSampleBuilder(codecName string, lowLatency bool) *samplebuilder.Sam
 	return nil
 }
 
-type timedVideoFrameHandler interface {
-	handleVideoFrameWithTiming(
-		codec string,
-		frame []byte,
-		packetTimestamp uint32,
-		firstPacketSequenceNumber uint16,
-		firstDecryptedPacketQueuedAt int64,
-		firstRemotePacketAt int64,
-		firstPacketReadAt int64,
-		receiveAt int64,
-	) error
-}
 
 type vp8ULLFrame struct {
 	data                         []byte
@@ -211,7 +199,7 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 				continue
 			}
 			timing := s.popRemotePacketTiming(uint32(track.SSRC()), packet.Timestamp, packet.SequenceNumber)
-			packetReadAt := benchmarkClockNowMs()
+			packetReadAt := BenchmarkClockNowMs()
 			if timing.firstRemotePacketAt <= 0 {
 				timing.firstRemotePacketAt = packetReadAt
 			}
@@ -272,8 +260,8 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 				stopKeyframe()
 			}
 
-			if timedRenderer, ok := s.renderer.(timedVideoFrameHandler); ok {
-				if err := timedRenderer.handleVideoFrameWithTiming(
+			if timedRenderer, ok := s.renderer.(TimedVideoFrameHandler); ok {
+				if err := timedRenderer.HandleVideoFrameWithTiming(
 					track.Codec().MimeType,
 					frameData,
 					frameTimestamp,
@@ -308,7 +296,7 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 		if current, ok := firstPacketSequenceNumberByTimestamp[packet.Timestamp]; !ok || sequenceBefore(packet.SequenceNumber, current) {
 			firstPacketSequenceNumberByTimestamp[packet.Timestamp] = packet.SequenceNumber
 		}
-		firstPacketReadAtByTimestamp[packet.Timestamp] = minPositiveTime(firstPacketReadAtByTimestamp[packet.Timestamp], benchmarkClockNowMs())
+		firstPacketReadAtByTimestamp[packet.Timestamp] = minPositiveTime(firstPacketReadAtByTimestamp[packet.Timestamp], BenchmarkClockNowMs())
 		builder.Push(packet)
 		for sample := builder.Pop(); sample != nil; sample = builder.Pop() {
 			s.mu.Lock()
@@ -327,9 +315,9 @@ func (s *Session) consumeVideoTrack(pc *webrtc.PeerConnection, track *webrtc.Tra
 			delete(firstPacketReadAtByTimestamp, sample.PacketTimestamp)
 			firstPacketSequenceNumber := firstPacketSequenceNumberByTimestamp[sample.PacketTimestamp]
 			delete(firstPacketSequenceNumberByTimestamp, sample.PacketTimestamp)
-			sampleReadyAt := benchmarkClockNowMs()
-			if timedRenderer, ok := s.renderer.(timedVideoFrameHandler); ok {
-				if err := timedRenderer.handleVideoFrameWithTiming(
+			sampleReadyAt := BenchmarkClockNowMs()
+			if timedRenderer, ok := s.renderer.(TimedVideoFrameHandler); ok {
+				if err := timedRenderer.HandleVideoFrameWithTiming(
 					track.Codec().MimeType,
 					sample.Data,
 					sample.PacketTimestamp,
@@ -368,9 +356,9 @@ func shouldStopInitialKeyframeRequests(codec string, frame []byte) bool {
 	if strings.Contains(codec, "vp8") {
 		return isVP8KeyframePayload(frame)
 	} else if strings.Contains(codec, "h264") {
-		return isH264KeyframePayload(frame)
+		return IsH264KeyframePayload(frame)
 	} else if strings.Contains(codec, "h265") || strings.Contains(codec, "hevc") {
-		return isH265KeyframePayload(frame)
+		return IsH265KeyframePayload(frame)
 	}
 	return len(frame) > 0
 }

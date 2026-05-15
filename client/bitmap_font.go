@@ -50,7 +50,7 @@ var bitmapFont5x7 = map[rune][7]string{
 	'Z': {"11111", "00001", "00010", "00100", "01000", "10000", "11111"},
 }
 
-func glyphForRune(r rune) [7]string {
+func GlyphForRune(r rune) [7]string {
 	if glyph, ok := bitmapFont5x7[r]; ok {
 		return glyph
 	}

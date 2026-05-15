@@ -130,7 +130,7 @@ func (s *Session) consumeBinaryVideoMessage(raw []byte) {
 	})
 }
 
-func isH264KeyframePayload(data []byte) bool {
+func IsH264KeyframePayload(data []byte) bool {
 	if len(data) == 0 {
 		return false
 	}

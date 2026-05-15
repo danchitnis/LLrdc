@@ -119,3 +119,16 @@ type OverlayState struct {
 	MenuItems     []string     `json:"menuItems,omitempty"`
 	SelectedIndex int          `json:"selectedIndex,omitempty"`
 }
+
+type TimedVideoFrameHandler interface {
+        HandleVideoFrameWithTiming(
+                codec string,
+                frame []byte,
+                packetTimestamp uint32,
+                firstPacketSequenceNumber uint16,
+                firstDecryptedPacketQueuedAt int64,
+                firstRemotePacketAt int64,
+                firstPacketReadAt int64,
+                receiveAt int64,
+        ) error
+}

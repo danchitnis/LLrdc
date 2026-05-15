@@ -1,10 +1,12 @@
-//go:build native && linux && cgo
+//go:build (linux && native && cgo)
 
-package client
+package wayland
 
 import (
 	"fmt"
 	"sync"
+
+	"github.com/danchitnis/llrdc/client"
 )
 
 type NativeRenderer struct {
@@ -26,9 +28,9 @@ type NativeRenderer struct {
 	runStarted              bool
 	decoderAwaitingKeyframe bool
 	inputSink               func(map[string]any) error
-	lifecycle               func(NativeWindowLifecycle)
-	present                 func(NativeFramePresented)
-	overlay                 OverlayState
+	lifecycle               func(client.NativeWindowLifecycle)
+	present                 func(client.NativeFramePresented)
+	overlay                 client.OverlayState
 	samples                 chan nativeVideoSample
 	decoderResets           chan string
 	streamResets            chan string
@@ -39,7 +41,7 @@ type NativeRenderer struct {
 	doneCh                  chan struct{}
 }
 
-func NewNativeRenderer(opts NativeRendererOptions) (*NativeRenderer, error) {
+func NewNativeRenderer(opts client.NativeRendererOptions) (*NativeRenderer, error) {
 	return &NativeRenderer{
 		title:                   opts.Title,
 		width:                   opts.Width,
@@ -67,19 +69,19 @@ func (r *NativeRenderer) SetInputSink(sink func(map[string]any) error) {
 	r.mu.Unlock()
 }
 
-func (r *NativeRenderer) SetLifecycleSink(lc func(NativeWindowLifecycle)) {
+func (r *NativeRenderer) SetLifecycleSink(lc func(client.NativeWindowLifecycle)) {
 	r.mu.Lock()
 	r.lifecycle = lc
 	r.mu.Unlock()
 }
 
-func (r *NativeRenderer) SetPresentSink(p func(NativeFramePresented)) {
+func (r *NativeRenderer) SetPresentSink(p func(client.NativeFramePresented)) {
 	r.mu.Lock()
 	r.present = p
 	r.mu.Unlock()
 }
 
-func (r *NativeRenderer) SetOverlayState(state OverlayState) {
+func (r *NativeRenderer) SetOverlayState(state client.OverlayState) {
 	r.mu.Lock()
 	r.overlay = state
 	r.mu.Unlock()
@@ -149,10 +151,10 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 }
 
 func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
-	return r.handleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, 0, 0, 0, benchmarkClockNowMs())
+	return r.HandleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, 0, 0, 0, client.BenchmarkClockNowMs())
 }
 
-func (r *NativeRenderer) handleVideoFrameWithTiming(
+func (r *NativeRenderer) HandleVideoFrameWithTiming(
 	codec string,
 	frame []byte,
 	packetTimestamp uint32,

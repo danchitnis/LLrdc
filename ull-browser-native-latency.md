@@ -62,7 +62,7 @@ WEBRTC_LOW_LATENCY=true \
 WEBRTC_BUFFER_SIZE=0 \
 LLRDC_VIDEO_CODEC=vp8 \
 LLRDC_ARTIFACT_DIR=/tmp/llrdc-native-latency-ull-default \
-./scripts/benchmark-native-latency.sh
+./tests/linux-wayland-native/benchmark-wayland-native-latency.sh
 ```
 
 Native benchmark configuration:

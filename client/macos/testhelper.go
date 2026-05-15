@@ -1,6 +1,6 @@
-//go:build native && darwin && cgo
+//go:build (darwin && native && cgo)
 
-package client
+package macos
 
 /*
 #include <stdint.h>

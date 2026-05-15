@@ -36,7 +36,7 @@ BUILD_ID="${CLIENT_BUILD_ID:-$(
 
   {
     {
-      find cmd internal -type f -print0
+      find cmd internal client -type f -print0
       printf '%s\0' Dockerfile.client go.mod go.sum scripts/package-native-client.sh
     } | xargs -0 sha256sum
     printf '%s  %s\n' "${RESOLVED_FFMPEG_VERSION}" "FFMPEG_VERSION"

@@ -1,14 +1,15 @@
-//go:build native && linux && cgo
+//go:build (linux && native && cgo)
 
-package client
+package wayland
 
 import (
 	"fmt"
 
+	"github.com/danchitnis/llrdc/client"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-func (r *NativeRenderer) emitLifecycle(event NativeWindowLifecycle) {
+func (r *NativeRenderer) emitLifecycle(event client.NativeWindowLifecycle) {
 	r.mu.RLock()
 	fn := r.lifecycle
 	awaiting := r.decoderAwaitingKeyframe
@@ -20,7 +21,7 @@ func (r *NativeRenderer) emitLifecycle(event NativeWindowLifecycle) {
 	}
 }
 
-func (r *NativeRenderer) emitPresent(event NativeFramePresented) {
+func (r *NativeRenderer) emitPresent(event client.NativeFramePresented) {
 	r.mu.RLock()
 	fn := r.present
 	r.mu.RUnlock()
@@ -74,8 +75,8 @@ func (s *nativeWindowState) applyEvent(event uint8) {
 	}
 }
 
-func (s nativeWindowState) snapshot(event string, created bool) NativeWindowLifecycle {
-	return NativeWindowLifecycle{
+func (s nativeWindowState) snapshot(event string, created bool) client.NativeWindowLifecycle {
+	return client.NativeWindowLifecycle{
 		Backend:       s.backend,
 		WindowID:      s.windowID,
 		Created:       created,

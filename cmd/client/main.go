@@ -5,7 +5,7 @@ import (
 	"log"
 	"runtime"
 
-	"github.com/danchitnis/llrdc/internal/client"
+	"github.com/danchitnis/llrdc/client"
 )
 
 var clientBuildID = "dev"
@@ -63,7 +63,7 @@ func main() {
 
 	var windowRenderer client.WindowRenderer
 	if !*headless {
-		windowRenderer, err = client.NewNativeRenderer(client.NativeRendererOptions{
+		windowRenderer, err = createRenderer(client.NativeRendererOptions{
 			Title:        *windowTitle,
 			Width:        *windowWidth,
 			Height:       *windowHeight,

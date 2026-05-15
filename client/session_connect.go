@@ -113,7 +113,7 @@ func (s *Session) Connect(serverURL string) error {
 		}
 	} else {
 		log.Printf("WebRTC skipping interceptors for low-latency mode")
-		i.Add(newRemotePacketTimestampInterceptorFactory(benchmarkClockNowMs, s.recordRemotePacketAt))
+		i.Add(newRemotePacketTimestampInterceptorFactory(BenchmarkClockNowMs, s.recordRemotePacketAt))
 	}
 
 	se := webrtc.SettingEngine{}
@@ -121,7 +121,7 @@ func (s *Session) Connect(serverURL string) error {
 	se.DisableSRTCPReplayProtection(true)
 	if lowLatency {
 		se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
-		se.BufferFactory = newLatencyBufferFactory(benchmarkClockNowMs, s.recordDecryptedPacketAt)
+		se.BufferFactory = newLatencyBufferFactory(BenchmarkClockNowMs, s.recordDecryptedPacketAt)
 	}
 
 	api := webrtc.NewAPI(

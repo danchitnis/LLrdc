@@ -4,6 +4,6 @@ package client
 
 import "time"
 
-func benchmarkClockNowMs() int64 {
+func BenchmarkClockNowMs() int64 {
 	return time.Now().UnixMilli()
 }

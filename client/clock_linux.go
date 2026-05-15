@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func benchmarkClockNowMs() int64 {
+func BenchmarkClockNowMs() int64 {
 	var ts unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err == nil {
 		return ts.Nano() / int64(time.Millisecond)

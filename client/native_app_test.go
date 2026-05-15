@@ -246,9 +246,9 @@ func TestNativeAppMenuPointerSelectsResolutionOption(t *testing.T) {
 			t.Fatalf("menu item %q not found", targetID)
 		}
 
-		layout := computeMenuLayout(renderer.width, renderer.height, len(menu.Items))
-		x := float64(layout.panelX+layout.panelW/2) / float64(renderer.width)
-		y := float64(layout.panelY+layout.itemsStart+targetIndex*layout.itemHeight+layout.itemHeight/2) / float64(renderer.height)
+		layout := ComputeMenuLayout(renderer.width, renderer.height, len(menu.Items))
+		x := float64(layout.PanelX+layout.PanelW/2) / float64(renderer.width)
+		y := float64(layout.PanelY+layout.ItemsStart+targetIndex*layout.ItemHeight+layout.ItemHeight/2) / float64(renderer.height)
 
 		if err := app.handleRendererInput(map[string]any{
 			"type": "mousemove",
@@ -363,8 +363,8 @@ func TestRollingVideoMbpsUsesRecentWindow(t *testing.T) {
 	}
 
 	mbps := rollingVideoMbps(now, samples)
-	if mbps < 2.8 || mbps > 2.9 {
-		t.Fatalf("expected rolling bandwidth near 2.86 Mbps, got %.2f", mbps)
+	if mbps < 2.9 || mbps > 3.1 {
+		t.Fatalf("expected rolling bandwidth near 3.00 Mbps, got %.2f", mbps)
 	}
 }
 

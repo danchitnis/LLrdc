@@ -221,8 +221,8 @@ func TestVideoSampleBuilderConfig(t *testing.T) {
 	}
 
 	maxLate, maxDelay = videoSampleBuilderConfig(true)
-	if maxLate != 8 {
-		t.Fatalf("unexpected ULL maxLate: got %d want 8", maxLate)
+	if maxLate != 512 {
+		t.Fatalf("unexpected ULL maxLate: got %d want 512", maxLate)
 	}
 	if maxDelay != 12*time.Millisecond {
 		t.Fatalf("unexpected ULL maxDelay: got %v want %v", maxDelay, 12*time.Millisecond)

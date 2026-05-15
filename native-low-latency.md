@@ -37,7 +37,7 @@ npm run client:run -- --server http://127.0.0.1:8080 --auto-start
 Measured on April 23, 2026 with:
 
 ```bash
-WEBRTC_LOW_LATENCY=true WEBRTC_BUFFER_SIZE=0 LLRDC_WARMUP_COUNT=3 LLRDC_SAMPLE_COUNT=5 ./scripts/benchmark-native-latency.sh
+WEBRTC_LOW_LATENCY=true WEBRTC_BUFFER_SIZE=0 LLRDC_WARMUP_COUNT=3 LLRDC_SAMPLE_COUNT=5 ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh
 ```
 
 This run produced the following `Control API -> Native Present` stage averages:

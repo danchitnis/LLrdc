@@ -1,6 +1,6 @@
-//go:build native && linux && cgo
+//go:build (linux && native && cgo)
 
-package client
+package wayland
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/danchitnis/llrdc/client"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -48,7 +49,7 @@ func (r *NativeRenderer) Run() error {
 	sdl.SetHint("SDL_VIDEO_WAYLAND_WM_CLASS", "llrdc-client")
 
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
-		r.emitLifecycle(NativeWindowLifecycle{Error: fmt.Sprintf("sdl init: %v", err)})
+		r.emitLifecycle(client.NativeWindowLifecycle{Error: fmt.Sprintf("sdl init: %v", err)})
 		return fmt.Errorf("sdl init: %w", err)
 	}
 	defer sdl.Quit()
@@ -69,7 +70,7 @@ func (r *NativeRenderer) Run() error {
 		windowFlags,
 	)
 	if err != nil {
-		r.emitLifecycle(NativeWindowLifecycle{Error: fmt.Sprintf("create window: %v", err)})
+		r.emitLifecycle(client.NativeWindowLifecycle{Error: fmt.Sprintf("create window: %v", err)})
 		return fmt.Errorf("create window: %w", err)
 	}
 	defer window.Destroy()
@@ -79,7 +80,7 @@ func (r *NativeRenderer) Run() error {
 	window.Raise()
 	if r.fullscreen {
 		if err := window.SetFullscreen(sdl.WINDOW_FULLSCREEN_DESKTOP); err != nil {
-			r.emitLifecycle(NativeWindowLifecycle{Error: fmt.Sprintf("set fullscreen: %v", err)})
+			r.emitLifecycle(client.NativeWindowLifecycle{Error: fmt.Sprintf("set fullscreen: %v", err)})
 			return fmt.Errorf("set fullscreen: %w", err)
 		}
 	}
@@ -96,7 +97,7 @@ func (r *NativeRenderer) Run() error {
 	if err != nil {
 		renderer, err = sdl.CreateRenderer(window, -1, sdl.RENDERER_SOFTWARE)
 		if err != nil {
-			r.emitLifecycle(NativeWindowLifecycle{Error: fmt.Sprintf("create renderer: %v", err)})
+			r.emitLifecycle(client.NativeWindowLifecycle{Error: fmt.Sprintf("create renderer: %v", err)})
 			return fmt.Errorf("create renderer: %w", err)
 		}
 	}
@@ -159,7 +160,7 @@ func (r *NativeRenderer) Run() error {
 
 	// Once clicked, notify main.go to start the session
 	r.emitLifecycle(windowState.snapshot("started", false))
-	r.emitLifecycle(NativeWindowLifecycle{RenderLoopStarted: true})
+	r.emitLifecycle(client.NativeWindowLifecycle{RenderLoopStarted: true})
 
 	decodedFrames := make(chan nativeDecodedSample, 2)
 
@@ -234,7 +235,7 @@ func (r *NativeRenderer) Run() error {
 						r.mu.Lock()
 						r.decoderAwaitingKeyframe = false
 						r.mu.Unlock()
-						r.emitLifecycle(NativeWindowLifecycle{DecoderStateChanged: true, DecoderAwaitingKeyframe: false})
+						r.emitLifecycle(client.NativeWindowLifecycle{DecoderStateChanged: true, DecoderAwaitingKeyframe: false})
 					}
 				}
 
@@ -243,7 +244,7 @@ func (r *NativeRenderer) Run() error {
 					av = &avDecoder{}
 					if err := av.Init(sample.codec); err != nil {
 						log.Printf("FFmpeg init error: %v", err)
-						r.emitLifecycle(NativeWindowLifecycle{Error: err.Error()})
+						r.emitLifecycle(client.NativeWindowLifecycle{Error: err.Error()})
 						continue
 					}
 				}
@@ -258,7 +259,7 @@ func (r *NativeRenderer) Run() error {
 					}
 					r.mu.Unlock()
 					if pastInitial {
-						r.emitLifecycle(NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
+						r.emitLifecycle(client.NativeWindowLifecycle{DecodeError: true, DecoderStateChanged: true, DecoderAwaitingKeyframe: true})
 					}
 					continue
 				}
@@ -274,7 +275,7 @@ func (r *NativeRenderer) Run() error {
 						firstRemotePacketAt:          sample.firstRemotePacketAt,
 						firstPacketReadAt:            sample.firstPacketReadAt,
 						receiveAt:                    sample.receiveAt,
-						decodeReadyAt:                benchmarkClockNowMs(),
+						decodeReadyAt:                client.BenchmarkClockNowMs(),
 					}, lowLatency)
 				}
 			}
@@ -499,7 +500,7 @@ func (r *NativeRenderer) Run() error {
 			needsRedraw = true
 		}
 
-		if texture != nil && (needsRedraw || benchmarkClockNowMs()-lastPresentAt > 100) {
+		if texture != nil && (needsRedraw || client.BenchmarkClockNowMs()-lastPresentAt > 100) {
 			_ = renderer.Clear()
 			r.mu.RLock()
 			ww, wh := r.width, r.height
@@ -540,7 +541,7 @@ func (r *NativeRenderer) Run() error {
 
 			r.drawOverlay(renderer)
 			renderer.Present()
-			lastPresentAt = benchmarkClockNowMs()
+			lastPresentAt = client.BenchmarkClockNowMs()
 
 			if decoded != nil {
 				brightness := -1
@@ -561,7 +562,7 @@ func (r *NativeRenderer) Run() error {
 				r.presentedFrameCount++
 				r.mu.Unlock()
 
-				r.emitPresent(NativeFramePresented{
+				r.emitPresent(client.NativeFramePresented{
 					Width:                        int(decoded.frame.width),
 					Height:                       int(decoded.frame.height),
 					PacketTimestamp:              decoded.packetTimestamp,

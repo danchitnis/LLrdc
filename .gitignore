@@ -6,7 +6,7 @@ playwright-report/
 test-results/
 public/
 /llrdc
-/client
+/client_bin
 plan/
 tmp_broken_wayland/
 dist/
