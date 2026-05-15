@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady } from './helpers';
+import { waitForServerReady } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-keyboard-e2e-test';
 const PORT = '8090';

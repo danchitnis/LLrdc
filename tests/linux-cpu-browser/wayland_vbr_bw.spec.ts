@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady } from './helpers';
+import { waitForServerReady } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-vbr-bw-test';
 const PORT = '8087';

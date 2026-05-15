@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { readClientStats, waitForServerReady } from './helpers';
+import { readClientStats, waitForServerReady } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-framerate-test';
 const PORT = '8084';

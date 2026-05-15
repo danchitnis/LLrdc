@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { spawn, execSync } from 'child_process';
-import { waitForServerReady } from './helpers';
+import { waitForServerReady } from '../helpers';
 
 // Use a local tag for testing
 const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';

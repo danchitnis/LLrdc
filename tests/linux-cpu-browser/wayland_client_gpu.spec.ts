@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady } from './helpers';
+import { waitForServerReady } from '../helpers';
 
 const PORT = 8123;
 const CONTAINER_NAME = `llrdc-wayland-gpu-test-${PORT}`;

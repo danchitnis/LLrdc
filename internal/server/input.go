@@ -44,7 +44,9 @@ var (
 	pulseStarted bool
 )
 
-var inputMu sync.Mutex
+var (
+	inputMu sync.Mutex
+)
 
 func startWaylandInputHelper() {
 	if CaptureMode == CaptureModeAgent {
@@ -239,6 +241,10 @@ func ExecTask(task inputTask) error {
 		}
 		targetX := int(math.Round(task.NX * float64(width)))
 		targetY := int(math.Round(task.NY * float64(height)))
+
+		if UseDebugInput {
+			log.Printf("Wayland mouse move: %d, %d", targetX, targetY)
+		}
 
 		_, err := fmt.Fprintf(inputStdin, "move %d %d %d %d\n", targetX, targetY, width, height)
 		return err
