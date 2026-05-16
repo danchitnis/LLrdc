@@ -21,6 +21,13 @@ source "${SCRIPT_DIR}/scripts/docker/common.sh"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --*=*)
+      KEY="${1%%=*}"
+      VALUE="${1#*=}"
+      shift
+      set -- "$KEY" "$VALUE" "$@"
+      continue
+      ;;
     --intel)
       ENABLE_INTEL="true"
       BUILD_VARIANT="intel"
@@ -29,7 +36,7 @@ while [[ $# -gt 0 ]]; do
     --macos)
       ENABLE_MACOS="true"
       DOCKERFILE="Dockerfile.macos"
-      IMAGE_TAG="macos"
+      BUILD_VARIANT="macos"
       shift
       ;;
     --dry-run)
@@ -53,8 +60,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ "${ENABLE_INTEL}" = "true" ] && [ "${IMAGE_TAG_EXPLICIT}" = "false" ]; then
-  IMAGE_TAG="intel"
+if [ "${IMAGE_TAG_EXPLICIT}" = "false" ]; then
+  if [ "${ENABLE_MACOS}" = "true" ]; then
+    IMAGE_TAG="macos"
+  elif [ "${ENABLE_INTEL}" = "true" ]; then
+    IMAGE_TAG="intel"
+  fi
 fi
 
 echo "▶ Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"

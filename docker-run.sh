@@ -51,6 +51,13 @@ NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --*=*)
+      KEY="${1%%=*}"
+      VALUE="${1#*=}"
+      shift
+      set -- "$KEY" "$VALUE" "$@"
+      continue
+      ;;
     --dry-run)
       USE_DRY_RUN="true"
       shift
@@ -58,6 +65,16 @@ while [[ $# -gt 0 ]]; do
     -d|--detach)
       USE_DETACHED="true"
       shift
+      ;;
+    --tag)
+      if [ -n "${2:-}" ]; then
+        IMAGE_TAG="$2"
+        IMAGE_TAG_EXPLICIT="true"
+        shift 2
+      else
+        echo "Error: --tag requires an argument."
+        exit 1
+      fi
       ;;
     --host-net|--network-host)
       USE_HOST_NET="true"
@@ -219,8 +236,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ "$USE_INTEL" = "true" ] && [ "$IMAGE_TAG_EXPLICIT" = "false" ]; then
-  IMAGE_TAG="intel"
+if [ "$IMAGE_TAG_EXPLICIT" = "false" ]; then
+  if [ "$USE_INTEL" = "true" ]; then
+    IMAGE_TAG="intel"
+  fi
 fi
 
 IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
