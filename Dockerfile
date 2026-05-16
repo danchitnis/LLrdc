@@ -93,6 +93,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget apt-transp
   && echo 'deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main' | tee -a /etc/apt/sources.list.d/mozilla.list > /dev/null \
   && printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' > /etc/apt/preferences.d/mozilla \
   && printf 'Package: snapd\nPin: release *\nPin-Priority: -1\n' > /etc/apt/preferences.d/nosnap \
+  && apt-get update && apt-get install -y --no-install-recommends firefox \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
