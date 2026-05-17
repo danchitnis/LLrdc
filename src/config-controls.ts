@@ -1,7 +1,6 @@
 import {
     audioBitrateSelect,
     bandwidthSelect,
-    chromaCheckbox,
     clientGpuCheckbox,
     configBtn,
     configDropdown,
@@ -78,7 +77,6 @@ export function wireConfigControls(handlers: ConfigControlHandlers) {
     wireSelect(bandwidthSelect, sendConfig);
     if (damageTrackingCheckbox) damageTrackingCheckbox.addEventListener('change', sendConfig);
     if (mpdecimateCheckbox) mpdecimateCheckbox.addEventListener('change', sendConfig);
-    if (chromaCheckbox) chromaCheckbox.addEventListener('change', sendConfig);
     wireSelect(keyframeIntervalSelect, sendConfig);
     wireSelect(framerateSelect, sendConfig);
     wireSelect(cpuThreadsSelect, sendConfig);

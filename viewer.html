@@ -34,9 +34,11 @@
                             <option value="h264-444">H.264 (4:4:4 Screen Profile)</option>
                             <option value="h265-444">HEVC (4:4:4 Screen Profile)</option>
                             <option value="h264_nvenc" class="codec-opt-gpu">H.264 (NVIDIA NVENC)</option>
+                            <option value="h264_nvenc-444" class="codec-opt-gpu">H.264 4:4:4 (NVIDIA NVENC)</option>
                             <option value="h264_qsv" class="codec-opt-gpu">H.264 (Intel)</option>
-                            <option value="h265">H.265 (CPU)</option>
+                            <option value="h265" class="codec-opt-gpu">H.265 (CPU)</option>
                             <option value="h265_nvenc" class="codec-opt-gpu">H.265 (NVIDIA NVENC)</option>
+                            <option value="h265_nvenc-444" class="codec-opt-gpu">HEVC 4:4:4 (NVIDIA NVENC)</option>
                             <option value="h265_qsv-444" class="codec-opt-gpu">HEVC 4:4:4 (Intel)</option>
                             <option value="av1">AV1 (CPU)</option>
                             <option value="av1_nvenc" class="codec-opt-gpu">AV1 (NVIDIA NVENC)</option>
@@ -119,7 +121,7 @@
                             <input type="range" id="tile-size-slider" min="64" max="1024" step="64" value="512" style="flex: 1; margin: 0 10px;">
                             <span id="tile-size-value">512</span>
                         </div>
-                        <label title="Improve text clarity by avoiding chroma subsampling (H.264/AV1 only)" style="display: none;"><input type="checkbox" id="chroma-checkbox" disabled> Enable YUV 4:4:4 Chroma</label>
+
                     </div>
                     <div class="config-group">
                         <label for="keyframe-interval-select" title="How often a full frame is sent (WebRTC only)">Keyframe Interval</label>

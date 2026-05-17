@@ -1,4 +1,4 @@
-import { chromaCheckbox, directBufferStatusEl, videoCodecSelect } from './ui';
+import { directBufferStatusEl, videoCodecSelect } from './ui';
 
 export function updateDirectBufferUi(msg: Record<string, unknown>) {
     const captureMode = typeof msg.captureMode === 'string' ? msg.captureMode : 'compat';
@@ -31,17 +31,4 @@ export function updateDirectBufferUi(msg: Record<string, unknown>) {
         });
     }
 
-    if (chromaCheckbox) {
-        if (captureMode === 'direct') {
-            chromaCheckbox.checked = false;
-            chromaCheckbox.disabled = true;
-            if (chromaCheckbox.parentElement) {
-                chromaCheckbox.parentElement.style.opacity = '0.5';
-                chromaCheckbox.parentElement.title = 'Direct capture mode currently requires YUV 4:2:0';
-            }
-        } else if (chromaCheckbox.parentElement) {
-            chromaCheckbox.parentElement.style.opacity = '1';
-            chromaCheckbox.parentElement.title = 'Improve text clarity by avoiding chroma subsampling (H.264/H.265/AV1 only)';
-        }
-    }
 }

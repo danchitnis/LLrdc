@@ -46,7 +46,6 @@ export const videoCodecSelect = document.getElementById('video-codec-select') as
 export const codecGpuOpts = document.querySelectorAll('.codec-opt-gpu') as NodeListOf<HTMLOptionElement>;
 export const directBufferStatusEl = document.getElementById('direct-buffer-status') as HTMLDivElement;
 export const clientGpuCheckbox = document.getElementById('client-gpu-checkbox') as HTMLInputElement;
-export const chromaCheckbox = document.getElementById('chroma-checkbox') as HTMLInputElement;
 export const clipboardCheckbox = document.getElementById('clipboard-checkbox') as HTMLInputElement;
 export const enableAudioCheckbox = document.getElementById('enable-audio-checkbox') as HTMLInputElement;
 export const audioBitrateSelect = document.getElementById('audio-bitrate-select') as HTMLSelectElement;

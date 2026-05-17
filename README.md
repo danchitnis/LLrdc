@@ -390,8 +390,8 @@ Chroma 4:4:4 avoids chroma subsampling, improving clarity for text and sharp edg
 | Codec | 4:4:4 Support | Notes |
 | :--- | :--- | :--- |
 | `h264_qsv` (Intel) | ❌ | Restricted to 4:2:0. **Low CPU usage** via hardware acceleration. |
-| `h265_qsv` (Intel) | ✅ | **Exclusive 4:4:4 support**. Low CPU usage via hardware-accelerated conversion. |
-| `h264/h265` (NVIDIA) | ❌ | Restricted to 4:2:0. |
+| `h265_qsv` (Intel) | ✅ | **4:4:4 support**. Low CPU usage via hardware-accelerated conversion. |
+| `h264/h265` (NVIDIA) | ✅ | **4:4:4 support** on compatible GPUs. |
 | `CPU codecs` | ❌ | Restricted to 4:2:0. High CPU usage. |
 
-> **Note:** Chroma 4:4:4 is exclusively supported on the **H.265 (HEVC) Intel** hardware path. All other configurations, including NVIDIA and H.264 Intel, are limited to 4:2:0. Both Intel GPU paths (H.264 and H.265) feature low CPU overhead due to hardware-accelerated chroma conversion and encoding.
+> **Note:** Chroma 4:4:4 is supported on the **H.265 (HEVC) Intel** hardware path, as well as **H.264 and H.265 NVIDIA NVENC** paths (on supported hardware). All other configurations, including H.264 Intel, are limited to 4:2:0. Both Intel and NVIDIA GPU paths feature low CPU overhead due to hardware-accelerated chroma conversion and encoding.

@@ -82,6 +82,8 @@ func SetChroma(chroma string) {
 	Chroma = chroma
 	log.Printf("Received chroma config: %s", chroma)
 
+	InitWebRTCTrack()
+
 	KillFFmpegWithTimestamp()
 }
 
@@ -531,13 +533,18 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					// CPU path and is very expensive at 4K60.
 					args = append(args, "-x", "bgr0")
 
+					rgbMode := "yuv420"
+					if Chroma == "444" {
+						rgbMode = "yuv444"
+					}
+
 					// NVENC hardware encoding
 					args = append(args,
 						"-p", "preset=p1",
 						"-p", "tune=ull",
 						"-p", "delay=0",
 						"-p", "surfaces=64",
-						"-p", "rgb_mode=yuv420",
+						"-p", "rgb_mode="+rgbMode,
 						"-p", "bf=0",
 						"-p", "spatial-aq=0",
 						"-p", "temporal-aq=0",

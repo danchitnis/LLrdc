@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, cpuEffortSlider, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, chromaCheckbox, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode, videoEl } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, cpuEffortSlider, cpuThreadsSelect, webrtcBufferSlider, webrtcBufferValue, nvencLatencyCheckbox, webrtcLowLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode, videoEl } from './ui';
 import { NetworkManager } from './network';
 import { WebCodecsManager } from './webcodecs';
 import { WebRTCManager } from './webrtc';
@@ -131,14 +131,12 @@ function buildConfigMessage(): ConfigMessage {
     }
 
     if (videoCodecSelect) {
-        config.videoCodec = videoCodecSelect.value;
-        if (videoCodecSelect.value === 'h264-444' || videoCodecSelect.value === 'h265-444' || videoCodecSelect.value === 'h265_qsv-444') {
-            if (videoCodecSelect.value === 'h265_qsv-444') {
-                config.videoCodec = 'h265_qsv';
-            }
+        if (videoCodecSelect.value.endsWith('-444')) {
+            config.videoCodec = videoCodecSelect.value.replace('-444', '');
             config.chroma = '444';
             log(`UI selecting pseudo-codec ${videoCodecSelect.value}, setting chroma to 444`);
         } else {
+            config.videoCodec = videoCodecSelect.value;
             config.chroma = '420';
             log(`UI selecting codec ${videoCodecSelect.value}, setting chroma to 420`);
         }
@@ -407,7 +405,8 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                     const av1QsvAvailable = msg.av1QsvAvailable as boolean;
                     
                     gpuOptionsList.forEach(opt => {
-                        const isNVENC = opt.value.endsWith('_nvenc');
+                        const isNVENC = opt.value.includes('_nvenc');
+                        const isNVENC444 = opt.value.endsWith('_nvenc-444');
                         const isQSV = opt.value.includes('_qsv');
                         const isAV1 = opt.value.startsWith('av1');
                         const isH265 = opt.value.startsWith('h265');
@@ -415,6 +414,19 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                         let shouldShow = false;
                         if (isNVENC) {
                             shouldShow = nvencAvailable && (!isAV1 || av1NvencAvailable);
+                            if (isNVENC444) {
+                                const isDirectMode = msg.captureMode === 'direct';
+                                const isH264 = opt.value.startsWith('h264');
+                                const isH265 = opt.value.startsWith('h265');
+                                
+                                if (isDirectMode) {
+                                    shouldShow = false;
+                                } else if (isH264 && !msg.h264Nvenc444Available) {
+                                    shouldShow = false;
+                                } else if (isH265 && !msg.h265Nvenc444Available) {
+                                    shouldShow = false;
+                                }
+                            }
                         } else if (isQSV) {
                             shouldShow = qsvAvailable;
                         }
@@ -433,9 +445,7 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             }
 
             if (videoCodecSelect) {
-                if (msg.videoCodec === 'h265_qsv' && msg.chroma === '444') {
-                    videoCodecSelect.value = 'h265_qsv-444';
-                } else if ((msg.videoCodec === 'h264' || msg.videoCodec === 'h265') && msg.chroma === '444') {
+                if (msg.chroma === '444' && ['h264', 'h265', 'h265_qsv', 'h264_nvenc', 'h265_nvenc'].includes(msg.videoCodec as string)) {
                     videoCodecSelect.value = `${msg.videoCodec}-444`;
                 } else {
                     videoCodecSelect.value = msg.videoCodec as string;
@@ -444,41 +454,8 @@ function handleJsonMessage(msg: Record<string, unknown>) {
                     cpuEffortSlider.disabled = videoCodecSelect.value !== 'vp8';
                 }
             }
-
-            if (msg.h264Nvenc444Available !== undefined && chromaCheckbox && videoCodecSelect) {
-                const updateChromaState = () => {
-                    const isDirectMode = msg.captureMode === 'direct';
-                    const isAV1Nvenc = videoCodecSelect.value === 'av1_nvenc';
-                    const isH264Nvenc = videoCodecSelect.value === 'h264_nvenc';
-                    const isH265Nvenc = videoCodecSelect.value === 'h265_nvenc';
-                    
-                    // AV1 NVENC never supports 444 (NVENC SDK limitation)
-                    const codec_444_Missing = isDirectMode || isAV1Nvenc || (isH264Nvenc && !msg.h264Nvenc444Available) || (isH265Nvenc && !msg.h265Nvenc444Available);
-                    
-                    if (codec_444_Missing) {
-                        if (chromaCheckbox.checked) {
-                            chromaCheckbox.checked = false;
-                            sendConfig();
-                        }
-                        chromaCheckbox.disabled = true;
-                        chromaCheckbox.parentElement!.style.opacity = '0.5';
-                        chromaCheckbox.parentElement!.title = isDirectMode
-                            ? 'Direct capture mode currently requires YUV 4:2:0'
-                            : isAV1Nvenc
-                            ? 'AV1 NVENC does not support 4:4:4 (NVENC SDK limitation)'
-                            : '4:4:4 is not supported by your GPU hardware for this codec';
-                    } else {
-                        chromaCheckbox.disabled = false;
-                        chromaCheckbox.parentElement!.style.opacity = '1';
-                        chromaCheckbox.parentElement!.title = 'Improve text clarity by avoiding chroma subsampling (H.264/H.265/AV1 only)';
-                    }
-                };
-                
-                videoCodecSelect.addEventListener('change', updateChromaState);
-                updateChromaState();
-            }
         }
-        
+
         if (msg.vbr !== undefined && vbrCheckbox) {
             vbrCheckbox.checked = msg.vbr as boolean;
             if (vbrThresholdGroup) vbrThresholdGroup.style.display = vbrCheckbox.checked ? 'flex' : 'none';
@@ -520,9 +497,6 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             if (webcodecs.chroma !== msg.chroma) {
                 webcodecs.chroma = msg.chroma;
                 webcodecs.initDecoder();
-            }
-            if (chromaCheckbox) {
-                chromaCheckbox.checked = msg.chroma === '444';
             }
         }
 
