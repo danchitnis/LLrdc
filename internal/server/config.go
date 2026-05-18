@@ -265,19 +265,19 @@ func InitConfig() {
 		}
 
 		log.Printf("Checking H.264 NVENC 4:4:4 support...")
-		outH264, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v h264_nvenc -profile:v high444p -f null - > /dev/null 2>&1 && echo true || echo false").Output()
+		outH264, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v h264_nvenc -profile:v high444p -tune lossless -f null - > /dev/null 2>&1 && echo true || echo false").Output()
 		H264NVENC444Available = strings.TrimSpace(string(outH264)) == "true"
 		if H264NVENC444Available {
-			log.Printf("H.264 NVENC 4:4:4 support detected")
+			log.Printf("H.264 NVENC 4:4:4 support detected (lossless/high444p)")
 		} else {
 			log.Printf("H.264 NVENC 4:4:4 support NOT detected")
 		}
 
 		log.Printf("Checking H.265 NVENC 4:4:4 support...")
-		outH265, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v hevc_nvenc -profile:v rext -f null - > /dev/null 2>&1 && echo true || echo false").Output()
+		outH265, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v hevc_nvenc -profile:v rext -tune lossless -f null - > /dev/null 2>&1 && echo true || echo false").Output()
 		H265NVENC444Available = strings.TrimSpace(string(outH265)) == "true"
 		if H265NVENC444Available {
-			log.Printf("H.265 NVENC 4:4:4 support detected")
+			log.Printf("H.265 NVENC 4:4:4 support detected (lossless/rext)")
 		} else {
 			log.Printf("H.265 NVENC 4:4:4 support NOT detected")
 		}

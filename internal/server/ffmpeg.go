@@ -534,14 +534,16 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					args = append(args, "-x", "bgr0")
 
 					rgbMode := "yuv420"
+					tune := "ull"
 					if Chroma == "444" {
 						rgbMode = "yuv444"
+						tune = "lossless"
 					}
 
 					// NVENC hardware encoding
 					args = append(args,
 						"-p", "preset=p1",
-						"-p", "tune=ull",
+						"-p", "tune="+tune,
 						"-p", "delay=0",
 						"-p", "surfaces=64",
 						"-p", "rgb_mode="+rgbMode,
@@ -554,6 +556,18 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						"-p", fmt.Sprintf("bufsize=%dM", TargetBandwidthMbps*2),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
+
+					if Chroma == "444" {
+						profile := "high444p"
+						if codec == "hevc_nvenc" {
+							profile = "rext"
+						}
+						// Optimized for screen content: lossless tune + fullres multipass
+						args = append(args, "-p", "profile="+profile, "-p", "multipass=fullres")
+						if codec == "h264_nvenc" {
+							args = append(args, "-p", "coder=ac")
+						}
+					}
 					if NVENCLatencyMode {
 						args = append(args, "-p", "rc-lookahead=0", "-p", "no-scenecut=1", "-p", "b_ref_mode=0")
 					}

@@ -10,18 +10,20 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	var outputArgs []string
 
 	if VideoCodec == "h265_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-tune", "ull", "-delay", "0", "-surfaces", "64", "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1")
+		outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-delay", "0", "-surfaces", "64", "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1", "-level", "6.2")
 		if NVENCLatencyMode {
 			outputArgs = append(outputArgs, "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0")
 		}
 		if Chroma == "444" {
-			outputArgs = append(outputArgs, "-profile:v", "rext")
+			outputArgs = append(outputArgs, "-profile:v", "rext", "-tune", "lossless", "-multipass", "fullres", "-pix_fmt", "yuv444p")
+		} else {
+			outputArgs = append(outputArgs, "-tune", "ull")
 		}
 	} else {
 		x265Params := fmt.Sprintf("fps=%d", fps)
 		outputArgs = append(outputArgs, "-c:v", "libx265", "-preset", "ultrafast", "-tune", "zerolatency", "-x265-params", x265Params)
 		if Chroma == "444" {
-			outputArgs = append(outputArgs, "-profile:v", "main444-8")
+			outputArgs = append(outputArgs, "-profile:v", "main444-8", "-pix_fmt", "yuv444p")
 		}
 	}
 	if mode == "bandwidth" {
