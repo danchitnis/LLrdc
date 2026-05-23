@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/danchitnis/llrdc/internal/server"
+	"github.com/danchitnis/llrdc/server/linux"
 	"github.com/danchitnis/llrdc/internal/splitproto"
 )
 
@@ -156,8 +156,8 @@ func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi, bandwidth int
 }
 
 func (c *AgentControlClient) ApplyCurrentConfig() {
-	width, height := server.GetScreenSize()
-	c.ApplyConfig(width, height, server.FPS, server.HDPI, server.TargetBandwidthMbps, getGeneration(), server.Chroma)
+	width, height := linux.GetScreenSize()
+	c.ApplyConfig(width, height, linux.FPS, linux.HDPI, linux.TargetBandwidthMbps, getGeneration(), linux.Chroma)
 }
 func (c *AgentControlClient) IsReady(targetGen uint64) bool {
 	c.mu.Lock()

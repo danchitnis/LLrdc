@@ -21,6 +21,7 @@ package_is_stale() {
   find \
     "${ROOT_DIR}/cmd" \
     "${ROOT_DIR}/internal" \
+    "${ROOT_DIR}/server" \
     "${ROOT_DIR}/Dockerfile.client" \
     "${ROOT_DIR}/go.mod" \
     "${ROOT_DIR}/go.sum" \

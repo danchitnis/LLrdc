@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/danchitnis/llrdc/internal/server"
+	"github.com/danchitnis/llrdc/server/linux"
 	"github.com/danchitnis/llrdc/internal/splitproto"
 )
 
@@ -56,13 +56,13 @@ func startVideoReceiver() {
 				return
 			}
 
-			codecFamily := server.VideoCodec
+			codecFamily := linux.VideoCodec
 			pixFmt := int(h.PixFmt)
 			enc, encGen := encMgr.Get()
 			// If the encoder state doesn't match the incoming stream, recreate it (synchronously in encMgr)
 			if enc == nil || enc.Width != width || enc.Height != height || encGen != generation || enc.PixFmt != pixFmt {
 				log.Printf("Encoder mismatch: stream %dx%d (fmt %d, gen %d), encoder %v (gen %d). Recreating...", width, height, pixFmt, generation, enc, encGen)
-				encMgr.Recreate(codecFamily, width, height, int(h.FPS), server.TargetBandwidthMbps*1000, pixFmt, generation)
+				encMgr.Recreate(codecFamily, width, height, int(h.FPS), linux.TargetBandwidthMbps*1000, pixFmt, generation)
 				enc, encGen = encMgr.Get()
 			}
 

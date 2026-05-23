@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/danchitnis/llrdc/internal/server"
+	"github.com/danchitnis/llrdc/server/linux"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
@@ -22,13 +22,13 @@ var (
 
 func init() {
 	// Initialize server config with some defaults for macOS
-	server.Port = 8080
-	server.FPS = 30
-	server.VideoCodec = "h264"
-	server.WebRTCLowLatency = true
+	linux.Port = 8080
+	linux.FPS = 30
+	linux.VideoCodec = "h264"
+	linux.WebRTCLowLatency = true
 
 	// Initialize WebRTC track and mux
-	server.InitWebRTC()
+	linux.InitWebRTC()
 }
 
 func handleSignaling(w http.ResponseWriter, r *http.Request) {
@@ -48,22 +48,22 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		return conn.WriteJSON(v)
 	}
 
-	reportedCodec := server.VideoCodec
-	if server.Chroma == "444" {
-		if server.VideoCodec == "h264" {
+	reportedCodec := linux.VideoCodec
+	if linux.Chroma == "444" {
+		if linux.VideoCodec == "h264" {
 			reportedCodec = "h264-444"
-		} else if server.VideoCodec == "h265" || server.VideoCodec == "hevc" {
+		} else if linux.VideoCodec == "h265" || linux.VideoCodec == "hevc" {
 			reportedCodec = "h265-444"
 		}
 	}
 	safeWriteJSON(map[string]interface{}{
 		"type":               "config",
 		"videoCodec":         reportedCodec,
-		"chroma":             server.Chroma,
-		"framerate":          server.FPS,
-		"hdpi":               server.HDPI,
-		"bandwidth":          server.TargetBandwidthMbps,
-		"webrtc_low_latency": server.WebRTCLowLatency,
+		"chroma":             linux.Chroma,
+		"framerate":          linux.FPS,
+		"hdpi":               linux.HDPI,
+		"bandwidth":          linux.TargetBandwidthMbps,
+		"webrtc_low_latency": linux.WebRTCLowLatency,
 	})
 
 	var configMu sync.Mutex
@@ -86,12 +86,12 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		switch msg["type"] {
 		case "webrtc_offer":
 			pcMu.Lock()
-			server.HandleWebRTCOffer(msg, r.Host, &pc, safeWriteJSON)
+			linux.HandleWebRTCOffer(msg, r.Host, &pc, safeWriteJSON)
 			pcMu.Unlock()
 
 		case "webrtc_ice":
 			pcMu.Lock()
-			server.HandleWebRTCICE(msg, pc)
+			linux.HandleWebRTCICE(msg, pc)
 			pcMu.Unlock()
 
 		case "config", "resize":
@@ -108,50 +108,50 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 
 			if w, ok1 := configMap["width"].(float64); ok1 {
 				if h, ok2 := configMap["height"].(float64); ok2 {
-					server.SetScreenSize(int(w), int(h))
+					linux.SetScreenSize(int(w), int(h))
 				}
 			}
 			if fps, ok := configMap["framerate"].(float64); ok {
-				if int(fps) > 0 && int(fps) != server.FPS {
-					server.FPS = int(fps)
+				if int(fps) > 0 && int(fps) != linux.FPS {
+					linux.FPS = int(fps)
 				}
 			} else if fps, ok := configMap["fps"].(float64); ok {
-				if int(fps) > 0 && int(fps) != server.FPS {
-					server.FPS = int(fps)
+				if int(fps) > 0 && int(fps) != linux.FPS {
+					linux.FPS = int(fps)
 				}
 			}
 			if hdpi, ok := configMap["hdpi"].(float64); ok {
-				if hdpi > 0 && int(hdpi) != server.HDPI {
-					server.HDPI = int(hdpi)
+				if hdpi > 0 && int(hdpi) != linux.HDPI {
+					linux.HDPI = int(hdpi)
 					reconnectNeeded = true
 				}
 			}
 			if bw, ok := configMap["bandwidth"].(float64); ok {
-				if bw > 0 && int(bw) != server.TargetBandwidthMbps {
-					server.TargetBandwidthMbps = int(bw)
+				if bw > 0 && int(bw) != linux.TargetBandwidthMbps {
+					linux.TargetBandwidthMbps = int(bw)
 				}
 			}
 
 			if codec, ok := configMap["videoCodec"].(string); ok {
-				oldCodec := server.VideoCodec
-				oldChroma := server.Chroma
+				oldCodec := linux.VideoCodec
+				oldChroma := linux.Chroma
 
 				if codec == "h264-444" {
-					server.Chroma = "444"
-					server.VideoCodec = "h264"
+					linux.Chroma = "444"
+					linux.VideoCodec = "h264"
 				} else if codec == "h265-444" {
-					server.Chroma = "444"
-					server.VideoCodec = "h265"
+					linux.Chroma = "444"
+					linux.VideoCodec = "h265"
 				} else {
-					server.VideoCodec = codec
+					linux.VideoCodec = codec
 					if chroma, ok := configMap["chroma"].(string); ok {
-						server.Chroma = chroma
+						linux.Chroma = chroma
 					} else {
-						server.Chroma = "420"
+						linux.Chroma = "420"
 					}
 				}
 
-				if server.VideoCodec != oldCodec || server.Chroma != oldChroma {
+				if linux.VideoCodec != oldCodec || linux.Chroma != oldChroma {
 					reconnectNeeded = true
 				}
 			}
@@ -171,9 +171,9 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 					pcMu.Unlock()
 				}
 
-				width, height := server.GetScreenSize()
+				width, height := linux.GetScreenSize()
 				pixFmt := 0
-				if server.Chroma == "444" {
+				if linux.Chroma == "444" {
 					pixFmt = 1
 				}
 
@@ -181,13 +181,13 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				// that requires an agent restart or encoder recreation.
 				gen := getGeneration()
 				enc, encGen := encMgr.Get()
-				if enc == nil || enc.Width != width || enc.Height != height || encGen != gen || enc.PixFmt != pixFmt || server.TargetBandwidthMbps*1000 != enc.BitrateKbps() || server.FPS != enc.FPS || encMgr.Codec() != server.VideoCodec || lastAppliedHDPI != server.HDPI {
+				if enc == nil || enc.Width != width || enc.Height != height || encGen != gen || enc.PixFmt != pixFmt || linux.TargetBandwidthMbps*1000 != enc.BitrateKbps() || linux.FPS != enc.FPS || encMgr.Codec() != linux.VideoCodec || lastAppliedHDPI != linux.HDPI {
 					gen = nextGeneration()
-					lastAppliedHDPI = server.HDPI
-					log.Printf("Applying debounced config (gen %d): %s %dx%d@%d FPS (fmt %d), %d Mbps, %d%% HDPI", gen, server.VideoCodec, width, height, server.FPS, pixFmt, server.TargetBandwidthMbps, server.HDPI)
-					encMgr.Recreate(server.VideoCodec, width, height, server.FPS, server.TargetBandwidthMbps*1000, pixFmt, gen)
+					lastAppliedHDPI = linux.HDPI
+					log.Printf("Applying debounced config (gen %d): %s %dx%d@%d FPS (fmt %d), %d Mbps, %d%% HDPI", gen, linux.VideoCodec, width, height, linux.FPS, pixFmt, linux.TargetBandwidthMbps, linux.HDPI)
+					encMgr.Recreate(linux.VideoCodec, width, height, linux.FPS, linux.TargetBandwidthMbps*1000, pixFmt, gen)
 					if globalControlClient != nil {
-						globalControlClient.ApplyConfig(width, height, server.FPS, server.HDPI, server.TargetBandwidthMbps, gen, server.Chroma)
+						globalControlClient.ApplyConfig(width, height, linux.FPS, linux.HDPI, linux.TargetBandwidthMbps, gen, linux.Chroma)
 					}
 				} else {
 					log.Printf("Debounced config received but no functional changes detected (gen %d).", gen)
@@ -197,28 +197,28 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 
 			// Report current effective config back to client
 			// This confirms the choice and triggers client-side re-negotiation if needed
-			reportedCodec = server.VideoCodec
-			if server.Chroma == "444" {
-				if server.VideoCodec == "h264" {
+			reportedCodec = linux.VideoCodec
+			if linux.Chroma == "444" {
+				if linux.VideoCodec == "h264" {
 					reportedCodec = "h264-444"
-				} else if server.VideoCodec == "h265" || server.VideoCodec == "hevc" {
+				} else if linux.VideoCodec == "h265" || linux.VideoCodec == "hevc" {
 					reportedCodec = "h265-444"
 				}
 			}
 
-			width, height := server.GetScreenSize()
+			width, height := linux.GetScreenSize()
 			gen := getGeneration()
 			safeWriteJSON(map[string]interface{}{
 				"type":               "config",
 				"videoCodec":         reportedCodec,
 				"width":              width,
 				"height":             height,
-				"fps":                server.FPS,
-				"hdpi":               server.HDPI,
-				"bandwidth":          server.TargetBandwidthMbps,
+				"fps":                linux.FPS,
+				"hdpi":               linux.HDPI,
+				"bandwidth":          linux.TargetBandwidthMbps,
 				"generation":         gen,
-				"chroma":             server.Chroma,
-				"webrtc_low_latency": server.WebRTCLowLatency,
+				"chroma":             linux.Chroma,
+				"webrtc_low_latency": linux.WebRTCLowLatency,
 			})
 		}
 	}
@@ -227,7 +227,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 func broadcastVideoFrame(data []byte, isKeyframe bool, codec string) {
 	// Convert AVCC (4-byte length) to Annex-B (00 00 00 01)
 	annexB := avccToAnnexB(data)
-	server.WriteWebRTCFrame(annexB, 0, time.Now(), codec, nil)
+	linux.WriteWebRTCFrame(annexB, 0, time.Now(), codec, nil)
 }
 
 func avccToAnnexB(data []byte) []byte {

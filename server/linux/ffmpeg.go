@@ -1,0 +1,781 @@
+package linux
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+var (
+	targetMode             = "bandwidth" // "bandwidth" or "quality"
+	TargetBandwidthMbps    = 5           // Initial default: 5 Mbps
+	targetQuality          = 70          // 10-100
+	targetVBR              = false       // Default VBR to false
+	targetVBRThreshold     = 0           // Default VBR threshold to 0
+	targetDamageTracking   = false       // Default Damage Tracking to false
+	targetMpdecimate       = false       // Default mpdecimate to false
+	targetCpuEffort        = 6           // Default: 6
+	targetCpuThreads       = 4           // Default: 4
+	targetDrawMouse        = true        // Default: true
+	targetKeyframeInterval = 2           // Default: 2 seconds
+	ffmpegCmd              *exec.Cmd
+	ffmpegAudioCmd         *exec.Cmd
+	ffmpegMutex            sync.Mutex
+	ffmpegShouldRun        = true
+	ffmpegStreamID         uint32
+	lastFFmpegRestartTime  atomic.Pointer[time.Time]
+	isResizing             = false
+)
+
+func getLastFFmpegRestartTime() time.Time {
+	t := lastFFmpegRestartTime.Load()
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
+}
+
+func KillFFmpegWithTimestamp() {
+	now := time.Now()
+	lastFFmpegRestartTime.Store(&now)
+	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		_ = ffmpegCmd.Process.Kill()
+	}
+}
+
+func PauseStreaming() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+	isResizing = true
+	log.Println("Pausing wf-recorder for resize...")
+	KillFFmpegWithTimestamp()
+	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
+		log.Println("Pausing audio ffmpeg for resize...")
+		ffmpegAudioCmd.Process.Kill()
+	}
+}
+
+func ResumeStreaming() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+	isResizing = false
+}
+
+func isQSVCodec(codec string) bool {
+	return codec == "h264_qsv" || codec == "h265_qsv" || codec == "hevc_qsv" || codec == "av1_qsv" || codec == "h264_vaapi" || codec == "hevc_vaapi" || codec == "av1_vaapi"
+}
+
+func SetChroma(chroma string) {
+	if chroma != "420" && chroma != "444" {
+		log.Printf("Invalid chroma setting: %s", chroma)
+		return
+	}
+	if Chroma == chroma {
+		return
+	}
+
+	Chroma = chroma
+	log.Printf("Received chroma config: %s", chroma)
+
+	InitWebRTCTrack()
+
+	KillFFmpegWithTimestamp()
+}
+
+func SetVideoCodec(codec string) {
+	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h264_qsv" && codec != "h264_vaapi" && codec != "h265" && codec != "h265_nvenc" && codec != "h265_qsv" && codec != "h265_vaapi" && codec != "hevc_vaapi" && codec != "av1" && codec != "av1_nvenc" && codec != "av1_qsv" {
+		log.Printf("Invalid video codec: %s", codec)
+		return
+	}
+
+	requestedCodec := codec
+	codec = ResolveRequestedVideoCodec(codec)
+	if requestedCodec != codec {
+		log.Printf("Mapping requested codec %s to %s for Intel acceleration", requestedCodec, codec)
+	}
+
+	if CaptureMode == CaptureModeDirect && !isHardwareCodec(codec) {
+		log.Printf("Ignoring codec change to %s: direct capture mode requires a hardware codec (NVENC or QSV/VAAPI)", codec)
+		return
+	}
+
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if VideoCodec == codec {
+		return
+	}
+
+	VideoCodec = codec
+	log.Printf("Target video codec changed to %s, reinitializing WebRTC track and restarting ffmpeg...", codec)
+
+	InitWebRTCTrack() // Re-create track
+
+	KillFFmpegWithTimestamp()
+}
+
+func ResolveRequestedVideoCodec(codec string) string {
+	if UseIntel {
+		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv" {
+			if H265QSVAvailable {
+				return "h265_qsv"
+			}
+			return "h265_vaapi"
+		}
+		if codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv" {
+			if QSVAvailable {
+				return "h264_qsv"
+			}
+			return "h264_vaapi"
+		}
+		if codec == "av1" || codec == "av1_qsv" || codec == "av1_vaapi" {
+			if AV1QSVAvailable {
+				return "av1_qsv"
+			}
+			return "av1_vaapi"
+		}
+	}
+	return codec
+}
+
+func SetKeyframeInterval(interval int) {
+	if interval < 1 {
+		interval = 1
+	} else if interval > 10 {
+		interval = 10
+	}
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetKeyframeInterval == interval {
+		return
+	}
+
+	targetKeyframeInterval = interval
+
+	log.Printf("Received keyframe interval config: %d", interval)
+	KillFFmpegWithTimestamp()
+}
+
+func SetMpdecimate(mpdecimate bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetMpdecimate == mpdecimate {
+		return
+	}
+
+	targetMpdecimate = mpdecimate
+
+	log.Printf("Received mpdecimate config: %v", mpdecimate)
+	KillFFmpegWithTimestamp()
+}
+
+func SetCpuEffort(effort int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetCpuEffort == effort {
+		return
+	}
+
+	targetCpuEffort = effort
+
+	log.Printf("Received CPU effort config: %d", effort)
+	KillFFmpegWithTimestamp()
+}
+
+func SetCpuThreads(threads int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetCpuThreads == threads {
+		return
+	}
+
+	targetCpuThreads = threads
+
+	log.Printf("Received CPU threads config: %d", threads)
+	KillFFmpegWithTimestamp()
+}
+
+func SetDrawMouse(draw bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetDrawMouse == draw {
+		return
+	}
+
+	targetDrawMouse = draw
+
+	log.Printf("Received Enable Desktop Mouse config: %v", draw)
+	KillFFmpegWithTimestamp()
+}
+
+func SetVBR(vbr bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetVBR == vbr {
+		return
+	}
+
+	targetVBR = vbr
+
+	log.Printf("Received VBR config: %v", vbr)
+	KillFFmpegWithTimestamp()
+}
+
+func SetVBRThreshold(threshold int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetVBRThreshold == threshold {
+		return
+	}
+
+	targetVBRThreshold = threshold
+
+	log.Printf("Received VBR Threshold config: %d", threshold)
+	KillFFmpegWithTimestamp()
+}
+
+func SetDamageTracking(dt bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetDamageTracking == dt {
+		return
+	}
+
+	targetDamageTracking = dt
+
+	log.Printf("Received Damage Tracking config: %v", dt)
+	KillFFmpegWithTimestamp()
+}
+
+func SetBandwidth(bwMbps int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetMode == "bandwidth" && TargetBandwidthMbps == bwMbps {
+		return
+	}
+
+	targetMode = "bandwidth"
+	TargetBandwidthMbps = bwMbps
+
+	log.Printf("Received bandwidth config: %d Mbps", bwMbps)
+	KillFFmpegWithTimestamp()
+}
+
+func SetQuality(quality int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if targetMode == "quality" && targetQuality == quality {
+		return
+	}
+
+	targetMode = "quality"
+	targetQuality = quality
+
+	log.Printf("Received quality config: %d", quality)
+	KillFFmpegWithTimestamp()
+}
+
+func SetFramerate(fps int) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if FPS == fps {
+		return
+	}
+
+	FPS = fps
+
+	log.Printf("Received framerate config: %d fps", fps)
+	KillFFmpegWithTimestamp()
+}
+
+func RestartForResize() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	log.Println("Screen size changed, restarting ffmpeg...")
+	KillFFmpegWithTimestamp()
+
+	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
+		log.Println("Screen size changed, restarting audio ffmpeg...")
+		ffmpegAudioCmd.Process.Kill()
+	}
+}
+
+func SetEnableAudio(enable bool) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if EnableAudio == enable {
+		return
+	}
+
+	EnableAudio = enable
+
+	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
+		log.Printf("Enable audio changed to %v, restarting audio ffmpeg...", enable)
+		ffmpegAudioCmd.Process.Kill()
+	}
+}
+
+func SetAudioBitrate(bitrate string) {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+
+	if AudioBitrate == bitrate {
+		return
+	}
+
+	AudioBitrate = bitrate
+
+	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
+		log.Printf("Audio bitrate changed to %s, restarting audio ffmpeg...", bitrate)
+		_ = ffmpegAudioCmd.Process.Kill()
+	}
+}
+
+func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
+	var lastStreamID uint32
+
+	cleanupTasks = append(cleanupTasks, func() {
+		ffmpegMutex.Lock()
+		defer ffmpegMutex.Unlock()
+		ffmpegShouldRun = false
+		log.Println("Killing wf-recorder (cleanup)...")
+		KillFFmpegWithTimestamp()
+	})
+	go func() {
+		for {
+			ffmpegMutex.Lock()
+			if !ffmpegShouldRun {
+				ffmpegMutex.Unlock()
+				break
+			}
+			resizing := isResizing
+			ffmpegMutex.Unlock()
+
+			if resizing {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			if err := validateRuntimeDirectMode(VideoCodec, Chroma); err != nil {
+				setDirectBufferActive(false, err.Error())
+				log.Fatalf("Invalid direct-buffer runtime configuration: %v", err)
+			}
+
+			codec := "libvpx"
+			codecName := "vp8"
+			format := "ivf"
+			if VideoCodec == "h264" {
+				codec = "libx264"
+				codecName = "h264"
+				format = "h264"
+			} else if VideoCodec == "h264_nvenc" {
+				codec = "h264_nvenc"
+				codecName = "h264"
+				format = "h264"
+			} else if VideoCodec == "h264_qsv" || VideoCodec == "h264_vaapi" {
+				codec = "h264_vaapi"
+				codecName = "h264"
+				format = "h264"
+			} else if VideoCodec == "h265" {
+				codec = "libx265"
+				codecName = "h265"
+				format = "hevc"
+			} else if VideoCodec == "h265_nvenc" {
+				codec = "hevc_nvenc"
+				codecName = "h265"
+				format = "hevc"
+			} else if VideoCodec == "h265_qsv" {
+				codec = "hevc_vaapi"
+				codecName = "h265"
+				format = "hevc"
+			} else if VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi" {
+				codec = "hevc_vaapi"
+				codecName = "h265"
+				format = "hevc"
+			} else if VideoCodec == "av1" {
+				codec = "libaom-av1"
+				codecName = "av1"
+				format = "ivf"
+			} else if VideoCodec == "av1_nvenc" {
+				codec = "av1_nvenc"
+				codecName = "av1"
+				format = "ivf"
+			} else if VideoCodec == "av1_qsv" {
+				codec = "av1_vaapi"
+				codecName = "av1"
+				format = "ivf"
+			}
+
+			var cmd *exec.Cmd
+			if TestPattern {
+				setDirectBufferActive(false, "Direct buffer is unavailable in test-pattern mode")
+				log.Printf("TEST_PATTERN mode: starting ffmpeg with testsrc")
+				w, h := GetScreenSize()
+
+				if CaptureMode == CaptureModeAgent {
+					if AgentAddress == "" {
+						log.Fatalf("Capture mode 'agent' requires --agent-address")
+					}
+					// Output raw video over TCP with frame number overlay
+					finalArgs := []string{
+						"-y", "-re", "-f", "lavfi",
+						"-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", w, h, FPS),
+						"-vf", "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='%{n}':fontsize=100:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+						"-f", "rawvideo",
+						"-pix_fmt", "yuv420p",
+						"tcp://" + AgentAddress,
+					}
+					log.Printf("FFmpeg testsrc agent command: ffmpeg %v", finalArgs)
+					cmd = exec.Command("ffmpeg", finalArgs...)
+				} else {
+					var ffmpegArgs []string
+					if VideoCodec == "vp8" {
+						ffmpegArgs = buildVP8Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetCpuEffort, targetCpuThreads, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h264" || VideoCodec == "h264_nvenc" {
+						ffmpegArgs = buildH264Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h264_qsv" {
+						ffmpegArgs = buildQSVH264Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h265" || VideoCodec == "h265_nvenc" {
+						ffmpegArgs = buildH265Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi" {
+						ffmpegArgs = buildQSVH265Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval, Chroma)
+					} else if VideoCodec == "av1" || VideoCodec == "av1_nvenc" {
+						ffmpegArgs = buildAV1Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					} else if VideoCodec == "av1_qsv" {
+						ffmpegArgs = buildQSVAV1Args(targetMode, TargetBandwidthMbps, targetQuality, FPS, targetVBR, targetVBRThreshold, targetKeyframeInterval)
+					}
+
+					ffmpegArgs = append(ffmpegArgs, "-f", "pipe:1")
+
+					var hwArgs []string
+					if isQSVCodec(VideoCodec) {
+						renderNode := resolveIntelRenderNode()
+						hwArgs = []string{"-init_hw_device", fmt.Sprintf("qsv=hw:%s", renderNode), "-filter_hw_device", "hw"}
+					}
+
+					finalArgs := append(append([]string{"-y"}, hwArgs...), "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%dx%d:rate=%d", w, h, FPS))
+					finalArgs = append(finalArgs, ffmpegArgs...)
+					log.Printf("FFmpeg testsrc command: ffmpeg %v", finalArgs)
+					cmd = exec.Command("ffmpeg", finalArgs...)
+				}
+			} else {
+				// Base config using wf-recorder
+				args := []string{
+					"wf-recorder",
+				}
+
+				bufferSize := fmt.Sprintf("%d", FPS)
+				if WebRTCLowLatency {
+					bufferSize = "5"
+				}
+
+				if !targetDamageTracking {
+					args = append(args, "-D") // Disable damage tracking
+				}
+				args = append(args,
+					"-c", codec,
+					"-m", format,
+					"-r", fmt.Sprintf("%d", FPS),
+					"-B", bufferSize,
+				)
+
+				if CaptureMode == CaptureModeAgent {
+					if AgentAddress == "" {
+						log.Fatalf("Capture mode 'agent' requires --agent-address")
+					}
+					// Override encoder args to stream raw video to the macOS host
+					// Use -g to force strict capture dimensions matching the requested size
+					gw, gh := GetScreenSize()
+
+					splitStateMu.RLock()
+					agentPixfmt := splitState.pixFmt
+					splitStateMu.RUnlock()
+
+					xParam := "yuv420p"
+					if agentPixfmt == 1 {
+						xParam = "yuv444p"
+					}
+
+					args = []string{
+						"wf-recorder",
+						"-c", "rawvideo",
+						"-m", "rawvideo",
+						"-x", xParam,
+						"-g", fmt.Sprintf("0,0 %dx%d", gw, gh), "-r", fmt.Sprintf("%d", FPS),
+						"-F", fmt.Sprintf("fps=%d", FPS),
+						"-B", "5",
+						"-f", "tcp://" + AgentAddress,
+					}
+					if !targetDamageTracking {
+						args = append(args, "-D")
+					}
+				} else if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
+					// Always use packed RGB/BGR and let NVENC convert to YUV on-GPU.
+					// Forcing yuv420p here pushes the conversion into wf-recorder/FFmpeg's
+					// CPU path and is very expensive at 4K60.
+					args = append(args, "-x", "bgr0")
+
+					rgbMode := "yuv420"
+					tune := "ull"
+					if Chroma == "444" {
+						rgbMode = "yuv444"
+						tune = "lossless"
+					}
+
+					// NVENC hardware encoding
+					args = append(args,
+						"-p", "preset=p1",
+						"-p", "tune="+tune,
+						"-p", "delay=0",
+						"-p", "surfaces=64",
+						"-p", "rgb_mode="+rgbMode,
+						"-p", "bf=0",
+						"-p", "spatial-aq=0",
+						"-p", "temporal-aq=0",
+						"-p", "strict_gop=1",
+						"-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps),
+						"-p", fmt.Sprintf("maxrate=%dM", TargetBandwidthMbps),
+						"-p", fmt.Sprintf("bufsize=%dM", TargetBandwidthMbps*2),
+						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
+					)
+
+					if Chroma == "444" {
+						profile := "high444p"
+						if codec == "hevc_nvenc" {
+							profile = "rext"
+						}
+						// Optimized for screen content: lossless tune + fullres multipass
+						args = append(args, "-p", "profile="+profile, "-p", "multipass=fullres")
+						if codec == "h264_nvenc" {
+							args = append(args, "-p", "coder=ac")
+						}
+					}
+					if NVENCLatencyMode {
+						args = append(args, "-p", "rc-lookahead=0", "-p", "no-scenecut=1", "-p", "b_ref_mode=0")
+					}
+					if !targetVBR {
+						args = append(args, "-p", "rc=cbr")
+					} else {
+						args = append(args, "-p", "rc=vbr", "-p", "cq=30")
+					}
+
+					if codec == "h264_nvenc" {
+						args = append(args, "-p", "aud=1")
+					}
+				} else if isQSVCodec(codec) {
+					// Intel hardware encoding via VAAPI (mapped from QSV names internally)
+					args = append(args, "-d", resolveIntelRenderNode())
+
+					args = append(args,
+						"-p", fmt.Sprintf("b=%dk", TargetBandwidthMbps*1000),
+						"-p", fmt.Sprintf("maxrate=%dk", TargetBandwidthMbps*1000),
+						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
+						"-p", "async_depth=2",
+						"-p", "bf=0",
+					)
+
+					if codec == "h264_vaapi" || codec == "h264_qsv" || codec == "h265_qsv" || (codec == "hevc_vaapi" && Chroma != "444") {
+						args = append(args, "-p", "aud=1")
+					}
+
+					if Chroma == "444" {
+						args = append(args, "-F", fmt.Sprintf("scale_vaapi=format=vuyx:out_range=full,fps=%d", FPS))
+					} else {
+						// wf-recorder automatically handles hwupload and scale_vaapi=format=nv12 when -d is passed
+						// We just need to force the FPS filter if needed, but wf-recorder handles -F fps=30 inherently if we pass -r
+					}
+
+					if codec == "h264_vaapi" || codec == "h264_qsv" {
+						args = append(args, "-p", "profile=main")
+					} else if codec == "hevc_vaapi" || codec == "h265_vaapi" || codec == "hevc_qsv" || codec == "h265_qsv" {
+						if Chroma == "444" {
+							args = append(args, "-p", "profile=rext")
+						} else {
+							args = append(args, "-p", "profile=main")
+						}
+					} else if codec == "av1_vaapi" || codec == "av1_qsv" {
+						args = append(args, "-p", "profile=main")
+					}
+				} else {
+					// CPU encoding
+					if Chroma == "444" {
+						args = append(args, "-x", "yuv444p")
+					} else {
+						args = append(args, "-x", "yuv420p")
+					}
+
+					if codec == "libvpx" {
+
+						args = append(args,
+							"-p", "deadline=realtime",
+							"-p", "lag-in-frames=0",
+						)
+						if targetVBR {
+							// For VBR: set a target maxrate and use static-thresh for bit saving
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=30", "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
+						} else {
+							// For CBR: target, maxrate, and minrate should match
+							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", TargetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
+						}
+					} else if codec == "libx264" || codec == "libx265" {
+						args = append(args, "-p", "tune=zerolatency")
+						if targetVBR {
+							// For H264/H265 VBR, use threshold to offset CRF
+							crf := 28 + (targetVBRThreshold / 50)
+							if crf > 51 {
+								crf = 51
+							}
+							args = append(args, "-p", fmt.Sprintf("crf=%d", crf), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
+						} else {
+							args = append(args, "-p", fmt.Sprintf("minrate=%dM", TargetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
+						}
+
+						if codec == "libx264" {
+							args = append(args, "-p", fmt.Sprintf("x264-params=aud=1:fps=%d", FPS))
+						} else {
+							args = append(args, "-p", fmt.Sprintf("x265-params=fps=%d", FPS))
+						}
+					} else if codec == "libaom-av1" {
+						args = append(args, "-p", "usage=realtime", "-p", "row-mt=1", "-p", "lag-in-frames=0", "-p", "error-resilient=1")
+						if targetVBR {
+							args = append(args, "-p", fmt.Sprintf("static-thresh=%d", targetVBRThreshold), "-p", "crf=35", "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
+						} else {
+							args = append(args, "-p", "static-thresh=0", "-p", fmt.Sprintf("minrate=%dM", TargetBandwidthMbps), "-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps))
+						}
+					}
+
+					args = append(args,
+						"-p", "cpu-used=8",
+						"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
+						"-p", fmt.Sprintf("maxrate=%dM", TargetBandwidthMbps),
+						"-p", fmt.Sprintf("bufsize=%dM", TargetBandwidthMbps*2),
+						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
+					)
+				}
+
+				if CaptureMode != CaptureModeAgent {
+					args = append(args, "-f", "pipe:1")
+				} else {
+					// Ensure the relay is running
+					startAgentRelay()
+					// Update wf-recorder to point to the local relay
+					for i, arg := range args {
+						if strings.HasPrefix(arg, "tcp://") {
+							args[i] = "tcp://127.0.0.1:12347"
+						}
+					}
+				}
+
+				log.Printf("Starting wf-recorder capture: %v", args)
+				cmd = exec.Command(args[0], args[1:]...)
+				cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0", "XDG_RUNTIME_DIR=/tmp/llrdc-run")
+			}
+
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				log.Fatalf("Failed to get stdout from wf-recorder: %v", err)
+			}
+			cmd.Stderr = os.Stderr
+
+			ffmpegMutex.Lock()
+			ffmpegStreamID++
+			currentStreamID := ffmpegStreamID
+			ffmpegCmd = cmd
+			ffmpegMutex.Unlock()
+			noteStreamStarted(currentStreamID)
+
+			if err := cmd.Start(); err != nil {
+				if CaptureMode == CaptureModeDirect {
+					setDirectBufferActive(false, fmt.Sprintf("Direct-buffer capture failed to start: %v", err))
+				}
+				log.Fatalf("Failed to start wf-recorder: %v", err)
+			}
+			if CaptureMode == CaptureModeDirect {
+				setDirectBufferActive(true, "Direct-buffer probe passed and hardware capture is active")
+			}
+
+			// Prime the compositor so damage tracking sessions emit an initial frame without waiting for user input.
+			PrimeFrameGeneration(0, 10, 100*time.Millisecond)
+
+			if CaptureMode == CaptureModeAgent {
+				// We just wait for it to exit.
+				_ = cmd.Wait()
+				time.Sleep(1 * time.Second) // Prevent rapid spin loop if TCP is refused
+				continue
+			}
+
+			doneCh := make(chan bool, 1)
+			go func() {
+				streamProducedFrame := false
+				onFrameWithCheck := func(frame EncodedVideoFrame, sid uint32) {
+					if onFrame == nil {
+						return
+					}
+					if sid != lastStreamID {
+						log.Printf("Stream ID change detected: %d -> %d. Triggering config reset.", lastStreamID, sid)
+						noteStreamFrame(sid)
+						streamProducedFrame = true
+						broadcastConfig(true)
+						lastStreamID = sid
+					} else if !streamProducedFrame {
+						noteStreamFrame(sid)
+						streamProducedFrame = true
+					}
+					onFrame(frame, sid, codecName)
+				}
+
+				if format == "ivf" {
+					splitIVF(stdout, func(frame EncodedVideoFrame) {
+						onFrameWithCheck(frame, currentStreamID)
+					})
+				} else if format == "h264" {
+					splitH264AnnexB(stdout, func(frame EncodedVideoFrame) {
+						onFrameWithCheck(frame, currentStreamID)
+					})
+				} else if format == "hevc" {
+					splitH265AnnexB(stdout, func(frame EncodedVideoFrame) {
+						onFrameWithCheck(frame, currentStreamID)
+					})
+				} else {
+					log.Printf("Unknown format: %s, defaulting to splitIVF", format)
+					splitIVF(stdout, func(frame EncodedVideoFrame) {
+						onFrameWithCheck(frame, currentStreamID)
+					})
+				}
+				doneCh <- streamProducedFrame
+			}()
+
+			streamProducedFrame := <-doneCh
+			_ = cmd.Wait()
+
+			ffmpegMutex.Lock()
+			shouldRun := ffmpegShouldRun
+			ffmpegMutex.Unlock()
+
+			if !shouldRun {
+				break
+			}
+			if !streamProducedFrame {
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}()
+}

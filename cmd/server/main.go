@@ -4,12 +4,12 @@ import (
 	"log"
 	"os"
 
-	"github.com/danchitnis/llrdc/internal/server"
+	"github.com/danchitnis/llrdc/server/linux"
 )
 
 func main() {
 	log.SetOutput(os.Stdout)
-	if err := server.Run(); err != nil {
+	if err := linux.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
