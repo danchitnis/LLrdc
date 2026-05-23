@@ -42,7 +42,7 @@ docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
 echo "📦 Building components..."
 npm run build --silent
-go build -o macos-server ./cmd/macos-server/*.go
+go build -o macos-server ./server/macos/*.go
 
 echo "🐳 Building/Verifying Docker container..."
 ./docker-build.sh --macos > /dev/null

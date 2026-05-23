@@ -4,7 +4,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/danchitnis/llrdc/cmd/macos-server/encoder"
+	"github.com/danchitnis/llrdc/server/macos/encoder"
 )
 
 type EncoderManager struct {

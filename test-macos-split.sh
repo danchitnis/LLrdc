@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-macos-split.sh
 # Usage: ./test-macos-split.sh [test_file.spec.ts]
-# If no argument is provided, runs all tests in tests/macos/
+# If no argument is provided, runs all tests in tests/macos-browser/
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ rm -f "$LOG_DIR"/*.log
 echo "========================================"
 echo "Building components..."
 npm run build
-go build -o macos-server ./cmd/macos-server/*.go
+go build -o macos-server ./server/macos/*.go
 
 echo "========================================"
 echo "Building Docker container..."
@@ -78,11 +78,11 @@ set +e
 
 if [ -n "$TEST_TO_RUN" ]; then
     echo "Running specific test: $TEST_TO_RUN"
-    npx playwright test "tests/macos/$TEST_TO_RUN" --workers=1 --reporter=line
+    npx playwright test "tests/macos-browser/$TEST_TO_RUN" --workers=1 --reporter=line
     TEST_EXIT=$?
 else
     echo "Running all macOS tests..."
-    npx playwright test tests/macos/ --workers=1 --reporter=line
+    npx playwright test tests/macos-browser/ --workers=1 --reporter=line
     TEST_EXIT=$?
 fi
 set -e

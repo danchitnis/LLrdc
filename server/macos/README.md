@@ -7,7 +7,7 @@ This architecture allows LLrdc to utilize Apple's native GPU for high-performanc
 The system is split across the virtualization boundary into two components:
 
 1. **Docker Agent (`Dockerfile.macos`)**: Runs headless Labwc and the XFCE desktop. It uses `wf-recorder` to capture uncompressed raw YUV420p video frames and streams them instantly over a local TCP loopback (`host.docker.internal:12345`). It also listens on a TCP port (`12346`) to receive instant input commands (mouse/keyboard) from the host.
-2. **macOS Native Server (`cmd/macos-server`)**: Runs natively on your Mac. It hosts the WebRTC/HTTP stack, manages browser connections, and uses Apple's **VideoToolbox (CGO)** to encode the incoming raw frames to a low-latency H.264 bitstream. It also routes your browser's input data back over TCP to the Docker container in real-time.
+2. **macOS Native Server (`server/macos`)**: Runs natively on your Mac. It hosts the WebRTC/HTTP stack, manages browser connections, and uses Apple's **VideoToolbox (CGO)** to encode the incoming raw frames to a low-latency H.264 bitstream. It also routes your browser's input data back over TCP to the Docker container in real-time.
 
 ## Prerequisites
 
@@ -34,7 +34,7 @@ Next, build the specialized Docker agent image:
 
 Finally, compile the native macOS Go server:
 ```bash
-go build -o macos-server ./cmd/macos-server
+go build -o macos-server ./server/macos
 ```
 
 ---

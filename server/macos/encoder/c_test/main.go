@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/danchitnis/llrdc/cmd/macos-server/encoder"
+	"github.com/danchitnis/llrdc/server/macos/encoder"
 )
 
 func main() {
