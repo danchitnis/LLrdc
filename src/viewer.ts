@@ -345,9 +345,10 @@ function handleJsonMessage(msg: Record<string, unknown>) {
             if (pendingMaxRes !== null && msg.max_res !== pendingMaxRes) {
                 // Ignore stale config echoes while a local max-res change is still pending.
             } else {
+                const prevVal = maxResSelect.value;
                 maxResSelect.value = msg.max_res.toString();
                 pendingMaxRes = null;
-                if (msg.max_res === 0) {
+                if (msg.max_res === 0 && prevVal !== '0') {
                     forceResize();
                 }
             }

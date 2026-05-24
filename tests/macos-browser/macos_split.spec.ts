@@ -26,12 +26,24 @@ test('macOS split architecture correctly streams video and has low mouse latency
     
     page.on('console', msg => console.log('BROWSER: ' + msg.text()));
     
+    // Set a deterministic viewport to prevent state leakage and huge resizes
+    await page.setViewportSize({ width: 1280, height: 720 });
+
     // Navigate to the local macOS server (already running)
     await page.goto('http://localhost:8080/viewer.html');
 
     // Wait for the video element to be attached and have a source
     const video = page.locator('#webrtc-video');
     await expect(video).toBeAttached({ timeout: 15000 });
+
+    // Reset settings in case of pollution from prior tests
+    console.log("Resetting HDPI and Max Resolution to clean state...");
+    await page.click('#config-btn');
+    const hdpiSelect = page.locator('#hdpi-select');
+    await hdpiSelect.selectOption('100');
+    const maxResSelect = page.locator('#max-res-select');
+    await maxResSelect.selectOption('1080');
+    await page.click('#config-btn'); // Close panel
 
     // Ensure video reaches playing state
     await page.waitForFunction(() => {

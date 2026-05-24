@@ -5,12 +5,22 @@ test('macOS split architecture supports dynamic resolution switching', async ({ 
     
     page.on('console', msg => console.log('BROWSER: ' + msg.text()));
     
+    // Set a deterministic viewport to prevent state leakage and huge resizes
+    await page.setViewportSize({ width: 1280, height: 720 });
+
     // 1. Navigate to the local macOS server
     await page.goto('http://localhost:8080/viewer.html');
 
     // 2. Wait for the video element and ensure it's playing
     const video = page.locator('#webrtc-video');
     await expect(video).toBeAttached({ timeout: 15000 });
+
+    // Reset HDPI in case of pollution from prior tests
+    console.log("Resetting HDPI to clean state...");
+    await page.click('#config-btn');
+    const hdpiSelect = page.locator('#hdpi-select');
+    await hdpiSelect.selectOption('100');
+    await page.click('#config-btn');
 
     await page.waitForFunction(() => {
         const vid = document.getElementById('webrtc-video') as HTMLVideoElement;

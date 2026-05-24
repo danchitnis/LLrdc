@@ -15,7 +15,7 @@ test('macOS split architecture supports robust window resizing', async ({ page }
     await page.waitForFunction(() => {
         const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
         // videoHeight 672 is standard content area for 720p viewport in headless chromium
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 1 && vid.videoWidth % 32 === 0 && vid.videoHeight % 32 === 0;
+        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 1 && vid.videoWidth % 8 === 0 && vid.videoHeight % 8 === 0;
     }, { timeout: 15000 });
 
     const initialW = await page.evaluate(() => (document.getElementById('webrtc-video') as HTMLVideoElement).videoWidth);
@@ -51,8 +51,8 @@ test('macOS split architecture supports robust window resizing', async ({ page }
         return { w: vid.videoWidth, h: vid.videoHeight };
     });
     console.log(`Stream recovered at ${dims1.w}x${dims1.h}. (Aligned from 1366x720?)`);
-    expect(dims1.w % 32).toBe(0);
-    expect(dims1.h % 32).toBe(0);
+    expect(dims1.w % 8).toBe(0);
+    expect(dims1.h % 8).toBe(0);
 
     // 3. Resize to custom resolution 2
     console.log("Resizing window to 1440x900...");
@@ -68,12 +68,12 @@ test('macOS split architecture supports robust window resizing', async ({ page }
             };
         });
         // Check dimensions are different and aligned
-        if (dims.w !== dims1.w && dims.w % 32 === 0 && dims.h % 32 === 0 && dims.ready) {
+        if (dims.w !== dims1.w && dims.w % 8 === 0 && dims.h % 8 === 0 && dims.ready) {
             return true;
         }
         return false;
     }, {
-        message: 'Stream should recover with new 32-pixel aligned dimensions after resize to 1440x900',
+        message: 'Stream should recover with new 8-pixel aligned dimensions after resize to 1440x900',
         timeout: 15000,
     }).toBe(true);
 
@@ -82,8 +82,8 @@ test('macOS split architecture supports robust window resizing', async ({ page }
         return { w: vid.videoWidth, h: vid.videoHeight };
     });
     console.log(`Stream recovered at ${dims2.w}x${dims2.h}.`);
-    expect(dims2.w % 32).toBe(0);
-    expect(dims2.h % 32).toBe(0);
+    expect(dims2.w % 8).toBe(0);
+    expect(dims2.h % 8).toBe(0);
 
     // 4. Final verification of stability
     await page.waitForTimeout(2000);

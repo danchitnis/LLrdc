@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -64,6 +65,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		"hdpi":               linux.HDPI,
 		"bandwidth":          linux.TargetBandwidthMbps,
 		"webrtc_low_latency": linux.WebRTCLowLatency,
+		"max_res":            linux.InitialRes,
 	})
 
 	var configMu sync.Mutex
@@ -106,9 +108,10 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 
 			reconnectNeeded := false
 
+			sizeChanged := false
 			if w, ok1 := configMap["width"].(float64); ok1 {
 				if h, ok2 := configMap["height"].(float64); ok2 {
-					linux.SetScreenSize(int(w), int(h))
+					sizeChanged = linux.SetScreenSize(int(w), int(h))
 				}
 			}
 			if fps, ok := configMap["framerate"].(float64); ok {
@@ -129,6 +132,21 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 			if bw, ok := configMap["bandwidth"].(float64); ok {
 				if bw > 0 && int(bw) != linux.TargetBandwidthMbps {
 					linux.TargetBandwidthMbps = int(bw)
+				}
+			}
+			var maxResVal int
+			if maxRes, ok := configMap["max_res"].(float64); ok {
+				maxResVal = int(maxRes)
+			} else if maxResStr, ok := configMap["max_res"].(string); ok {
+				if val, err := strconv.Atoi(maxResStr); err == nil {
+					maxResVal = val
+				}
+			}
+
+			if maxResVal != linux.InitialRes {
+				linux.InitialRes = maxResVal
+				if linux.InitialRes > 0 {
+					linux.UpdateScreenSizeFromInitialRes()
 				}
 			}
 
@@ -163,6 +181,9 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 
 			configTimer = time.AfterFunc(100*time.Millisecond, func() {
 				if reconnectNeeded {
+					log.Printf("Sending reconnect hint to client due to config change requiring WebRTC reconnect")
+					_ = safeWriteJSON(map[string]interface{}{"type": "reconnect_hint"})
+
 					pcMu.Lock()
 					if pc != nil {
 						pc.Close()
@@ -206,20 +227,23 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			width, height := linux.GetScreenSize()
-			gen := getGeneration()
-			safeWriteJSON(map[string]interface{}{
-				"type":               "config",
-				"videoCodec":         reportedCodec,
-				"width":              width,
-				"height":             height,
-				"fps":                linux.FPS,
-				"hdpi":               linux.HDPI,
-				"bandwidth":          linux.TargetBandwidthMbps,
-				"generation":         gen,
-				"chroma":             linux.Chroma,
-				"webrtc_low_latency": linux.WebRTCLowLatency,
-			})
+			if msg["type"] == "config" || (msg["type"] == "resize" && sizeChanged) {
+				width, height := linux.GetScreenSize()
+				gen := getGeneration()
+				safeWriteJSON(map[string]interface{}{
+					"type":               "config",
+					"videoCodec":         reportedCodec,
+					"width":              width,
+					"height":             height,
+					"fps":                linux.FPS,
+					"hdpi":               linux.HDPI,
+					"bandwidth":          linux.TargetBandwidthMbps,
+					"generation":         gen,
+					"chroma":             linux.Chroma,
+					"webrtc_low_latency": linux.WebRTCLowLatency,
+					"max_res":            linux.InitialRes,
+				})
+			}
 		}
 	}
 }
