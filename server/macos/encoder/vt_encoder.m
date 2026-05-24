@@ -3,6 +3,7 @@
 #include <CoreVideo/CoreVideo.h>
 #include <mach/mach_time.h>
 #include <stdio.h>
+#include <string.h>
 
 typedef void (*VTEncoderCallback)(void* outputCallbackRefCon, void* sourceFrameRefCon, OSStatus status, VTEncodeInfoFlags infoFlags, CMSampleBufferRef sampleBuffer);
 
@@ -128,7 +129,7 @@ VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, 
     encoder->frame_count = 0;
 
     CMVideoCodecType codecType = kCMVideoCodecType_H264;
-    if (strcmp(codec, "h265") == 0 || strcmp(codec, "hevc") == 0) {
+    if (strstr(codec, "h265") != NULL || strstr(codec, "hevc") != NULL) {
         codecType = kCMVideoCodecType_HEVC;
     }
 

@@ -94,6 +94,20 @@ func (s *Session) Connect(serverURL string) error {
 		return fmt.Errorf("register h265-444 codec: %w", err)
 	}
 
+	// Register standard H.265 profile (Main, Level 4.0)
+	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    "video/H265",
+			ClockRate:   90000,
+			Channels:    0,
+			SDPFmtpLine: "profile-id=1;tier-flag=0;level-id=120",
+		},
+		PayloadType: 122,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("register h265 codec: %w", err)
+	}
+
 	if err := m.RegisterDefaultCodecs(); err != nil {
 		_ = conn.Close()
 		return fmt.Errorf("register default codecs: %w", err)

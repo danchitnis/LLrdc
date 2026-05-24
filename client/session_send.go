@@ -38,7 +38,9 @@ func (s *Session) SendConfig(config map[string]any) error {
 				msg["videoCodec"] = "h264_nvenc"
 			}
 		} else if vCodec == "h265" {
-			if qsv, _ := lastConfig["h265QsvAvailable"].(bool); qsv {
+			if vt, _ := lastConfig["vtAvailable"].(bool); vt {
+				msg["videoCodec"] = "h265"
+			} else if qsv, _ := lastConfig["h265QsvAvailable"].(bool); qsv {
 				msg["videoCodec"] = "h265_qsv"
 			} else if nvenc, _ := lastConfig["h265Nvenc444Available"].(bool); nvenc {
 				msg["videoCodec"] = "h265_nvenc"

@@ -33,6 +33,7 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 				SetVideoCodec(fallbackCodec)
 				broadcastConfig(true)
 			}
+			log.Printf("DEBUG: Fallback initiated from remoteOfferSupportsCodec, sdp contains h265? %v", strings.Contains(strings.ToLower(sdp.SDP), " h265/90000"))
 			_ = writeJSON(map[string]interface{}{"type": "reconnect_hint"})
 			return
 		}
@@ -82,12 +83,14 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 
 		if err := (*pc).SetRemoteDescription(sdp); err != nil {
 			log.Printf("SetRemoteDescription error: %v", err)
+			log.Printf("DEBUG: SetRemoteDescription failed. SDP: %s", sdp.SDP)
 			return
 		}
 
 		answer, err := (*pc).CreateAnswer(nil)
 		if err != nil {
 			log.Printf("CreateAnswer error: %v", err)
+			log.Printf("DEBUG: CreateAnswer failed.")
 			return
 		}
 
@@ -95,7 +98,7 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			log.Printf("SetLocalDescription error: %v", err)
 			fallbackCodec := fallbackCodecForRemoteOffer()
 			if fallbackCodec != VideoCodec {
-				log.Printf("Falling back to %s after WebRTC local description failure", fallbackCodec)
+				log.Printf("Falling back to %s after WebRTC local description failure. err: %v", fallbackCodec, err)
 				SetVideoCodec(fallbackCodec)
 				broadcastConfig(true)
 			}
@@ -147,13 +150,13 @@ func remoteOfferSupportsCodec(sdp string, codecFamily string) bool {
 
 	switch codecFamily {
 	case "vp8":
-		return strings.Contains(lowerSDP, " vp8/90000")
+		return strings.Contains(lowerSDP, "vp8/90000")
 	case "h264":
-		return strings.Contains(lowerSDP, " h264/90000")
+		return strings.Contains(lowerSDP, "h264/90000")
 	case "h265":
-		return strings.Contains(lowerSDP, " h265/90000") || strings.Contains(lowerSDP, " hevc/90000")
+		return strings.Contains(lowerSDP, "h265/90000") || strings.Contains(lowerSDP, "hevc/90000")
 	case "av1":
-		return strings.Contains(lowerSDP, " av1/90000")
+		return strings.Contains(lowerSDP, "av1/90000")
 	default:
 		return true
 	}

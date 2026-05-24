@@ -102,7 +102,7 @@ func (a *NativeApp) attachSessionHooks() {
 	a.session.Hooks().On(EventConfig, func(_ EventPayload) {
 		a.mu.Lock()
 		a.codecOptions = a.buildCodecOptions()
-		currentCodec := a.session.State().VideoCodec
+		currentCodec := strings.TrimPrefix(strings.ToLower(a.session.State().VideoCodec), "video/")
 		chroma := "420"
 		if lc := a.session.State().LastConfig; lc != nil {
 			if c, ok := lc["chroma"].(string); ok && c != "" {

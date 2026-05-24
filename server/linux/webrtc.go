@@ -267,6 +267,19 @@ func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 		return nil, err
 	}
 
+	// Register standard H.265 profile (Main, Level 4.0)
+	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{
+			MimeType:    "video/H265",
+			ClockRate:   90000,
+			Channels:    0,
+			SDPFmtpLine: "profile-id=1;tier-flag=0;level-id=120",
+		},
+		PayloadType: 122,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		return nil, err
+	}
+
 	if err := m.RegisterDefaultCodecs(); err != nil {
 		return nil, err
 	}

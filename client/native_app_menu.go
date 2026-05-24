@@ -692,7 +692,18 @@ func (a *NativeApp) MenuSnapshot() any {
 
 	// Dynamically rebuild codec options based on the latest server config
 	a.codecOptions = a.buildCodecOptions()
-	currentCodec := a.session.State().VideoCodec
+	currentCodec := strings.TrimPrefix(strings.ToLower(a.session.State().VideoCodec), "video/")
+	chroma := "420"
+	if lc := a.session.State().LastConfig; lc != nil {
+		if c, ok := lc["chroma"].(string); ok && c != "" {
+			chroma = c
+		}
+	}
+	if currentCodec == "h265_qsv" && chroma == "444" {
+		currentCodec = "h265_qsv-444"
+	} else if (currentCodec == "h264" || currentCodec == "h265") && chroma == "444" {
+		currentCodec = currentCodec + "-444"
+	}
 	found := false
 	for i, opt := range a.codecOptions {
 		if opt.Value == currentCodec {

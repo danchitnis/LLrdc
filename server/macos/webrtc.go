@@ -64,6 +64,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		"framerate":          linux.FPS,
 		"hdpi":               linux.HDPI,
 		"bandwidth":          linux.TargetBandwidthMbps,
+		"vtAvailable":        true,
 		"webrtc_low_latency": linux.WebRTCLowLatency,
 		"max_res":            linux.InitialRes,
 	})
@@ -170,6 +171,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if linux.VideoCodec != oldCodec || linux.Chroma != oldChroma {
+					linux.InitWebRTCTrack()
 					reconnectNeeded = true
 				}
 			}
@@ -240,6 +242,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 					"bandwidth":          linux.TargetBandwidthMbps,
 					"generation":         gen,
 					"chroma":             linux.Chroma,
+					"vtAvailable":        true,
 					"webrtc_low_latency": linux.WebRTCLowLatency,
 					"max_res":            linux.InitialRes,
 				})
