@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"sync"
@@ -14,6 +14,7 @@ type h264RTPPacketWriter interface {
 type h264ULLVideoWriter struct {
 	track       *webrtc.TrackLocalStaticRTP
 	codecFamily string
+	payloadType uint8
 
 	mu              sync.Mutex
 	sequence        uint16
@@ -22,7 +23,7 @@ type h264ULLVideoWriter struct {
 	maxFramePart    int
 }
 
-func newH264ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*h264ULLVideoWriter, error) {
+func newH264ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string, payloadType uint8) (*h264ULLVideoWriter, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(capability, "video", "pion")
 	if err != nil {
 		return nil, err
@@ -30,6 +31,7 @@ func newH264ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily str
 	return &h264ULLVideoWriter{
 		track:        track,
 		codecFamily:  codecFamily,
+		payloadType:  payloadType,
 		maxFramePart: webrtcVideoOutboundMTU - 12,
 	}, nil
 }
@@ -48,9 +50,9 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 
 	trace := frame.LatencyTrace
 	if trace == nil {
-		trace = startLatencyProbeFrameSend(benchmarkClockNowMs())
+		trace = StartLatencyProbeFrameSend(BenchmarkClockNowMs())
 	} else {
-		noteLatencyProbeFrameSendStart(trace, benchmarkClockNowMs())
+		NoteLatencyProbeFrameSendStart(trace, BenchmarkClockNowMs())
 	}
 
 	w.mu.Lock()
@@ -68,7 +70,7 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 
 	currentTimestamp := baseTimestamp + w.timestampOffset
 
-	nalus := splitAnnexB(frame.Data)
+	nalus := SplitAnnexB(frame.Data)
 	var filteredNALUs [][]byte
 	for _, nalu := range nalus {
 		if len(nalu) == 0 {
@@ -87,7 +89,7 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 		isLastNALU := (i == len(filteredNALUs)-1)
 		isFirst := !sentFirst
 
-		err = writeH264NALURTP(w.track, nalu, currentTimestamp, &w.sequence, w.maxFramePart, trace, isFirst, isLastNALU)
+		err = writeH264NALURTP(w.track, nalu, w.payloadType, currentTimestamp, &w.sequence, w.maxFramePart, trace, isFirst, isLastNALU)
 		if err == nil {
 			sentFirst = true
 		} else {
@@ -96,15 +98,15 @@ func (w *h264ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 	}
 
 	if err != nil {
-		finishLatencyProbeFrameSend(trace, 0)
+		FinishLatencyProbeFrameSend(trace, 0)
 		return err
 	}
 
-	finishLatencyProbeFrameSend(trace, 0)
+	FinishLatencyProbeFrameSend(trace, 0)
 	return nil
 }
 
-func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32, sequence *uint16, maxFragmentSize int, trace *latencyProbeSendTrace, isFirst bool, isLast bool) error {
+func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, payloadType uint8, timestamp uint32, sequence *uint16, maxFragmentSize int, trace *LatencyProbeSendTrace, isFirst bool, isLast bool) error {
 	if len(nalu) == 0 {
 		return nil
 	}
@@ -113,6 +115,7 @@ func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32,
 		packet := &rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
+				PayloadType:    payloadType,
 				SequenceNumber: *sequence,
 				Timestamp:      timestamp,
 				Marker:         isLast,
@@ -120,19 +123,19 @@ func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32,
 			Payload: nalu,
 		}
 
-		now := benchmarkClockNowMs()
+		now := BenchmarkClockNowMs()
 		if isFirst {
-			noteLatencyProbeFirstPacketIdentity(trace, packet.SequenceNumber, packet.Timestamp)
-			noteLatencyProbeFirstPacketAttempt(trace, now)
+			NoteLatencyProbeFirstPacketIdentity(trace, packet.SequenceNumber, packet.Timestamp)
+			NoteLatencyProbeFirstPacketAttempt(trace, now)
 		}
 		if err := writer.WriteRTP(packet); err != nil {
 			return err
 		}
 		if isFirst {
-			noteLatencyProbeFirstPacket(trace, now)
+			NoteLatencyProbeFirstPacket(trace, now)
 		}
 		if isLast {
-			noteLatencyProbeLastPacket(trace, now)
+			NoteLatencyProbeLastPacket(trace, now)
 		}
 		(*sequence)++
 		return nil
@@ -171,6 +174,7 @@ func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32,
 		packet := &rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
+				PayloadType:    payloadType,
 				SequenceNumber: *sequence,
 				Timestamp:      timestamp,
 				Marker:         isLast && len(payload) == 0,
@@ -178,19 +182,19 @@ func writeH264NALURTP(writer h264RTPPacketWriter, nalu []byte, timestamp uint32,
 			Payload: rtpPayload,
 		}
 
-		now := benchmarkClockNowMs()
+		now := BenchmarkClockNowMs()
 		if isFirst && firstFragment {
-			noteLatencyProbeFirstPacketIdentity(trace, packet.SequenceNumber, packet.Timestamp)
-			noteLatencyProbeFirstPacketAttempt(trace, now)
+			NoteLatencyProbeFirstPacketIdentity(trace, packet.SequenceNumber, packet.Timestamp)
+			NoteLatencyProbeFirstPacketAttempt(trace, now)
 		}
 		if err := writer.WriteRTP(packet); err != nil {
 			return err
 		}
 		if isFirst && firstFragment {
-			noteLatencyProbeFirstPacket(trace, now)
+			NoteLatencyProbeFirstPacket(trace, now)
 		}
 		if isLast && len(payload) == 0 {
-			noteLatencyProbeLastPacket(trace, now)
+			NoteLatencyProbeLastPacket(trace, now)
 		}
 		(*sequence)++
 		firstFragment = false

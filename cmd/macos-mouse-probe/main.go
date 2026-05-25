@@ -8,7 +8,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/danchitnis/llrdc/client"
+	client "github.com/danchitnis/llrdc/client/macos"
 )
 
 type probeCase struct {

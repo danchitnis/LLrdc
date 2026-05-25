@@ -80,6 +80,7 @@ func SetChroma(chroma string) {
 	}
 
 	Chroma = chroma
+	SyncConfigToCommon()
 	log.Printf("Received chroma config: %s", chroma)
 
 	InitWebRTCTrack()
@@ -112,6 +113,7 @@ func SetVideoCodec(codec string) {
 	}
 
 	VideoCodec = codec
+	SyncConfigToCommon()
 	log.Printf("Target video codec changed to %s, reinitializing WebRTC track and restarting ffmpeg...", codec)
 
 	InitWebRTCTrack() // Re-create track

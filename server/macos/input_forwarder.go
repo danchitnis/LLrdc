@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/danchitnis/llrdc/server/linux"
+	"github.com/danchitnis/llrdc/server/common"
 )
 
 type tcpInputWriter struct {
@@ -56,12 +56,12 @@ var globalInputWriter = &tcpInputWriter{}
 
 func startInputProcessor() {
 	log.Println("Starting macOS input task processor")
-	inputChan := linux.GetInputChannel()
+	inputChan := common.GetInputChannel()
 	for task := range inputChan {
 		var line string
 		switch task.Type {
 		case "mousemove":
-			width, height := linux.GetScreenSize()
+			width, height := common.GetScreenSize()
 			targetX := int(math.Round(task.NX * float64(width)))
 			targetY := int(math.Round(task.NY * float64(height)))
 			line = fmt.Sprintf("move %d %d %d %d\n", targetX, targetY, width, height)
@@ -78,7 +78,7 @@ func startInputProcessor() {
 			}
 			line = fmt.Sprintf("button %d %d\n", btnCode, state)
 		case "keydown", "keyup":
-			keyCode := linux.GetLinuxKeyCode(task.Key)
+			keyCode := common.GetLinuxKeyCode(task.Key)
 			if keyCode != 0 {
 				state := 1
 				if task.Type == "keyup" {

@@ -1,7 +1,7 @@
-package linux
+package common
 
-func startLatencyProbeFrameSend(frameAtMs int64) *latencyProbeSendTrace {
-	state, ok := readLatencyProbeState()
+func StartLatencyProbeFrameSend(frameAtMs int64) *LatencyProbeSendTrace {
+	state, ok := ReadLatencyProbeState()
 	if !ok || frameAtMs < state.DrawnAtMs {
 		return nil
 	}
@@ -29,11 +29,11 @@ func startLatencyProbeFrameSend(frameAtMs int64) *latencyProbeSendTrace {
 
 	latencyTraceRecords[state.Marker] = record
 	pruneLatencyTraceRecordsLocked(state.Marker)
-	return &latencyProbeSendTrace{marker: state.Marker}
+	return &LatencyProbeSendTrace{Marker: state.Marker}
 }
 
-func startLatencyProbeEncodedFrame(frameAtMs int64, containerTimestamp uint64) *latencyProbeSendTrace {
-	state, ok := readLatencyProbeState()
+func StartLatencyProbeEncodedFrame(frameAtMs int64, containerTimestamp uint64) *LatencyProbeSendTrace {
+	state, ok := ReadLatencyProbeState()
 	if !ok || frameAtMs < state.DrawnAtMs {
 		return nil
 	}
@@ -64,10 +64,10 @@ func startLatencyProbeEncodedFrame(frameAtMs int64, containerTimestamp uint64) *
 
 	latencyTraceRecords[state.Marker] = record
 	pruneLatencyTraceRecordsLocked(state.Marker)
-	return &latencyProbeSendTrace{marker: state.Marker}
+	return &LatencyProbeSendTrace{Marker: state.Marker}
 }
 
-func noteLatencyProbeFrameDispatch(trace *latencyProbeSendTrace, dispatchAtMs int64) {
+func NoteLatencyProbeFrameDispatch(trace *LatencyProbeSendTrace, dispatchAtMs int64) {
 	if trace == nil || dispatchAtMs <= 0 {
 		return
 	}
@@ -75,17 +75,17 @@ func noteLatencyProbeFrameDispatch(trace *latencyProbeSendTrace, dispatchAtMs in
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record, ok := latencyTraceRecords[trace.marker]
+	record, ok := latencyTraceRecords[trace.Marker]
 	if !ok {
 		return
 	}
 	if record.FirstFrameDispatchAtMs == 0 {
 		record.FirstFrameDispatchAtMs = dispatchAtMs
 	}
-	latencyTraceRecords[trace.marker] = record
+	latencyTraceRecords[trace.Marker] = record
 }
 
-func noteLatencyProbeFrameSendStart(trace *latencyProbeSendTrace, frameAtMs int64) {
+func NoteLatencyProbeFrameSendStart(trace *LatencyProbeSendTrace, frameAtMs int64) {
 	if trace == nil || frameAtMs <= 0 {
 		return
 	}
@@ -93,29 +93,29 @@ func noteLatencyProbeFrameSendStart(trace *latencyProbeSendTrace, frameAtMs int6
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record, ok := latencyTraceRecords[trace.marker]
+	record, ok := latencyTraceRecords[trace.Marker]
 	if !ok {
 		return
 	}
 	if record.FrameSendStartAtMs == 0 {
 		record.FrameSendStartAtMs = frameAtMs
 	}
-	latencyTraceRecords[trace.marker] = record
+	latencyTraceRecords[trace.Marker] = record
 }
 
-func finishLatencyProbeFrameSend(trace *latencyProbeSendTrace, frameAtMs int64) {
+func FinishLatencyProbeFrameSend(trace *LatencyProbeSendTrace, frameAtMs int64) {
 	if trace == nil {
 		return
 	}
 	if frameAtMs <= 0 {
-		frameAtMs = benchmarkClockNowMs()
+		frameAtMs = BenchmarkClockNowMs()
 	}
-	noteLatencyProbeFirstPacketAttempt(trace, frameAtMs)
-	noteLatencyProbeFirstPacket(trace, frameAtMs)
-	noteLatencyProbeLastPacket(trace, frameAtMs)
+	NoteLatencyProbeFirstPacketAttempt(trace, frameAtMs)
+	NoteLatencyProbeFirstPacket(trace, frameAtMs)
+	NoteLatencyProbeLastPacket(trace, frameAtMs)
 }
 
-func recordLatencyProbeFrame(frameAtMs int64) {
-	trace := startLatencyProbeFrameSend(frameAtMs)
-	finishLatencyProbeFrameSend(trace, frameAtMs)
+func RecordLatencyProbeFrame(frameAtMs int64) {
+	trace := StartLatencyProbeFrameSend(frameAtMs)
+	FinishLatencyProbeFrameSend(trace, frameAtMs)
 }

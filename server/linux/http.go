@@ -299,6 +299,7 @@ func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string)
 }
 
 func broadcastConfig(restarted bool) {
+	SyncConfigToCommon()
 	broadcastJSON(configPayload(restarted))
 }
 

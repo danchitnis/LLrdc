@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 func resetLatencyProbeState(t *testing.T) {
 	t.Helper()
 	latencyTraceMu.Lock()
-	latencyTraceRecords = map[int]latencyTraceRecord{}
+	latencyTraceRecords = map[int]LatencyTraceRecord{}
 	latencyTraceMu.Unlock()
 
 	pendingInputMu.Lock()
@@ -40,32 +40,32 @@ func TestLatencyProbeSendTraceRecordsOrdering(t *testing.T) {
 	resetLatencyProbeState(t)
 	t.Cleanup(func() { resetLatencyProbeState(t) })
 
-	setLastInputReceivedAt(10)
+	SetLastInputReceivedAt(10)
 	writeLatencyProbeStateFile(t, latencyProbeStateFile{
 		Marker:        7,
 		RequestedAtMs: 20,
 		DrawnAtMs:     30,
 	})
 
-	trace := startLatencyProbeEncodedFrame(35, 1234)
+	trace := StartLatencyProbeEncodedFrame(35, 1234)
 	if trace == nil {
-		t.Fatalf("startLatencyProbeEncodedFrame returned nil")
+		t.Fatalf("StartLatencyProbeEncodedFrame returned nil")
 	}
-	noteLatencyProbeFrameDispatch(trace, 37)
-	noteLatencyProbeFrameSendStart(trace, 40)
-	trace = startLatencyProbeFrameSend(40)
+	NoteLatencyProbeFrameDispatch(trace, 37)
+	NoteLatencyProbeFrameSendStart(trace, 40)
+	trace = StartLatencyProbeFrameSend(40)
 	if trace == nil {
-		t.Fatalf("startLatencyProbeFrameSend returned nil")
+		t.Fatalf("StartLatencyProbeFrameSend returned nil")
 	}
-	noteLatencyProbeFirstPacketIdentity(trace, 22, 333)
-	noteLatencyProbeFirstPacketAttempt(trace, 41)
-	noteLatencyProbeFirstPacket(trace, 42)
-	noteLatencyProbeFirstPacketSocketWrite([]byte{0x80, 0x60, 0x00, 0x16, 0x00, 0x00, 0x01, 0x4d, 0, 0, 0, 1}, 43)
-	noteLatencyProbeLastPacket(trace, 45)
+	NoteLatencyProbeFirstPacketIdentity(trace, 22, 333)
+	NoteLatencyProbeFirstPacketAttempt(trace, 41)
+	NoteLatencyProbeFirstPacket(trace, 42)
+	NoteLatencyProbeFirstPacketSocketWrite([]byte{0x80, 0x60, 0x00, 0x16, 0x00, 0x00, 0x01, 0x4d, 0, 0, 0, 1}, 43)
+	NoteLatencyProbeLastPacket(trace, 45)
 
-	record, ok := snapshotLatencyTrace("7")
+	record, ok := SnapshotLatencyTrace("7")
 	if !ok {
-		t.Fatalf("snapshotLatencyTrace did not return record")
+		t.Fatalf("SnapshotLatencyTrace did not return record")
 	}
 	if got, want := record.ServerTimeMs, int64(10); got != want {
 		t.Fatalf("ServerTimeMs = %d, want %d", got, want)
@@ -118,28 +118,28 @@ func TestFinishLatencyProbeFrameSendBackfillsPacketTimes(t *testing.T) {
 	resetLatencyProbeState(t)
 	t.Cleanup(func() { resetLatencyProbeState(t) })
 
-	setLastInputReceivedAt(100)
+	SetLastInputReceivedAt(100)
 	writeLatencyProbeStateFile(t, latencyProbeStateFile{
 		Marker:        9,
 		RequestedAtMs: 110,
 		DrawnAtMs:     120,
 	})
 
-	trace := startLatencyProbeEncodedFrame(125, 987)
+	trace := StartLatencyProbeEncodedFrame(125, 987)
 	if trace == nil {
-		t.Fatalf("startLatencyProbeEncodedFrame returned nil")
+		t.Fatalf("StartLatencyProbeEncodedFrame returned nil")
 	}
-	noteLatencyProbeFrameDispatch(trace, 128)
-	noteLatencyProbeFrameSendStart(trace, 130)
-	trace = startLatencyProbeFrameSend(130)
+	NoteLatencyProbeFrameDispatch(trace, 128)
+	NoteLatencyProbeFrameSendStart(trace, 130)
+	trace = StartLatencyProbeFrameSend(130)
 	if trace == nil {
-		t.Fatalf("startLatencyProbeFrameSend returned nil")
+		t.Fatalf("StartLatencyProbeFrameSend returned nil")
 	}
-	finishLatencyProbeFrameSend(trace, 135)
+	FinishLatencyProbeFrameSend(trace, 135)
 
-	record, ok := snapshotLatencyTrace("9")
+	record, ok := SnapshotLatencyTrace("9")
 	if !ok {
-		t.Fatalf("snapshotLatencyTrace did not return record")
+		t.Fatalf("SnapshotLatencyTrace did not return record")
 	}
 	if got, want := record.FirstPacketWrittenAtMs, int64(135); got != want {
 		t.Fatalf("FirstPacketWrittenAtMs = %d, want %d", got, want)
@@ -168,25 +168,25 @@ func TestPendingSampleTraceCapturesFirstPacketIdentityFromSocketWrite(t *testing
 	resetLatencyProbeState(t)
 	t.Cleanup(func() { resetLatencyProbeState(t) })
 
-	setLastInputReceivedAt(200)
+	SetLastInputReceivedAt(200)
 	writeLatencyProbeStateFile(t, latencyProbeStateFile{
 		Marker:        11,
 		RequestedAtMs: 210,
 		DrawnAtMs:     220,
 	})
 
-	trace := startLatencyProbeFrameSend(225)
+	trace := StartLatencyProbeFrameSend(225)
 	if trace == nil {
-		t.Fatalf("startLatencyProbeFrameSend returned nil")
+		t.Fatalf("StartLatencyProbeFrameSend returned nil")
 	}
-	noteLatencyProbeFirstPacketAttempt(trace, 226)
-	armLatencyProbePendingSampleTrace(trace)
-	noteLatencyProbeFirstPacketSocketWrite([]byte{0x80, 0x60, 0x01, 0x02, 0x00, 0x00, 0x03, 0x04, 0, 0, 0, 1}, 227)
-	finishLatencyProbeFrameSend(trace, 229)
+	NoteLatencyProbeFirstPacketAttempt(trace, 226)
+	ArmLatencyProbePendingSampleTrace(trace)
+	NoteLatencyProbeFirstPacketSocketWrite([]byte{0x80, 0x60, 0x01, 0x02, 0x00, 0x00, 0x03, 0x04, 0, 0, 0, 1}, 227)
+	FinishLatencyProbeFrameSend(trace, 229)
 
-	record, ok := snapshotLatencyTrace("11")
+	record, ok := SnapshotLatencyTrace("11")
 	if !ok {
-		t.Fatalf("snapshotLatencyTrace did not return record")
+		t.Fatalf("SnapshotLatencyTrace did not return record")
 	}
 	if got, want := record.FirstPacketSequenceNumber, uint16(258); got != want {
 		t.Fatalf("FirstPacketSequenceNumber = %d, want %d", got, want)

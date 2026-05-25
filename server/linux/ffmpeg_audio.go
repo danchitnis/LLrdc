@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/pion/webrtc/v4/pkg/media"
+	"github.com/danchitnis/llrdc/server/common"
 	"github.com/pion/webrtc/v4/pkg/media/oggreader"
 )
 
@@ -110,16 +110,7 @@ func startAudioStreaming() {
 					sampleDuration = 20 * time.Millisecond
 				}
 
-				videoTrackMutex.RLock()
-				at := audioTrack
-				videoTrackMutex.RUnlock()
-
-				if at != nil {
-					_ = at.WriteSample(media.Sample{
-						Data:     pageData,
-						Duration: sampleDuration,
-					})
-				}
+				_ = common.WriteAudioSample(pageData, sampleDuration)
 			}
 
 			cmd.Wait()

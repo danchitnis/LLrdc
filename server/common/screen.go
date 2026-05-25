@@ -1,4 +1,4 @@
-package linux
+package common
 
 import "sync/atomic"
 
@@ -33,16 +33,16 @@ func UpdateScreenSizeFromInitialRes() {
 		}
 	}
 
-	forceSetScreenSize(initialW, initialH)
+	ForceSetScreenSize(initialW, initialH)
 }
 
-func initScreenSize(maxW, maxH int) {
+func InitScreenSize(maxW, maxH int) {
 	maxScreenWidth.Store(int64(maxW))
 	maxScreenHeight.Store(int64(maxH))
 	UpdateScreenSizeFromInitialRes()
 }
 
-func forceSetScreenSize(width, height int) bool {
+func ForceSetScreenSize(width, height int) bool {
 	// Ensure 8-pixel alignment for maximum compatibility
 	width = (width / 8) * 8
 	height = (height / 8) * 8
@@ -87,7 +87,7 @@ func SetScreenSize(width, height int) bool {
 		return false // Ignore client resizes when a fixed resolution is active
 	}
 
-	return forceSetScreenSize(width, height)
+	return ForceSetScreenSize(width, height)
 }
 
 func GetScreenSize() (int, int) {

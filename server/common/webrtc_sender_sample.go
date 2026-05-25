@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"github.com/pion/webrtc/v4"
@@ -32,14 +32,14 @@ func (w *sampleVideoWriter) WriteFrame(frame WebRTCFrame) error {
 
 	trace := frame.LatencyTrace
 	if trace == nil {
-		trace = startLatencyProbeFrameSend(benchmarkClockNowMs())
+		trace = StartLatencyProbeFrameSend(BenchmarkClockNowMs())
 	} else {
-		noteLatencyProbeFrameSendStart(trace, benchmarkClockNowMs())
+		NoteLatencyProbeFrameSendStart(trace, BenchmarkClockNowMs())
 	}
-	noteLatencyProbeFirstPacketAttempt(trace, benchmarkClockNowMs())
-	armLatencyProbePendingSampleTrace(trace)
-	defer clearLatencyProbePendingSampleTrace(trace)
-	defer finishLatencyProbeFrameSend(trace, 0)
+	NoteLatencyProbeFirstPacketAttempt(trace, BenchmarkClockNowMs())
+	ArmLatencyProbePendingSampleTrace(trace)
+	defer ClearLatencyProbePendingSampleTrace(trace)
+	defer FinishLatencyProbeFrameSend(trace, 0)
 
 	return w.track.WriteSample(media.Sample{
 		Data:     frame.Data,

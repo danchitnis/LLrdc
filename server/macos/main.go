@@ -8,7 +8,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/danchitnis/llrdc/server/linux"
+	"github.com/danchitnis/llrdc/server/common"
 )
 
 var (
@@ -36,28 +36,28 @@ func main() {
 	encMgr = NewEncoderManager()
 
 	// 1. Initialize server config and flags
-	linux.InitConfig()
-	linux.CaptureMode = linux.CaptureModeAgent
-	linux.VideoCodec = "h264"
-	linux.WebRTCLowLatency = true
+	common.InitConfig()
+	common.CaptureMode = common.CaptureModeAgent
+	common.VideoCodec = "h264"
+	common.WebRTCLowLatency = true
 
 	// Set initial macOS split mode dimensions (1280x720 is a safe default)
-	linux.SetScreenSize(1280, 720)
-	width, height := linux.GetScreenSize()
+	common.SetScreenSize(1280, 720)
+	width, height := common.GetScreenSize()
 
 	// 2. Initialize VideoToolbox Encoder
 	gen := nextGeneration()
 	pixFmt := 0
-	if linux.Chroma == "444" {
+	if common.Chroma == "444" {
 		pixFmt = 1
 	}
-	encMgr.Recreate(linux.VideoCodec, width, height, linux.FPS, linux.TargetBandwidthMbps*1000, pixFmt, gen)
+	encMgr.Recreate(common.VideoCodec, width, height, common.FPS, common.TargetBandwidthMbps*1000, pixFmt, gen)
 	if enc, _ := encMgr.Get(); enc == nil {
 		log.Fatal("Failed to create initial VideoToolbox encoder")
 	}
 	defer encMgr.Close()
 
-	linux.OnForceKeyframe = func() {
+	common.OnForceKeyframe = func() {
 		log.Printf("Forcing VideoToolbox IDR frame")
 		if enc, _ := encMgr.Get(); enc != nil {
 			enc.ForceKeyframe()
@@ -66,15 +66,14 @@ func main() {
 
 	// 3. Set up input forwarding and control client
 	agentHost := "127.0.0.1"
-	if linux.AgentAddress != "" {
-		host, _, err := net.SplitHostPort(linux.AgentAddress)
+	if common.AgentAddress != "" {
+		host, _, err := net.SplitHostPort(common.AgentAddress)
 		if err == nil {
 			agentHost = host
 		}
 	}
 	startAgentControlClient(agentHost)
 
-	linux.SetInputWriter(globalInputWriter)
 	go startInputForwarder()
 	go startInputProcessor()
 
@@ -126,7 +125,7 @@ func main() {
 		})
 	})
 
-	log.Printf("macOS Native Server listening on :%d", linux.Port)
+	log.Printf("macOS Native Server listening on :%d", common.Port)
 	ln, err := net.Listen("tcp4", "0.0.0.0:8080")
 	if err != nil {
 		log.Fatalf("Failed to listen on 0.0.0.0:8080: %v", err)

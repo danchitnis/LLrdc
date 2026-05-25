@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"sync"
@@ -16,6 +16,7 @@ type vp8RTPPacketWriter interface {
 type vp8ULLVideoWriter struct {
 	track       *webrtc.TrackLocalStaticRTP
 	codecFamily string
+	payloadType uint8
 
 	mu              sync.Mutex
 	sequence        uint16
@@ -24,7 +25,7 @@ type vp8ULLVideoWriter struct {
 	maxFramePart    int
 }
 
-func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string) (*vp8ULLVideoWriter, error) {
+func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily string, payloadType uint8) (*vp8ULLVideoWriter, error) {
 	track, err := webrtc.NewTrackLocalStaticRTP(capability, "video", "pion")
 	if err != nil {
 		return nil, err
@@ -32,6 +33,7 @@ func newVP8ULLVideoWriter(capability webrtc.RTPCodecCapability, codecFamily stri
 	return &vp8ULLVideoWriter{
 		track:        track,
 		codecFamily:  codecFamily,
+		payloadType:  payloadType,
 		maxFramePart: webrtcVideoOutboundMTU - 12,
 	}, nil
 }
@@ -50,9 +52,9 @@ func (w *vp8ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 
 	trace := frame.LatencyTrace
 	if trace == nil {
-		trace = startLatencyProbeFrameSend(benchmarkClockNowMs())
+		trace = StartLatencyProbeFrameSend(BenchmarkClockNowMs())
 	} else {
-		noteLatencyProbeFrameSendStart(trace, benchmarkClockNowMs())
+		NoteLatencyProbeFrameSendStart(trace, BenchmarkClockNowMs())
 	}
 
 	w.mu.Lock()
@@ -69,17 +71,17 @@ func (w *vp8ULLVideoWriter) WriteFrame(frame WebRTCFrame) error {
 	}
 
 	currentTimestamp := baseTimestamp + w.timestampOffset
-	err := writeVP8FrameRTP(w.track, frame.Data, currentTimestamp, &w.sequence, w.maxFramePart, trace)
+	err := writeVP8FrameRTP(w.track, frame.Data, w.payloadType, currentTimestamp, &w.sequence, w.maxFramePart, trace)
 	if err != nil {
-		finishLatencyProbeFrameSend(trace, 0)
+		FinishLatencyProbeFrameSend(trace, 0)
 		return err
 	}
 
-	finishLatencyProbeFrameSend(trace, 0)
+	FinishLatencyProbeFrameSend(trace, 0)
 	return nil
 }
 
-func writeVP8FrameRTP(writer vp8RTPPacketWriter, frame []byte, timestamp uint32, sequence *uint16, maxFragmentSize int, trace *latencyProbeSendTrace) error {
+func writeVP8FrameRTP(writer vp8RTPPacketWriter, frame []byte, payloadType uint8, timestamp uint32, sequence *uint16, maxFragmentSize int, trace *LatencyProbeSendTrace) error {
 	remaining := frame
 	firstFragment := true
 
@@ -100,7 +102,7 @@ func writeVP8FrameRTP(writer vp8RTPPacketWriter, frame []byte, timestamp uint32,
 		packet := &rtp.Packet{
 			Header: rtp.Header{
 				Version:        2,
-				PayloadType:    0,
+				PayloadType:    payloadType,
 				SequenceNumber: *sequence,
 				Timestamp:      timestamp,
 				Marker:         len(remaining) == 0,
@@ -109,19 +111,19 @@ func writeVP8FrameRTP(writer vp8RTPPacketWriter, frame []byte, timestamp uint32,
 		}
 
 		if firstFragment {
-			noteLatencyProbeFirstPacketIdentity(trace, packet.SequenceNumber, packet.Timestamp)
-			noteLatencyProbeFirstPacketAttempt(trace, benchmarkClockNowMs())
+			NoteLatencyProbeFirstPacketIdentity(trace, packet.SequenceNumber, packet.Timestamp)
+			NoteLatencyProbeFirstPacketAttempt(trace, BenchmarkClockNowMs())
 		}
 		if err := writer.WriteRTP(packet); err != nil {
 			return err
 		}
 		if firstFragment {
-			noteLatencyProbeFirstPacket(trace, benchmarkClockNowMs())
+			NoteLatencyProbeFirstPacket(trace, BenchmarkClockNowMs())
 		}
 		(*sequence)++
 		firstFragment = false
 	}
 
-	noteLatencyProbeLastPacket(trace, benchmarkClockNowMs())
+	NoteLatencyProbeLastPacket(trace, BenchmarkClockNowMs())
 	return nil
 }

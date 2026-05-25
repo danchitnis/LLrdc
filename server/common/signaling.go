@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"encoding/json"
@@ -25,13 +25,12 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			(*pc).Close()
 		}
 
-		codecFamily := normalizeCodecFamily(VideoCodec)
+		codecFamily := NormalizeCodecFamily(VideoCodec)
 		if !remoteOfferSupportsCodec(sdp.SDP, codecFamily) {
 			fallbackCodec := fallbackCodecForRemoteOffer()
 			log.Printf("Remote WebRTC offer (SDP size %d) does not support %s for requested codec %s (Chroma %s); falling back to %s", len(sdp.SDP), codecFamily, VideoCodec, Chroma, fallbackCodec)
 			if fallbackCodec != VideoCodec {
-				SetVideoCodec(fallbackCodec)
-				broadcastConfig(true)
+				SafeFallbackCodec(fallbackCodec)
 			}
 			log.Printf("DEBUG: Fallback initiated from remoteOfferSupportsCodec, sdp contains h265? %v", strings.Contains(strings.ToLower(sdp.SDP), " h265/90000"))
 			_ = writeJSON(map[string]interface{}{"type": "reconnect_hint"})
@@ -99,8 +98,7 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			fallbackCodec := fallbackCodecForRemoteOffer()
 			if fallbackCodec != VideoCodec {
 				log.Printf("Falling back to %s after WebRTC local description failure. err: %v", fallbackCodec, err)
-				SetVideoCodec(fallbackCodec)
-				broadcastConfig(true)
+				SafeFallbackCodec(fallbackCodec)
 			}
 			_ = writeJSON(map[string]interface{}{"type": "reconnect_hint"})
 			return
@@ -112,40 +110,14 @@ func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webr
 			"sdp":  (*pc).LocalDescription(),
 		})
 
-		if OnForceKeyframe != nil {
-			log.Println("New WebRTC peer connected, triggering immediate keyframe...")
-			OnForceKeyframe()
-		}
-
-		go func(previousStreamID uint32) {
-			restarted := false
-			ffmpegMutex.Lock()
-			if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-				log.Println("New WebRTC peer connected, restarting video stream to force a fresh keyframe...")
-				forceKillProcess(ffmpegCmd.Process)
-				restarted = true
-				restarted = true
-			}
-			ffmpegMutex.Unlock()
-
-			if restarted {
-				PrimeFrameGeneration(0, 5, 100*time.Millisecond)
-				if err := waitForStreamReadyAfter(previousStreamID, 5*time.Second); err != nil {
-					log.Printf("Stream did not become ready after WebRTC reconnect: %v", err)
-					PrimeFrameGeneration(0, 10, 100*time.Millisecond)
-				}
-				return
-			}
-			PrimeFrameGeneration(0, 5, 100*time.Millisecond)
-			TriggerPing()
-		}(getCurrentFFmpegStreamID())
+		SafePeerConnected()
 	} else {
 		log.Println("webrtc_offer missing 'sdp' map")
 	}
 }
 
 func remoteOfferSupportsCodec(sdp string, codecFamily string) bool {
-	codecFamily = normalizeCodecFamily(codecFamily)
+	codecFamily = NormalizeCodecFamily(codecFamily)
 	lowerSDP := strings.ToLower(sdp)
 
 	switch codecFamily {

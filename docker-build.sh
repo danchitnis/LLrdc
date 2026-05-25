@@ -15,6 +15,7 @@ ENABLE_INTEL="false"
 ENABLE_MACOS="false"
 BUILD_VARIANT="cpu"
 USE_DRY_RUN="false"
+NO_CACHE="false"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "${SCRIPT_DIR}/scripts/docker/common.sh"
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       USE_DRY_RUN="true"
+      shift
+      ;;
+    --no-cache)
+      NO_CACHE="true"
       shift
       ;;
     --tag)
@@ -76,6 +81,13 @@ echo "  Variant: ${BUILD_VARIANT}"
 DOCKER_BUILD_CMD=(
   docker build
   -f "${DOCKERFILE}"
+)
+
+if [ "${NO_CACHE}" = "true" ]; then
+  DOCKER_BUILD_CMD+=(--no-cache)
+fi
+
+DOCKER_BUILD_CMD+=(
   --build-arg "UID=$(id -u)"
   --build-arg "ENABLE_INTEL=${ENABLE_INTEL}"
   --build-arg "BUILD_VARIANT=${BUILD_VARIANT}"

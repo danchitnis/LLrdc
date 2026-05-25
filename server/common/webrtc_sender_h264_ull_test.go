@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"testing"
@@ -23,11 +23,10 @@ func TestSplitAnnexB(t *testing.T) {
 	// data: [00 00 01] [09 f0] [00] [00 00 01] [67 42 00]
 	// Should return: [09 f0 00], [67 42 00]
 	data := []byte{0x00, 0x00, 0x01, 0x09, 0xf0, 0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00}
-	nalus := splitAnnexB(data)
+	nalus := SplitAnnexB(data)
 	if len(nalus) != 2 {
 		t.Fatalf("expected 2 NALUs, got %d", len(nalus))
 	}
-	// Note: trailing zero of next start code prefix might remain at end of previous NALU
 	if nalus[0][0] != 0x09 {
 		t.Fatalf("first NALU start byte = %x, want 0x09", nalus[0][0])
 	}
@@ -42,7 +41,7 @@ func TestWriteH264NALURTPSinglePacket(t *testing.T) {
 	sequence := uint16(100)
 	timestamp := uint32(1234)
 
-	err := writeH264NALURTP(writer, nalu, timestamp, &sequence, 1200, nil, true, true)
+	err := writeH264NALURTP(writer, nalu, 120, timestamp, &sequence, 1200, nil, true, true)
 	if err != nil {
 		t.Fatalf("writeH264NALURTP returned error: %v", err)
 	}
@@ -61,7 +60,7 @@ func TestWriteH264NALURTPFragmentation(t *testing.T) {
 	sequence := uint16(100)
 	timestamp := uint32(1234)
 
-	err := writeH264NALURTP(writer, nalu, timestamp, &sequence, 5, nil, true, true)
+	err := writeH264NALURTP(writer, nalu, 120, timestamp, &sequence, 5, nil, true, true)
 	if err != nil {
 		t.Fatalf("writeH264NALURTP returned error: %v", err)
 	}

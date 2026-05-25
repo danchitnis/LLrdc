@@ -6,9 +6,20 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/danchitnis/llrdc/server/common"
 )
 
 var cleanupTasks []func()
+
+func HandlePeerConnected() {
+	log.Println("WebRTC peer connected, triggering low-latency stream restart concurrently")
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		KillFFmpegWithTimestamp()
+	}()
+}
 
 func Run() error {
 	log.Println("Starting llrdc (Go)...")
@@ -18,6 +29,20 @@ func Run() error {
 	log.Printf("Parsed CaptureMode: %v", CaptureMode)
 	initScreenSize(3840, 2160)
 	initReadiness()
+
+	// Register WebRTC callbacks to common package
+	common.OnForceKeyframe = KillFFmpegWithTimestamp
+	common.OnPeerConnected = HandlePeerConnected
+	common.OnTriggerPing = func() {
+		inputStdinMu.Lock()
+		defer inputStdinMu.Unlock()
+		triggerPingLocked()
+	}
+	common.OnInputMessage = HandleInputMessage
+	common.OnFallbackCodec = func(codec string) {
+		SetVideoCodec(codec)
+		broadcastConfig(true)
+	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

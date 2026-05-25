@@ -1,10 +1,11 @@
-package linux
+package common
 
 import (
 	"log"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/ice/v4"
@@ -17,14 +18,24 @@ type WebRTCFrame struct {
 	StreamID     uint32
 	CaptureTime  time.Time
 	Codec        string
-	LatencyTrace *latencyProbeSendTrace
+	LatencyTrace *LatencyProbeSendTrace
 }
 
 var (
 	webrtcUDPMux    ice.UDPMux
 	videoTrackMutex sync.RWMutex
 	webrtcFrameChan = make(chan WebRTCFrame, 1000)
+
+	lastFFmpegRestartTime atomic.Pointer[time.Time]
 )
+
+func getLastFFmpegRestartTime() time.Time {
+	t := lastFFmpegRestartTime.Load()
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
+}
 
 func InitWebRTCMux() {
 	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: Port})
@@ -42,7 +53,7 @@ func InitWebRTCMux() {
 	}
 
 	mux := ice.NewUDPMuxDefault(ice.UDPMuxParams{
-		UDPConn: newLatencyProbePacketConn(udpConn, benchmarkClockNowMs),
+		UDPConn: NewLatencyProbePacketConn(udpConn, BenchmarkClockNowMs),
 	})
 
 	webrtcUDPMux = mux
@@ -91,7 +102,7 @@ func writeFrameToTrack(frame WebRTCFrame) {
 	}
 }
 
-func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string, trace *latencyProbeSendTrace) {
+func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string, trace *LatencyProbeSendTrace) {
 	if WebRTCBufferSize <= 0 && WebRTCLowLatency {
 		writeFrameToTrack(WebRTCFrame{Data: frame, StreamID: streamID, CaptureTime: captureTime, Codec: codec, LatencyTrace: trace})
 		return
@@ -180,8 +191,6 @@ func resolveAdvertisedIP(requestHost string) string {
 	}
 	return ""
 }
-
-var OnForceKeyframe func()
 
 func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 	s := webrtc.SettingEngine{}
@@ -325,15 +334,13 @@ func CreatePeerConnection(requestHost string) (*webrtc.PeerConnection, error) {
 						lastRestart := getLastFFmpegRestartTime()
 						// Use 10 seconds cooldown
 						if now.Sub(lastRestart) > 10*time.Second {
-							log.Printf("Received PLI on video track and last restart was %v ago, restarting video stream to force keyframe...", now.Sub(lastRestart))
+							log.Printf("Received PLI on video track and last restart was %v ago, requesting keyframe...", now.Sub(lastRestart))
 							if OnForceKeyframe != nil {
 								OnForceKeyframe()
 								lastFFmpegRestartTime.Store(&now)
-							} else if CaptureMode == CaptureModeAgent {
-								log.Printf("ERROR: PLI received but OnForceKeyframe is not set for Agent mode!")
-								lastFFmpegRestartTime.Store(&now)
 							} else {
-								KillFFmpegWithTimestamp()
+								log.Printf("ERROR: PLI received but OnForceKeyframe callback is not registered!")
+								lastFFmpegRestartTime.Store(&now)
 							}
 						} else {
 							// log.Printf("Received PLI on video track but last restart was only %v ago, sending pings instead...", now.Sub(lastRestart))

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/danchitnis/llrdc/server/linux"
+	"github.com/danchitnis/llrdc/server/common"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
@@ -23,13 +23,13 @@ var (
 
 func init() {
 	// Initialize server config with some defaults for macOS
-	linux.Port = 8080
-	linux.FPS = 30
-	linux.VideoCodec = "h264"
-	linux.WebRTCLowLatency = true
+	common.Port = 8080
+	common.FPS = 30
+	common.VideoCodec = "h264"
+	common.WebRTCLowLatency = true
 
 	// Initialize WebRTC track and mux
-	linux.InitWebRTC()
+	common.InitWebRTC()
 }
 
 func handleSignaling(w http.ResponseWriter, r *http.Request) {
@@ -49,24 +49,24 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		return conn.WriteJSON(v)
 	}
 
-	reportedCodec := linux.VideoCodec
-	if linux.Chroma == "444" {
-		if linux.VideoCodec == "h264" {
+	reportedCodec := common.VideoCodec
+	if common.Chroma == "444" {
+		if common.VideoCodec == "h264" {
 			reportedCodec = "h264-444"
-		} else if linux.VideoCodec == "h265" || linux.VideoCodec == "hevc" {
+		} else if common.VideoCodec == "h265" || common.VideoCodec == "hevc" {
 			reportedCodec = "h265-444"
 		}
 	}
 	safeWriteJSON(map[string]interface{}{
 		"type":               "config",
 		"videoCodec":         reportedCodec,
-		"chroma":             linux.Chroma,
-		"framerate":          linux.FPS,
-		"hdpi":               linux.HDPI,
-		"bandwidth":          linux.TargetBandwidthMbps,
+		"chroma":             common.Chroma,
+		"framerate":          common.FPS,
+		"hdpi":               common.HDPI,
+		"bandwidth":          common.TargetBandwidthMbps,
 		"vtAvailable":        true,
-		"webrtc_low_latency": linux.WebRTCLowLatency,
-		"max_res":            linux.InitialRes,
+		"webrtc_low_latency": common.WebRTCLowLatency,
+		"max_res":            common.InitialRes,
 	})
 
 	var configMu sync.Mutex
@@ -89,12 +89,12 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 		switch msg["type"] {
 		case "webrtc_offer":
 			pcMu.Lock()
-			linux.HandleWebRTCOffer(msg, r.Host, &pc, safeWriteJSON)
+			common.HandleWebRTCOffer(msg, r.Host, &pc, safeWriteJSON)
 			pcMu.Unlock()
 
 		case "webrtc_ice":
 			pcMu.Lock()
-			linux.HandleWebRTCICE(msg, pc)
+			common.HandleWebRTCICE(msg, pc)
 			pcMu.Unlock()
 
 		case "config", "resize":
@@ -112,27 +112,27 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 			sizeChanged := false
 			if w, ok1 := configMap["width"].(float64); ok1 {
 				if h, ok2 := configMap["height"].(float64); ok2 {
-					sizeChanged = linux.SetScreenSize(int(w), int(h))
+					sizeChanged = common.SetScreenSize(int(w), int(h))
 				}
 			}
 			if fps, ok := configMap["framerate"].(float64); ok {
-				if int(fps) > 0 && int(fps) != linux.FPS {
-					linux.FPS = int(fps)
+				if int(fps) > 0 && int(fps) != common.FPS {
+					common.FPS = int(fps)
 				}
 			} else if fps, ok := configMap["fps"].(float64); ok {
-				if int(fps) > 0 && int(fps) != linux.FPS {
-					linux.FPS = int(fps)
+				if int(fps) > 0 && int(fps) != common.FPS {
+					common.FPS = int(fps)
 				}
 			}
 			if hdpi, ok := configMap["hdpi"].(float64); ok {
-				if hdpi > 0 && int(hdpi) != linux.HDPI {
-					linux.HDPI = int(hdpi)
+				if hdpi > 0 && int(hdpi) != common.HDPI {
+					common.HDPI = int(hdpi)
 					reconnectNeeded = true
 				}
 			}
 			if bw, ok := configMap["bandwidth"].(float64); ok {
-				if bw > 0 && int(bw) != linux.TargetBandwidthMbps {
-					linux.TargetBandwidthMbps = int(bw)
+				if bw > 0 && int(bw) != common.TargetBandwidthMbps {
+					common.TargetBandwidthMbps = int(bw)
 				}
 			}
 			var maxResVal int
@@ -144,34 +144,34 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			if maxResVal != linux.InitialRes {
-				linux.InitialRes = maxResVal
-				if linux.InitialRes > 0 {
-					linux.UpdateScreenSizeFromInitialRes()
+			if maxResVal != common.InitialRes {
+				common.InitialRes = maxResVal
+				if common.InitialRes > 0 {
+					common.UpdateScreenSizeFromInitialRes()
 				}
 			}
 
 			if codec, ok := configMap["videoCodec"].(string); ok {
-				oldCodec := linux.VideoCodec
-				oldChroma := linux.Chroma
+				oldCodec := common.VideoCodec
+				oldChroma := common.Chroma
 
 				if codec == "h264-444" {
-					linux.Chroma = "444"
-					linux.VideoCodec = "h264"
+					common.Chroma = "444"
+					common.VideoCodec = "h264"
 				} else if codec == "h265-444" {
-					linux.Chroma = "444"
-					linux.VideoCodec = "h265"
+					common.Chroma = "444"
+					common.VideoCodec = "h265"
 				} else {
-					linux.VideoCodec = codec
+					common.VideoCodec = codec
 					if chroma, ok := configMap["chroma"].(string); ok {
-						linux.Chroma = chroma
+						common.Chroma = chroma
 					} else {
-						linux.Chroma = "420"
+						common.Chroma = "420"
 					}
 				}
 
-				if linux.VideoCodec != oldCodec || linux.Chroma != oldChroma {
-					linux.InitWebRTCTrack()
+				if common.VideoCodec != oldCodec || common.Chroma != oldChroma {
+					common.InitWebRTCTrack()
 					reconnectNeeded = true
 				}
 			}
@@ -194,9 +194,9 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 					pcMu.Unlock()
 				}
 
-				width, height := linux.GetScreenSize()
+				width, height := common.GetScreenSize()
 				pixFmt := 0
-				if linux.Chroma == "444" {
+				if common.Chroma == "444" {
 					pixFmt = 1
 				}
 
@@ -204,13 +204,13 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 				// that requires an agent restart or encoder recreation.
 				gen := getGeneration()
 				enc, encGen := encMgr.Get()
-				if enc == nil || enc.Width != width || enc.Height != height || encGen != gen || enc.PixFmt != pixFmt || linux.TargetBandwidthMbps*1000 != enc.BitrateKbps() || linux.FPS != enc.FPS || encMgr.Codec() != linux.VideoCodec || lastAppliedHDPI != linux.HDPI {
+				if enc == nil || enc.Width != width || enc.Height != height || encGen != gen || enc.PixFmt != pixFmt || common.TargetBandwidthMbps*1000 != enc.BitrateKbps() || common.FPS != enc.FPS || encMgr.Codec() != common.VideoCodec || lastAppliedHDPI != common.HDPI {
 					gen = nextGeneration()
-					lastAppliedHDPI = linux.HDPI
-					log.Printf("Applying debounced config (gen %d): %s %dx%d@%d FPS (fmt %d), %d Mbps, %d%% HDPI", gen, linux.VideoCodec, width, height, linux.FPS, pixFmt, linux.TargetBandwidthMbps, linux.HDPI)
-					encMgr.Recreate(linux.VideoCodec, width, height, linux.FPS, linux.TargetBandwidthMbps*1000, pixFmt, gen)
+					lastAppliedHDPI = common.HDPI
+					log.Printf("Applying debounced config (gen %d): %s %dx%d@%d FPS (fmt %d), %d Mbps, %d%% HDPI", gen, common.VideoCodec, width, height, common.FPS, pixFmt, common.TargetBandwidthMbps, common.HDPI)
+					encMgr.Recreate(common.VideoCodec, width, height, common.FPS, common.TargetBandwidthMbps*1000, pixFmt, gen)
 					if globalControlClient != nil {
-						globalControlClient.ApplyConfig(width, height, linux.FPS, linux.HDPI, linux.TargetBandwidthMbps, gen, linux.Chroma)
+						globalControlClient.ApplyConfig(width, height, common.FPS, common.HDPI, common.TargetBandwidthMbps, gen, common.Chroma)
 					}
 				} else {
 					log.Printf("Debounced config received but no functional changes detected (gen %d).", gen)
@@ -220,31 +220,31 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 
 			// Report current effective config back to client
 			// This confirms the choice and triggers client-side re-negotiation if needed
-			reportedCodec = linux.VideoCodec
-			if linux.Chroma == "444" {
-				if linux.VideoCodec == "h264" {
+			reportedCodec = common.VideoCodec
+			if common.Chroma == "444" {
+				if common.VideoCodec == "h264" {
 					reportedCodec = "h264-444"
-				} else if linux.VideoCodec == "h265" || linux.VideoCodec == "hevc" {
+				} else if common.VideoCodec == "h265" || common.VideoCodec == "hevc" {
 					reportedCodec = "h265-444"
 				}
 			}
 
 			if msg["type"] == "config" || (msg["type"] == "resize" && sizeChanged) {
-				width, height := linux.GetScreenSize()
+				width, height := common.GetScreenSize()
 				gen := getGeneration()
 				safeWriteJSON(map[string]interface{}{
 					"type":               "config",
 					"videoCodec":         reportedCodec,
 					"width":              width,
 					"height":             height,
-					"fps":                linux.FPS,
-					"hdpi":               linux.HDPI,
-					"bandwidth":          linux.TargetBandwidthMbps,
+					"fps":                common.FPS,
+					"hdpi":               common.HDPI,
+					"bandwidth":          common.TargetBandwidthMbps,
 					"generation":         gen,
-					"chroma":             linux.Chroma,
+					"chroma":             common.Chroma,
 					"vtAvailable":        true,
-					"webrtc_low_latency": linux.WebRTCLowLatency,
-					"max_res":            linux.InitialRes,
+					"webrtc_low_latency": common.WebRTCLowLatency,
+					"max_res":            common.InitialRes,
 				})
 			}
 		}
@@ -254,7 +254,7 @@ func handleSignaling(w http.ResponseWriter, r *http.Request) {
 func broadcastVideoFrame(data []byte, isKeyframe bool, codec string) {
 	// Convert AVCC (4-byte length) to Annex-B (00 00 00 01)
 	annexB := avccToAnnexB(data)
-	linux.WriteWebRTCFrame(annexB, 0, time.Now(), codec, nil)
+	common.WriteWebRTCFrame(annexB, 0, time.Now(), codec, nil)
 }
 
 func avccToAnnexB(data []byte) []byte {

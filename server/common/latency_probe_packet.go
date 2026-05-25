@@ -1,6 +1,6 @@
-package linux
+package common
 
-func armLatencyProbePendingSampleTrace(trace *latencyProbeSendTrace) {
+func ArmLatencyProbePendingSampleTrace(trace *LatencyProbeSendTrace) {
 	if trace == nil {
 		return
 	}
@@ -9,18 +9,18 @@ func armLatencyProbePendingSampleTrace(trace *latencyProbeSendTrace) {
 	pendingSampleTrace = trace
 }
 
-func clearLatencyProbePendingSampleTrace(trace *latencyProbeSendTrace) {
+func ClearLatencyProbePendingSampleTrace(trace *LatencyProbeSendTrace) {
 	if trace == nil {
 		return
 	}
 	pendingSampleTraceMu.Lock()
 	defer pendingSampleTraceMu.Unlock()
-	if pendingSampleTrace != nil && pendingSampleTrace.marker == trace.marker {
+	if pendingSampleTrace != nil && pendingSampleTrace.Marker == trace.Marker {
 		pendingSampleTrace = nil
 	}
 }
 
-func noteLatencyProbePendingSamplePacket(sequence uint16, timestamp uint32, packetAtMs int64) bool {
+func NoteLatencyProbePendingSamplePacket(sequence uint16, timestamp uint32, packetAtMs int64) bool {
 	if packetAtMs <= 0 || timestamp == 0 {
 		return false
 	}
@@ -38,7 +38,7 @@ func noteLatencyProbePendingSamplePacket(sequence uint16, timestamp uint32, pack
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record, ok := latencyTraceRecords[trace.marker]
+	record, ok := latencyTraceRecords[trace.Marker]
 	if !ok {
 		return false
 	}
@@ -60,11 +60,11 @@ func noteLatencyProbePendingSamplePacket(sequence uint16, timestamp uint32, pack
 	if record.FirstPacketSocketWriteAtMs == 0 {
 		record.FirstPacketSocketWriteAtMs = packetAtMs
 	}
-	latencyTraceRecords[trace.marker] = record
+	latencyTraceRecords[trace.Marker] = record
 	return true
 }
 
-func noteLatencyProbeFirstPacket(trace *latencyProbeSendTrace, packetAtMs int64) {
+func NoteLatencyProbeFirstPacket(trace *LatencyProbeSendTrace, packetAtMs int64) {
 	if trace == nil || packetAtMs <= 0 {
 		return
 	}
@@ -72,7 +72,7 @@ func noteLatencyProbeFirstPacket(trace *latencyProbeSendTrace, packetAtMs int64)
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record, ok := latencyTraceRecords[trace.marker]
+	record, ok := latencyTraceRecords[trace.Marker]
 	if !ok {
 		return
 	}
@@ -85,10 +85,10 @@ func noteLatencyProbeFirstPacket(trace *latencyProbeSendTrace, packetAtMs int64)
 	if record.FirstFrameBroadcastAtMs == 0 {
 		record.FirstFrameBroadcastAtMs = packetAtMs
 	}
-	latencyTraceRecords[trace.marker] = record
+	latencyTraceRecords[trace.Marker] = record
 }
 
-func noteLatencyProbeFirstPacketAttempt(trace *latencyProbeSendTrace, packetAtMs int64) {
+func NoteLatencyProbeFirstPacketAttempt(trace *LatencyProbeSendTrace, packetAtMs int64) {
 	if trace == nil || packetAtMs <= 0 {
 		return
 	}
@@ -96,17 +96,17 @@ func noteLatencyProbeFirstPacketAttempt(trace *latencyProbeSendTrace, packetAtMs
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record, ok := latencyTraceRecords[trace.marker]
+	record, ok := latencyTraceRecords[trace.Marker]
 	if !ok {
 		return
 	}
 	if record.FirstPacketWriteAttemptAtMs == 0 {
 		record.FirstPacketWriteAttemptAtMs = packetAtMs
 	}
-	latencyTraceRecords[trace.marker] = record
+	latencyTraceRecords[trace.Marker] = record
 }
 
-func noteLatencyProbeFirstPacketIdentity(trace *latencyProbeSendTrace, sequence uint16, timestamp uint32) {
+func NoteLatencyProbeFirstPacketIdentity(trace *LatencyProbeSendTrace, sequence uint16, timestamp uint32) {
 	if trace == nil || timestamp == 0 {
 		return
 	}
@@ -114,7 +114,7 @@ func noteLatencyProbeFirstPacketIdentity(trace *latencyProbeSendTrace, sequence 
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record, ok := latencyTraceRecords[trace.marker]
+	record, ok := latencyTraceRecords[trace.Marker]
 	if !ok {
 		return
 	}
@@ -124,10 +124,10 @@ func noteLatencyProbeFirstPacketIdentity(trace *latencyProbeSendTrace, sequence 
 	if record.FirstPacketTimestamp == 0 {
 		record.FirstPacketTimestamp = timestamp
 	}
-	latencyTraceRecords[trace.marker] = record
+	latencyTraceRecords[trace.Marker] = record
 }
 
-func noteLatencyProbeLastPacket(trace *latencyProbeSendTrace, packetAtMs int64) {
+func NoteLatencyProbeLastPacket(trace *LatencyProbeSendTrace, packetAtMs int64) {
 	if trace == nil || packetAtMs <= 0 {
 		return
 	}
@@ -135,7 +135,7 @@ func noteLatencyProbeLastPacket(trace *latencyProbeSendTrace, packetAtMs int64) 
 	latencyTraceMu.Lock()
 	defer latencyTraceMu.Unlock()
 
-	record, ok := latencyTraceRecords[trace.marker]
+	record, ok := latencyTraceRecords[trace.Marker]
 	if !ok {
 		return
 	}
@@ -151,10 +151,10 @@ func noteLatencyProbeLastPacket(trace *latencyProbeSendTrace, packetAtMs int64) 
 	if record.LastPacketWrittenAtMs == 0 || packetAtMs > record.LastPacketWrittenAtMs {
 		record.LastPacketWrittenAtMs = packetAtMs
 	}
-	latencyTraceRecords[trace.marker] = record
+	latencyTraceRecords[trace.Marker] = record
 }
 
-func noteLatencyProbeFirstPacketSocketWrite(packet []byte, packetAtMs int64) {
+func NoteLatencyProbeFirstPacketSocketWrite(packet []byte, packetAtMs int64) {
 	if len(packet) < 12 || packetAtMs <= 0 {
 		return
 	}
@@ -167,7 +167,7 @@ func noteLatencyProbeFirstPacketSocketWrite(packet []byte, packetAtMs int64) {
 	}
 	sequence = (uint16(packet[2]) << 8) | uint16(packet[3])
 	timestamp = (uint32(packet[4]) << 24) | (uint32(packet[5]) << 16) | (uint32(packet[6]) << 8) | uint32(packet[7])
-	if noteLatencyProbePendingSamplePacket(sequence, timestamp, packetAtMs) {
+	if NoteLatencyProbePendingSamplePacket(sequence, timestamp, packetAtMs) {
 		return
 	}
 

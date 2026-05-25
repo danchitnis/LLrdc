@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ func TestWriteVP8FrameRTPPacketizesFrame(t *testing.T) {
 	sequence := uint16(100)
 	timestamp := uint32(1234)
 
-	if err := writeVP8FrameRTP(writer, frame, timestamp, &sequence, 10, nil); err != nil {
+	if err := writeVP8FrameRTP(writer, frame, 96, timestamp, &sequence, 10, nil); err != nil {
 		t.Fatalf("writeVP8FrameRTP returned error: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestWriteVP8FrameRTPSinglePacketFrame(t *testing.T) {
 	writer := &fakeVP8PacketWriter{}
 	sequence := uint16(7)
 
-	if err := writeVP8FrameRTP(writer, []byte("hello"), 55, &sequence, 16, nil); err != nil {
+	if err := writeVP8FrameRTP(writer, []byte("hello"), 96, 55, &sequence, 16, nil); err != nil {
 		t.Fatalf("writeVP8FrameRTP returned error: %v", err)
 	}
 

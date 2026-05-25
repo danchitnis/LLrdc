@@ -1,16 +1,17 @@
-package linux
+package common
 
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"sync"
+)
 
-	"github.com/danchitnis/llrdc/server/common"
+const (
+	CaptureModeCompat = "compat"
+	CaptureModeDirect = "direct"
+	CaptureModeAgent  = "agent"
 )
 
 var (
@@ -49,7 +50,12 @@ var (
 	InitialRes              int
 	AgentAddress            string
 
-	displayChangeMu sync.Mutex
+	// Globally shared settings (historically in ffmpeg.go or others)
+	TargetBandwidthMbps int = 5
+	TargetVBR           bool = false
+	TargetVBRThreshold  int = 0
+	TargetDamageTracking bool = false
+	TargetCpuEffort     int = 6
 )
 
 func InitConfig() {
@@ -244,141 +250,56 @@ func InitConfig() {
 	flag.BoolVar(&WebRTCLowLatency, "webrtc-low-latency", defaultWebRTCLowLatency, "Enable ultra-low latency WebRTC transport optimizations (default false)")
 	flag.IntVar(&SettleTime, "settle-time", defaultSettleTime, "Hybrid sharpness settle time (ms)")
 	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Hybrid sharpness tile size (px)")
-	flag.BoolVar(&targetVBR, "vbr", defaultVBR, "Enable variable bitrate (encoder rate control)")
-	flag.IntVar(&targetVBRThreshold, "vbr-threshold", defaultVBRThreshold, "VBR threshold for static content")
-	flag.BoolVar(&targetDamageTracking, "damage-tracking", defaultDamageTracking, "Enable Wayland damage tracking (frame skipping)")
-	flag.IntVar(&targetCpuEffort, "cpu-effort", defaultCpuEffort, "FFmpeg CPU effort/used (default 6)")
+	flag.BoolVar(&TargetVBR, "vbr", defaultVBR, "Enable variable bitrate (encoder rate control)")
+	flag.IntVar(&TargetVBRThreshold, "vbr-threshold", defaultVBRThreshold, "VBR threshold for static content")
+	flag.BoolVar(&TargetDamageTracking, "damage-tracking", defaultDamageTracking, "Enable Wayland damage tracking (frame skipping)")
+	flag.IntVar(&TargetCpuEffort, "cpu-effort", defaultCpuEffort, "FFmpeg CPU effort/used (default 6)")
 
+	// In Go, package flag.Parse can only be called once, typically in main.
+	// But both linux.Run and macOS main can call InitConfig.
+	if flag.Parsed() {
+		return
+	}
 	flag.Parse()
-	if UseNVIDIA && UseIntel {
-		log.Fatalf("Invalid accelerator configuration: choose only one of --use-nvidia or --use-intel")
-	}
-	initDirectBufferState()
-	if UseNVIDIA {
-		log.Printf("Checking NVIDIA GPU capabilities...")
-
-		// Check basic AV1 support via encoders list
-		outAV1, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_nvenc && echo true || echo false").Output()
-		AV1NVENCAvailable = strings.TrimSpace(string(outAV1)) == "true"
-
-		if AV1NVENCAvailable {
-			log.Printf("AV1 NVENC support detected")
-			// Note: AV1 NVENC does NOT support 4:4:4 chroma on any current NVIDIA GPU.
-		}
-
-		log.Printf("Checking H.264 NVENC 4:4:4 support...")
-		outH264, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v h264_nvenc -profile:v high444p -tune lossless -f null - > /dev/null 2>&1 && echo true || echo false").Output()
-		H264NVENC444Available = strings.TrimSpace(string(outH264)) == "true"
-		if H264NVENC444Available {
-			log.Printf("H.264 NVENC 4:4:4 support detected (lossless/high444p)")
-		} else {
-			log.Printf("H.264 NVENC 4:4:4 support NOT detected")
-		}
-
-		log.Printf("Checking H.265 NVENC 4:4:4 support...")
-		outH265, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v hevc_nvenc -profile:v rext -tune lossless -f null - > /dev/null 2>&1 && echo true || echo false").Output()
-		H265NVENC444Available = strings.TrimSpace(string(outH265)) == "true"
-		if H265NVENC444Available {
-			log.Printf("H.265 NVENC 4:4:4 support detected (lossless/rext)")
-		} else {
-			log.Printf("H.265 NVENC 4:4:4 support NOT detected")
-		}
-	}
-
-	if UseIntel {
-		log.Printf("Checking Intel QSV capabilities...")
-		outQSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q h264_qsv && echo true || echo false").Output()
-		QSVAvailable = strings.TrimSpace(string(outQSV)) == "true"
-		if QSVAvailable {
-			log.Printf("Intel QSV hardware acceleration detected")
-			renderNode := resolveIntelRenderNode()
-			checkCmd := fmt.Sprintf("TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -init_hw_device vaapi=hw:%s -filter_hw_device hw -vf format=nv12,hwupload -c:v hevc_vaapi -bf 0 -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -f hevc \"$TMP\" >/dev/null 2>&1 && echo true || echo false", renderNode)
-			cmd := exec.Command("bash", "-c", checkCmd)
-			cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run")
-			outH265QSV, _ := cmd.Output()
-			H265QSVAvailable = strings.TrimSpace(string(outH265QSV)) == "true"
-			if H265QSVAvailable {
-				log.Printf("Intel H.265 hardware encode support detected")
-			} else {
-				log.Printf("Intel H.265 hardware encode support NOT detected; disabling h265_qsv")
-			}
-			outAV1QSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_qsv && echo true || echo false").Output()
-			AV1QSVAvailable = strings.TrimSpace(string(outAV1QSV)) == "true"
-			if AV1QSVAvailable {
-				log.Printf("AV1 QSV support detected")
-			}
-		} else {
-			log.Printf("Intel QSV hardware acceleration NOT detected")
-		}
-	}
-
-	if UseIntel && (VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi") && !H265QSVAvailable {
-		if CaptureMode == CaptureModeDirect {
-			log.Fatalf("Invalid direct-buffer configuration: Intel H.265 hardware encode is not supported on this FFmpeg/driver stack; use h264_qsv or av1_qsv for direct mode")
-		}
-		log.Printf("Intel H.265 hardware encode is not supported on this FFmpeg/driver stack; falling back to CPU h265")
-		VideoCodec = "h265"
-	}
-
-	VideoCodec = ResolveRequestedVideoCodec(VideoCodec)
-
-	if err := validateCaptureModeConfig(); err != nil {
-		log.Fatalf("Invalid direct-buffer configuration: %v", err)
-	}
-
-	SyncConfigToCommon()
-}
-
-func SyncConfigToCommon() {
-	common.Port = Port
-	common.FPS = FPS
-	common.VideoCodec = VideoCodec
-	common.Chroma = Chroma
-	common.UseNVIDIA = UseNVIDIA
-	common.UseIntel = UseIntel
-	common.IntelRenderNode = IntelRenderNode
-	common.CaptureMode = CaptureMode
-	common.AV1NVENCAvailable = AV1NVENCAvailable
-	common.H264NVENC444Available = H264NVENC444Available
-	common.H265NVENC444Available = H265NVENC444Available
-	common.QSVAvailable = QSVAvailable
-	common.H265QSVAvailable = H265QSVAvailable
-	common.AV1QSVAvailable = AV1QSVAvailable
-	common.UseDebugFFmpeg = UseDebugFFmpeg
-	common.UseDebugInput = UseDebugInput
-	common.TestPattern = TestPattern
-	common.EnableAudio = EnableAudio
-	common.AudioBitrate = AudioBitrate
-	common.Wallpaper = Wallpaper
-	common.WebRTCPublicIP = WebRTCPublicIP
-	common.WebRTCInterfaces = WebRTCInterfaces
-	common.WebRTCExcludeInterfaces = WebRTCExcludeInterfaces
-	common.WebRTCBufferSize = WebRTCBufferSize
-	common.ActivityPulseHz = ActivityPulseHz
-	common.ActivityTimeout = ActivityTimeout
-	common.NVENCLatencyMode = NVENCLatencyMode
-	common.HDPI = HDPI
-	common.SettleTime = SettleTime
-	common.TileSize = TileSize
-	common.WebRTCLowLatency = WebRTCLowLatency
-	common.InitialRes = InitialRes
-	common.AgentAddress = AgentAddress
-	common.TargetBandwidthMbps = TargetBandwidthMbps
-	common.TargetVBR = targetVBR
-	common.TargetVBRThreshold = targetVBRThreshold
-	common.TargetDamageTracking = targetDamageTracking
-	common.TargetCpuEffort = targetCpuEffort
 }
 
 func printFlag(w *os.File, name, usage string, def any) {
 	fmt.Fprintf(w, "  -%s\n    \t%s (default %v)\n", name, usage, def)
 }
 
-func SetWebRTCLowLatency(lowLatency bool) {
-	if WebRTCLowLatency == lowLatency {
-		return
+func ResolveRequestedVideoCodec(codec string) string {
+	if UseIntel {
+		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv" {
+			if H265QSVAvailable {
+				return "h265_qsv"
+			}
+			return "h265_vaapi"
+		}
+		if codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv" {
+			if QSVAvailable {
+				return "h264_qsv"
+			}
+			return "h264_vaapi"
+		}
+		if codec == "av1" || codec == "av1_qsv" || codec == "av1_vaapi" {
+			if AV1QSVAvailable {
+				return "av1_qsv"
+			}
+			return "av1_vaapi"
+		}
 	}
-	log.Printf("WebRTC low-latency mode changed to %v", lowLatency)
-	WebRTCLowLatency = lowLatency
-	common.WebRTCLowLatency = lowLatency
+	return codec
+}
+
+func NormalizeCodecFamily(codec string) string {
+	switch codec {
+	case "h264", "h264_nvenc", "h264_qsv", "h264_vaapi":
+		return "h264"
+	case "h265", "h265_nvenc", "h265_qsv", "h265_vaapi", "hevc_vaapi":
+		return "h265"
+	case "av1", "av1_nvenc", "av1_qsv", "av1_vaapi":
+		return "av1"
+	default:
+		return codec
+	}
 }

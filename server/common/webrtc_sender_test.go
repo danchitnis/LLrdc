@@ -1,4 +1,4 @@
-package linux
+package common
 
 import "testing"
 

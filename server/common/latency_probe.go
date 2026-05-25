@@ -1,4 +1,4 @@
-package linux
+package common
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 
 const latencyProbeStatePath = "/tmp/llrdc-latency-probe.json"
 
-type latencyTraceRecord struct {
+type LatencyTraceRecord struct {
 	Marker                              int    `json:"marker"`
 	ServerTimeMs                        int64  `json:"serverTimeMs"`            // T0: Server received control input
 	RequestedAtMs                       int64  `json:"requestedAtMs"`           // T1: Probe app detected motion
@@ -36,26 +36,26 @@ type latencyProbeStateFile struct {
 
 var (
 	latencyTraceMu      sync.RWMutex
-	latencyTraceRecords = map[int]latencyTraceRecord{}
+	latencyTraceRecords = map[int]LatencyTraceRecord{}
 
 	pendingInputTime int64
 	pendingInputMu   sync.Mutex
 
 	pendingSampleTraceMu sync.Mutex
-	pendingSampleTrace   *latencyProbeSendTrace
+	pendingSampleTrace   *LatencyProbeSendTrace
 )
 
-type latencyProbeSendTrace struct {
-	marker int
+type LatencyProbeSendTrace struct {
+	Marker int
 }
 
-func setLastInputReceivedAt(t int64) {
+func SetLastInputReceivedAt(t int64) {
 	pendingInputMu.Lock()
 	defer pendingInputMu.Unlock()
 	pendingInputTime = t
 }
 
-func readLatencyProbeState() (latencyProbeStateFile, bool) {
+func ReadLatencyProbeState() (latencyProbeStateFile, bool) {
 	payload, err := os.ReadFile(latencyProbeStatePath)
 	if err != nil {
 		return latencyProbeStateFile{}, false
@@ -84,7 +84,7 @@ func pruneLatencyTraceRecordsLocked(currentMarker int) {
 	}
 }
 
-func snapshotLatencyTrace(markerStr string) (latencyTraceRecord, bool) {
+func SnapshotLatencyTrace(markerStr string) (LatencyTraceRecord, bool) {
 	targetMarker, _ := strconv.Atoi(markerStr)
 
 	latencyTraceMu.RLock()
@@ -97,7 +97,7 @@ func snapshotLatencyTrace(markerStr string) (latencyTraceRecord, bool) {
 
 	// If no marker specified, return the latest
 	var bestMarker int
-	var record latencyTraceRecord
+	var record LatencyTraceRecord
 	var ok bool
 	for marker, r := range latencyTraceRecords {
 		if !ok || marker > bestMarker {

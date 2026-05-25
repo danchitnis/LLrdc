@@ -140,7 +140,7 @@ ctl.!default {
 	_ = os.WriteFile(filepath.Join(configDir, "rc.xml"), []byte(rc), 0644)
 
 	// Outputs file to map the headless output name
-	outputs := fmt.Sprintf("HEADLESS-1 %dx%d\n", w, h)
+	outputs := fmt.Sprintf("HEADLESS-1 %dx%d@%d\n", w, h, FPS)
 	_ = os.WriteFile(filepath.Join(configDir, "outputs"), []byte(outputs), 0644)
 
 	bgFile := Wallpaper

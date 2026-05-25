@@ -7,7 +7,7 @@ import (
 
 func main() {
 	width, height := 1920, 1080
-	enc := encoder.NewVTEncoder(width, height, 60, 5000, func(data []byte, keyframe bool) {
+	enc := encoder.NewVTEncoder("h264", width, height, 60, 5000, 0, func(data []byte, keyframe bool) {
 		fmt.Printf("Got frame! length: %d\n", len(data))
 	})
 
