@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Advisory capability matrix for LLrdc agents and tools",
+  "codecs": {
+    "vp8": {
+      "description": "Legacy fallback codec, high latency, software only.",
+      "encoders": {
+        "cpu": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser"],
+          "chroma": ["420"],
+          "lossless": false
+        }
+      }
+    },
+    "h264": {
+      "description": "Standard high compatibility codec.",
+      "encoders": {
+        "cpu": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420", "444"],
+          "lossless": false
+        },
+        "macos": {
+          "supported_servers": ["macos"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420", "444"],
+          "lossless": false
+        },
+        "nvenc": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420", "444"],
+          "lossless": true
+        },
+        "intel": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420"],
+          "lossless": false
+        }
+      }
+    },
+    "h265": {
+      "description": "High Efficiency Video Coding (HEVC).",
+      "encoders": {
+        "cpu": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "macos", "wayland"],
+          "chroma": ["420", "444"],
+          "lossless": false
+        },
+        "macos": {
+          "supported_servers": ["macos"],
+          "supported_clients": ["browser", "macos", "wayland"],
+          "chroma": ["420", "444"],
+          "lossless": false
+        },
+        "nvenc": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420", "444"],
+          "lossless": true
+        },
+        "intel": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420", "444"],
+          "lossless": false
+        }
+      }
+    },
+    "av1": {
+      "description": "AOMedia Video 1, excellent compression at low bitrates.",
+      "encoders": {
+        "cpu": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420"],
+          "lossless": false
+        },
+        "nvenc": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420"],
+          "lossless": false
+        },
+        "intel": {
+          "supported_servers": ["linux"],
+          "supported_clients": ["browser", "wayland", "macos"],
+          "chroma": ["420"],
+          "lossless": false
+        }
+      }
+    }
+  },
+  "surfaces": {
+    "servers": {
+      "linux": {
+        "capture_modes": ["compat", "direct", "agent"]
+      },
+      "macos": {
+        "capture_modes": ["native"]
+      }
+    },
+    "clients": {
+      "browser": {
+        "description": "Web-based client leveraging WebCodecs"
+      },
+      "wayland": {
+        "description": "Native Wayland client for Linux"
+      },
+      "macos": {
+        "description": "Native macOS client"
+      }
+    }
+  }
+}
