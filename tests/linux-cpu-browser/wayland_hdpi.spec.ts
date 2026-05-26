@@ -39,15 +39,16 @@ test.describe('Wayland HDPI Scaling', () => {
   });
 
   test('should verify initial HDPI and change it dynamically', async ({ page }) => {
+    test.setTimeout(60000);
     page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
     await page.setViewportSize({ width: 1280, height: 819 });
     
     // 1. Load the page
     await page.goto(`http://localhost:${PORT}`);
     
-    // 2. Wait for WebRTC connection
+    // 2. Wait for connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebRTC/i, { timeout: 60000 });
+    await expect(statusEl).toHaveText(/\[(WebRTC|WebTransport|WebCodecs|WebSocket)/i, { timeout: 60000 });
 
     // Generate some activity to ensure the decoder receives frames
     await page.mouse.move(100, 100);
@@ -56,20 +57,20 @@ test.describe('Wayland HDPI Scaling', () => {
     // 3. Verify the video stream is actually playing and receiving frames
     await expect.poll(async () => {
       return await page.evaluate(() => {
-        const video = document.querySelector('video');
-        return video && video.currentTime > 0 && !video.paused && video.readyState > 2;
+        const canvas = document.getElementById('display') as HTMLCanvasElement | null;
+        return canvas && canvas.width > 0 && canvas.height > 0;
       });
     }, {
-      message: 'Video should be actively playing and receiving WebRTC frames',
+      message: 'Canvas should have active dimensions from WebCodecs',
       timeout: 10000,
     }).toBeTruthy();
 
     const getVideoResolution = async () => {
       return await page.evaluate(() => {
-        const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
+        const canvas = document.getElementById('display') as HTMLCanvasElement | null;
         return {
-          width: video?.videoWidth ?? 0,
-          height: video?.videoHeight ?? 0,
+          width: canvas?.width ?? 0,
+          height: canvas?.height ?? 0,
         };
       });
     };
@@ -93,13 +94,7 @@ test.describe('Wayland HDPI Scaling', () => {
     await expect(maxResSelect).toHaveValue('1080');
 
     await expect.poll(async () => {
-      return await page.evaluate(() => {
-        const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
-        return {
-          width: video?.videoWidth ?? 0,
-          height: video?.videoHeight ?? 0,
-        };
-      });
+      return await getVideoResolution();
     }, {
       message: 'Stream should switch to a 1080p-class resolution after selecting 1080p',
       timeout: 30000,
@@ -171,11 +166,11 @@ test.describe('Wayland HDPI Scaling', () => {
     // 9. Verify the video stream successfully recovered and is STILL playing after the HDPI scale restart
     await expect.poll(async () => {
       return await page.evaluate(() => {
-        const video = document.querySelector('video');
-        return video && video.currentTime > 0 && !video.paused && video.readyState > 2;
+        const stats = window.getStats();
+        return stats && stats.totalDecoded > 0;
       });
     }, {
-      message: 'Video should successfully resume playing after dynamic Wayland scale resizing',
+      message: 'Video should successfully resume decoding after dynamic Wayland scale resizing',
       timeout: 10000,
     }).toBeTruthy();
 

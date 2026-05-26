@@ -335,166 +335,180 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 	case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 		HandleInputMessage(msg)
 	case "config":
-		go func(configMsg map[string]interface{}) {
-			log.Printf("Received config message: %v", configMsg)
-			restartRequested := false
-			displayResizeRequested := false
-			displayChangeReason := "config update"
-			previousStreamID := getCurrentFFmpegStreamID()
+		// Synchronously update all configuration state to prevent race conditions
+		prevInitialRes := InitialRes
+		restartRequested := false
+		displayResizeRequested := false
+		displayChangeReason := "config update"
+		previousStreamID := getCurrentFFmpegStreamID()
 
-			if hdpiFloat, ok := configMsg["hdpi"].(float64); ok {
-				hdpi := int(hdpiFloat)
-				if HDPI != hdpi {
-					log.Printf("Received HDPI config: %d%%", hdpi)
-					HDPI = hdpi
+		if hdpiFloat, ok := msg["hdpi"].(float64); ok {
+			hdpi := int(hdpiFloat)
+			if HDPI != hdpi {
+				log.Printf("Received HDPI config: %d%%", hdpi)
+				HDPI = hdpi
+				common.HDPI = HDPI
+				displayResizeRequested = true
+				displayChangeReason = "HDPI update"
+			}
+		}
+		if maxResFloat, ok := msg["max_res"].(float64); ok {
+			maxRes := int(maxResFloat)
+			InitialRes = maxRes
+			common.InitialRes = maxRes
+			if prevInitialRes != maxRes {
+				log.Printf("Received max resolution config: %dp", maxRes)
+				if maxRes > 0 {
+					UpdateScreenSizeFromInitialRes()
 					displayResizeRequested = true
-					displayChangeReason = "HDPI update"
+					displayChangeReason = "fixed resolution update"
 				}
 			}
-			if maxResFloat, ok := configMsg["max_res"].(float64); ok {
-				maxRes := int(maxResFloat)
-				if InitialRes != maxRes {
-					log.Printf("Received max resolution config: %dp", maxRes)
-					InitialRes = maxRes
-					if InitialRes > 0 {
-						UpdateScreenSizeFromInitialRes()
-						displayResizeRequested = true
-						displayChangeReason = "fixed resolution update"
-					}
-				}
+		}
+		if vCodec, ok := msg["videoCodec"].(string); ok {
+			oldCodec := VideoCodec
+			SetVideoCodec(vCodec)
+			common.VideoCodec = VideoCodec
+			if VideoCodec != oldCodec {
+				restartRequested = true
 			}
-			if vCodec, ok := configMsg["videoCodec"].(string); ok {
-				oldCodec := VideoCodec
-				SetVideoCodec(vCodec)
-				if VideoCodec != oldCodec {
-					restartRequested = true
-				}
+		}
+		if chromaStr, ok := msg["chroma"].(string); ok {
+			if Chroma != chromaStr {
+				restartRequested = true
 			}
-			if chromaStr, ok := configMsg["chroma"].(string); ok {
-				if Chroma != chromaStr {
-					restartRequested = true
-				}
-				SetChroma(chromaStr)
+			SetChroma(chromaStr)
+			common.Chroma = Chroma
+		}
+		if vbrBool, ok := msg["vbr"].(bool); ok {
+			if targetVBR != vbrBool {
+				restartRequested = true
 			}
-			if vbrBool, ok := configMsg["vbr"].(bool); ok {
-				if targetVBR != vbrBool {
-					restartRequested = true
-				}
-				SetVBR(vbrBool)
+			SetVBR(vbrBool)
+			common.TargetVBR = targetVBR
+		}
+		if threshold, ok := msg["vbr_threshold"].(float64); ok {
+			if targetVBRThreshold != int(threshold) {
+				restartRequested = true
 			}
-			if threshold, ok := configMsg["vbr_threshold"].(float64); ok {
-				if targetVBRThreshold != int(threshold) {
-					restartRequested = true
-				}
-				SetVBRThreshold(int(threshold))
+			SetVBRThreshold(int(threshold))
+			common.TargetVBRThreshold = targetVBRThreshold
+		}
+		if dtBool, ok := msg["damageTracking"].(bool); ok {
+			if targetDamageTracking != dtBool {
+				restartRequested = true
 			}
-			if dtBool, ok := configMsg["damageTracking"].(bool); ok {
-				if targetDamageTracking != dtBool {
-					restartRequested = true
-				}
-				SetDamageTracking(dtBool)
+			SetDamageTracking(dtBool)
+			common.TargetDamageTracking = targetDamageTracking
+		}
+		if mpdecimateBool, ok := msg["mpdecimate"].(bool); ok {
+			if targetMpdecimate != mpdecimateBool {
+				restartRequested = true
 			}
-			if mpdecimateBool, ok := configMsg["mpdecimate"].(bool); ok {
-				if targetMpdecimate != mpdecimateBool {
-					restartRequested = true
-				}
-				SetMpdecimate(mpdecimateBool)
+			SetMpdecimate(mpdecimateBool)
+		}
+		if keyframeFloat, ok := msg["keyframe_interval"].(float64); ok {
+			keyframe := int(keyframeFloat)
+			if targetKeyframeInterval != keyframe {
+				restartRequested = true
 			}
-			if keyframeFloat, ok := configMsg["keyframe_interval"].(float64); ok {
-				keyframe := int(keyframeFloat)
-				if targetKeyframeInterval != keyframe {
-					restartRequested = true
-				}
-				SetKeyframeInterval(keyframe)
+			SetKeyframeInterval(keyframe)
+		}
+		if codecStr, ok := msg["video_codec"].(string); ok {
+			oldCodec := VideoCodec
+			SetVideoCodec(codecStr)
+			common.VideoCodec = VideoCodec
+			if VideoCodec != oldCodec {
+				restartRequested = true
 			}
-			if codecStr, ok := configMsg["video_codec"].(string); ok {
-				oldCodec := VideoCodec
-				SetVideoCodec(codecStr)
-				if VideoCodec != oldCodec {
-					restartRequested = true
-				}
+		}
+		if cpuEffortFloat, ok := msg["cpu_effort"].(float64); ok {
+			effort := int(cpuEffortFloat)
+			if targetCpuEffort != effort {
+				restartRequested = true
 			}
-			if cpuEffortFloat, ok := configMsg["cpu_effort"].(float64); ok {
-				effort := int(cpuEffortFloat)
-				if targetCpuEffort != effort {
-					restartRequested = true
-				}
-				SetCpuEffort(effort)
+			SetCpuEffort(effort)
+			common.TargetCpuEffort = targetCpuEffort
+		}
+		if threadsFloat, ok := msg["cpu_threads"].(float64); ok {
+			threads := int(threadsFloat)
+			if targetCpuThreads != threads {
+				restartRequested = true
 			}
-			if threadsFloat, ok := configMsg["cpu_threads"].(float64); ok {
-				threads := int(threadsFloat)
-				if targetCpuThreads != threads {
-					restartRequested = true
-				}
-				SetCpuThreads(threads)
+			SetCpuThreads(threads)
+		}
+		if mouseBool, ok := msg["enable_desktop_mouse"].(bool); ok {
+			if targetDrawMouse != mouseBool {
+				restartRequested = true
 			}
-			if mouseBool, ok := configMsg["enable_desktop_mouse"].(bool); ok {
-				if targetDrawMouse != mouseBool {
-					restartRequested = true
-				}
-				SetDrawMouse(mouseBool)
+			SetDrawMouse(mouseBool)
+		}
+		if settleTime, ok := msg["settle_time"].(float64); ok {
+			SettleTime = int(settleTime)
+			common.SettleTime = SettleTime
+		}
+		if tileSize, ok := msg["tile_size"].(float64); ok {
+			TileSize = int(tileSize)
+			common.TileSize = TileSize
+		}
+		if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
+			SetEnableAudio(enableAudioBool)
+			common.EnableAudio = EnableAudio
+		}
+		if audioBitrateStr, ok := msg["audio_bitrate"].(string); ok {
+			SetAudioBitrate(audioBitrateStr)
+			common.AudioBitrate = AudioBitrate
+		}
+		if activityHzFloat, ok := msg["activity_hz"].(float64); ok {
+			activityHz := int(activityHzFloat)
+			if ActivityPulseHz != activityHz {
+				ActivityPulseHz = activityHz
+				common.ActivityPulseHz = ActivityPulseHz
 			}
-			if settleTime, ok := configMsg["settle_time"].(float64); ok {
-				log.Printf("Received Settle Time config: %vms", settleTime)
-				SettleTime = int(settleTime)
+		}
+		if activityTimeoutFloat, ok := msg["activity_timeout"].(float64); ok {
+			activityTimeout := int(activityTimeoutFloat)
+			if ActivityTimeout != activityTimeout {
+				ActivityTimeout = activityTimeout
+				common.ActivityTimeout = ActivityTimeout
 			}
-			if tileSize, ok := configMsg["tile_size"].(float64); ok {
-				log.Printf("Received Tile Size config: %vpx", tileSize)
-				TileSize = int(tileSize)
+		}
+		if nvencLatencyBool, ok := msg["nvenc_latency"].(bool); ok {
+			if NVENCLatencyMode != nvencLatencyBool {
+				NVENCLatencyMode = nvencLatencyBool
+				common.NVENCLatencyMode = NVENCLatencyMode
+				restartRequested = true
 			}
-			if enableAudioBool, ok := configMsg["enable_audio"].(bool); ok {
-				SetEnableAudio(enableAudioBool)
-			}
-			if audioBitrateStr, ok := configMsg["audio_bitrate"].(string); ok {
-				SetAudioBitrate(audioBitrateStr)
-			}
-			if activityHzFloat, ok := configMsg["activity_hz"].(float64); ok {
-				activityHz := int(activityHzFloat)
-				if ActivityPulseHz != activityHz {
-					log.Printf("Activity heartbeat frequency changed to %d Hz", activityHz)
-					ActivityPulseHz = activityHz
-				}
-			}
-			if activityTimeoutFloat, ok := configMsg["activity_timeout"].(float64); ok {
-				activityTimeout := int(activityTimeoutFloat)
-				if ActivityTimeout != activityTimeout {
-					log.Printf("Activity heartbeat timeout changed to %d ms", activityTimeout)
-					ActivityTimeout = activityTimeout
-				}
-			}
-			if nvencLatencyBool, ok := configMsg["nvenc_latency"].(bool); ok {
-				if NVENCLatencyMode != nvencLatencyBool {
-					log.Printf("NVENC latency mode changed to %v", nvencLatencyBool)
-					NVENCLatencyMode = nvencLatencyBool
-					restartRequested = true
-				}
-			}
+		}
 
-			if bwFloat, ok := configMsg["bandwidth"].(float64); ok {
-				bandwidth := int(bwFloat)
-				if targetMode != "bandwidth" || TargetBandwidthMbps != bandwidth {
-					restartRequested = true
-				}
-				SetBandwidth(bandwidth)
-			} else if qFloat, ok := configMsg["quality"].(float64); ok {
-				quality := int(qFloat)
-				if targetMode != "quality" || targetQuality != quality {
-					restartRequested = true
-				}
-				SetQuality(quality)
+		if bwFloat, ok := msg["bandwidth"].(float64); ok {
+			bandwidth := int(bwFloat)
+			if targetMode != "bandwidth" || TargetBandwidthMbps != bandwidth {
+				restartRequested = true
 			}
-
-			if fpsFloat, ok := configMsg["framerate"].(float64); ok {
-				fps := int(fpsFloat)
-				if FPS != fps {
-					restartRequested = true
-				}
-				SetFramerate(fps)
+			SetBandwidth(bandwidth)
+			common.TargetBandwidthMbps = TargetBandwidthMbps
+		} else if qFloat, ok := msg["quality"].(float64); ok {
+			quality := int(qFloat)
+			if targetMode != "quality" || targetQuality != quality {
+				restartRequested = true
 			}
+			SetQuality(quality)
+		}
 
+		if fpsFloat, ok := msg["framerate"].(float64); ok {
+			fps := int(fpsFloat)
+			if FPS != fps {
+				restartRequested = true
+			}
+			SetFramerate(fps)
+			common.FPS = FPS
+		}
+
+		go func(restartRequested, displayResizeRequested bool, previousStreamID uint32, displayChangeReason string) {
 			if displayResizeRequested {
-				width, height := GetScreenSize()
-				applyDisplayChange(previousStreamID, width, height, displayChangeReason)
+				w, h := GetScreenSize()
+				applyDisplayChange(previousStreamID, w, h, displayChangeReason)
 				previousStreamID = getCurrentFFmpegStreamID()
 			}
 
@@ -514,22 +528,26 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			}
 
 			broadcastConfig(true)
-		}(msg)
+		}(restartRequested, displayResizeRequested, previousStreamID, displayChangeReason)
 	case "resize":
 		widthFloat, wOk := msg["width"].(float64)
 		heightFloat, hOk := msg["height"].(float64)
+		dpr, _ := msg["dpr"].(float64)
 		if wOk && hOk {
 			width := int(widthFloat)
 			height := int(heightFloat)
+			log.Printf("Received resize request: %dx%d (DPR: %.2f, Current InitialRes: %d)", width, height, dpr, InitialRes)
 			if SetScreenSize(width, height) {
 				// Get the actual clamped size
 				clampedW, clampedH := GetScreenSize()
-				log.Printf("Received resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
+				log.Printf("Accepted resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
 				previousStreamID := getCurrentFFmpegStreamID()
 				go func() {
 					applyDisplayChange(previousStreamID, clampedW, clampedH, "client resize")
 					broadcastConfig(true)
 				}()
+			} else {
+				log.Printf("Ignored resize request: %dx%d (InitialRes active or size unchanged)", width, height)
 			}
 		}
 	case "ping":

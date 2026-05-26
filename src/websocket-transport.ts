@@ -4,6 +4,7 @@ export class WebSocketTransport {
     private ws: WebSocket | null = null;
     private onBinaryMessage: (buffer: ArrayBuffer) => void;
     private onJsonMessage: (msg: Record<string, unknown>) => void;
+    private onConnected: () => void;
     public isActive = false;
     public isConnecting = false;
     public totalBytesReceived = 0;
@@ -11,9 +12,14 @@ export class WebSocketTransport {
     private frameCount = 0;
     private lastFpsUpdate = Date.now();
     
-    constructor(onBinaryMessage: (buffer: ArrayBuffer) => void, onJsonMessage: (msg: Record<string, unknown>) => void) {
+    constructor(
+        onBinaryMessage: (buffer: ArrayBuffer) => void, 
+        onJsonMessage: (msg: Record<string, unknown>) => void,
+        onConnected: () => void
+    ) {
         this.onBinaryMessage = onBinaryMessage;
         this.onJsonMessage = onJsonMessage;
+        this.onConnected = onConnected;
         setInterval(() => {
             const now = Date.now();
             const elapsed = (now - this.lastFpsUpdate) / 1000;
@@ -37,6 +43,7 @@ export class WebSocketTransport {
                 log('[WebSocket] Connected successfully');
                 this.isActive = true;
                 this.isConnecting = false;
+                this.onConnected();
             };
 
             this.ws.onmessage = (event) => {

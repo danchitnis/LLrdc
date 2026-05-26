@@ -7,6 +7,14 @@ export class WebCodecsManager {
     public videoCodec = 'vp8';
     public chroma = '420';
 
+    public get width(): number {
+        return displayEl?.width || 0;
+    }
+
+    public get height(): number {
+        return displayEl?.height || 0;
+    }
+
     private frameCount = 0;
     private lastFPSUpdate = Date.now();
     private decoder: VideoDecoder | null = null;

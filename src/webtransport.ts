@@ -6,6 +6,7 @@ export class WebTransportManager {
     private controlWriter: WritableStreamDefaultWriter | null = null;
     private onBinaryMessage: (buffer: ArrayBuffer) => void;
     private onJsonMessage: (msg: Record<string, unknown>) => void;
+    private onConnected: () => void;
     public isWebTransportActive = false;
     public isConnecting = false;
     public totalBytesReceived = 0;
@@ -13,9 +14,14 @@ export class WebTransportManager {
     private frameCount = 0;
     private lastFpsUpdate = Date.now();
     
-    constructor(onBinaryMessage: (buffer: ArrayBuffer) => void, onJsonMessage: (msg: Record<string, unknown>) => void) {
+    constructor(
+        onBinaryMessage: (buffer: ArrayBuffer) => void, 
+        onJsonMessage: (msg: Record<string, unknown>) => void,
+        onConnected: () => void
+    ) {
         this.onBinaryMessage = onBinaryMessage;
         this.onJsonMessage = onJsonMessage;
+        this.onConnected = onConnected;
         setInterval(() => {
             const now = Date.now();
             const elapsed = (now - this.lastFpsUpdate) / 1000;
@@ -68,7 +74,8 @@ export class WebTransportManager {
             this.isWebTransportActive = true;
             this.isConnecting = false;
             
-            this.setupControlStream();
+            await this.setupControlStream();
+            this.onConnected();
             this.receiveUnidirectionalStreams();
 
             this.transport.closed.then(() => {

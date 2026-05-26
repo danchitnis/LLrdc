@@ -1,182 +1,161 @@
-import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, cpuEffortSlider, cpuThreadsSelect, nvencLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode } from './ui';
+import { 
+    log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, 
+    damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, 
+    tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, 
+    qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, 
+    cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, nvencLatencyCheckbox, 
+    desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, 
+    activityTimeoutValue, videoCodecSelect, clipboardCheckbox, 
+    enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, 
+    setServerIntelGpuUtil, setAcceleratorMode 
+} from './ui';
 import { WebCodecsManager } from './webcodecs';
 import { setupInput } from './input';
 import { BrowserClientSession } from './client/session';
-import { WebTransportManager } from './webtransport';
-import type { ConfigMessage, BrowserStats } from './client/types';
+import type { ConfigMessage } from './client/types';
 import { normalizeCodecFamily } from './client/protocol';
 import { updateDirectBufferUi } from './direct-buffer-ui';
+import { wireConfigControls } from './config-controls';
 import { handleDisplayEffectMessage } from './display-effects';
-import { updateHybridSlidersState, wireConfigControls } from './config-controls';
 
 export { };
 
 let triggerResizeUpdate: () => void = () => { };
 
 const session = new BrowserClientSession();
-const webcodecs = session.webcodecs;
-
-session.events.on('serverMessage', (msg) => {
-    handleJsonMessage(msg);
-});
+const webcodecs = (window as any).webcodecsManager as WebCodecsManager;
 
 setupInput((data) => {
     session.sendInput(data);
 });
 
-let configDebounceTimer: number | null = null;
-let deferredConfigTimer: number | null = null;
+session.events.on('connected', () => {
+    triggerResizeUpdate();
+});
+
+let configDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let deferredConfigTimer: ReturnType<typeof setTimeout> | null = null;
 let currentHdpi = 100;
-let hasReceivedInitialConfig = false;
 let pendingHdpi: number | null = null;
 let pendingMaxRes: number | null = null;
-
-(globalThis as any).sendConfig = sendConfig;
-(globalThis as any).buildConfigMessage = buildConfigMessage;
-
-function sendConfig() {
-    if (deferredConfigTimer) {
-        (globalThis as any).clearTimeout(deferredConfigTimer);
-        deferredConfigTimer = null;
-    }
-    if (configDebounceTimer) {
-        clearTimeout(configDebounceTimer);
-    }
-
-    const config = buildConfigMessage();
-    
-    configDebounceTimer = (globalThis as any).setTimeout(() => {
-        session.sendConfig(config);
-        configDebounceTimer = null;
-    }, 100);
-}
+let hasReceivedInitialConfig = false;
 
 function buildConfigMessage(): ConfigMessage {
-    let target = 'bandwidth';
-    for (const radio of targetTypeRadios) {
-        if (radio.checked) {
-            target = radio.value;
-            break;
-        }
-    }
+    const qualityStr = qualitySlider ? qualitySlider.value : '20';
+    const bandwidthStr = bandwidthSelect ? bandwidthSelect.value : '5';
+    const mode = Array.from(targetTypeRadios).find(r => r.checked)?.value || 'bandwidth';
 
-    const config: ConfigMessage = { type: 'config' };
-    if (target === 'bandwidth') {
-        config.bandwidth = parseInt(bandwidthSelect.value, 10);
+    const config: ConfigMessage = {
+        type: 'config',
+        videoCodec: videoCodecSelect ? videoCodecSelect.value : 'vp8',
+        chroma: '420', // Default
+        framerate: framerateSelect ? parseInt(framerateSelect.value, 10) : 30,
+        vbr: vbrCheckbox ? vbrCheckbox.checked : false,
+        vbr_threshold: vbrThresholdSlider ? parseInt(vbrThresholdSlider.value, 10) : 0,
+        damageTracking: damageTrackingCheckbox ? damageTrackingCheckbox.checked : false,
+        mpdecimate: mpdecimateCheckbox ? mpdecimateCheckbox.checked : false,
+        keyframe_interval: keyframeIntervalSelect ? parseInt(keyframeIntervalSelect.value, 10) : 0,
+        cpu_effort: cpuEffortSlider ? parseInt(cpuEffortSlider.value, 10) : 6,
+        cpu_threads: cpuThreadsSelect ? parseInt(cpuThreadsSelect.value, 10) : 0,
+        enable_desktop_mouse: desktopMouseCheckbox ? desktopMouseCheckbox.checked : true,
+        settle_time: settleSlider ? parseInt(settleSlider.value, 10) : 500,
+        tile_size: tileSizeSlider ? parseInt(tileSizeSlider.value, 10) : 128,
+        enable_audio: enableAudioCheckbox ? enableAudioCheckbox.checked : true,
+        audio_bitrate: audioBitrateSelect ? audioBitrateSelect.value : '128k',
+        hdpi: hdpiSelect ? parseInt(hdpiSelect.value, 10) : 100,
+        max_res: maxResSelect ? parseInt(maxResSelect.value, 10) : 0,
+        activity_hz: activityHzSlider ? parseInt(activityHzSlider.value, 10) : 30,
+        activity_timeout: activityTimeoutSlider ? parseInt(activityTimeoutSlider.value, 10) : 1500,
+        nvenc_latency: nvencLatencyCheckbox ? nvencLatencyCheckbox.checked : true,
+    };
+
+    if (mode === 'bandwidth') {
+        config.bandwidth = parseInt(bandwidthStr, 10);
     } else {
-        config.quality = parseInt(qualitySlider.value, 10);
+        config.quality = parseInt(qualityStr, 10);
     }
-
-    config.videoCodec = videoCodecSelect.value;
-    config.chroma = (document.querySelector('input[name="chroma"]:checked') as HTMLInputElement)?.value || '420';
-    config.framerate = parseInt(framerateSelect.value, 10);
-    config.cpu_effort = parseInt(cpuEffortSlider.value, 10);
-    config.cpu_threads = parseInt(cpuThreadsSelect.value, 10);
-    config.vbr = vbrCheckbox.checked;
-    config.vbr_threshold = parseInt(vbrThresholdSlider.value, 10);
-    config.damageTracking = damageTrackingCheckbox.checked;
-    config.mpdecimate = mpdecimateCheckbox.checked;
-    config.enable_hybrid = hybridCheckbox.checked;
-    config.settle_time = parseInt(settleSlider.value, 10);
-    config.tile_size = parseInt(tileSizeSlider.value, 10);
-    config.keyframe_interval = parseInt(keyframeIntervalSelect.value, 10);
-    config.nvenc_latency = nvencLatencyCheckbox.checked;
-    config.enable_desktop_mouse = desktopMouseCheckbox.checked;
-    config.activity_hz = parseInt(activityHzSlider.value, 10);
-    config.activity_timeout = parseInt(activityTimeoutSlider.value, 10);
-    config.hdpi = parseInt(hdpiSelect.value, 10);
-    config.max_res = parseInt(maxResSelect.value, 10);
-    config.enable_audio = enableAudioCheckbox.checked;
-    config.audio_bitrate = audioBitrateSelect.value;
 
     return config;
 }
 
-function handleJsonMessage(msg: Record<string, any>) {
-    if (msg.type === 'config') {
-        if (msg.videoCodec) {
-            videoCodecSelect.value = msg.videoCodec;
-            codecGpuOpts.forEach(opt => {
-                opt.disabled = !msg.videoCodec.includes('nvenc') && !msg.videoCodec.includes('qsv') && msg.videoCodec !== 'hevc_vaapi';
-            });
-            if (cpuEffortSlider) {
-                cpuEffortSlider.disabled = videoCodecSelect.value !== 'vp8';
-            }
-        }
+function sendConfig() {
+    if (!hasReceivedInitialConfig) {
+        if (deferredConfigTimer !== null) clearTimeout(deferredConfigTimer);
+        deferredConfigTimer = setTimeout(sendConfig, 100);
+        return;
+    }
 
+    if (configDebounceTimer !== null) clearTimeout(configDebounceTimer);
+    configDebounceTimer = setTimeout(() => {
+        configDebounceTimer = null;
+        session.sendConfig(buildConfigMessage());
+    }, 50);
+}
+
+function sendConfigSync() {
+    if (!hasReceivedInitialConfig) return;
+    if (configDebounceTimer !== null) {
+        clearTimeout(configDebounceTimer);
+        configDebounceTimer = null;
+    }
+    session.sendConfig(buildConfigMessage());
+}
+
+session.events.on('serverMessage', (msg: any) => {
+    if (msg.type === 'config') {
+        if (msg.videoCodec && videoCodecSelect) {
+            videoCodecSelect.value = normalizeCodecFamily(msg.videoCodec);
+        }
+        if (msg.bandwidth !== undefined && bandwidthSelect) {
+            bandwidthSelect.value = msg.bandwidth.toString();
+        }
+        if (msg.quality !== undefined && qualitySlider && qualityValue) {
+            qualitySlider.value = msg.quality.toString();
+            qualityValue.textContent = msg.quality.toString();
+        }
         if (msg.vbr !== undefined && vbrCheckbox) {
             vbrCheckbox.checked = msg.vbr;
+            if (vbrThresholdGroup) vbrThresholdGroup.style.display = msg.vbr ? 'flex' : 'none';
         }
-        if (msg.vbr_threshold !== undefined && vbrThresholdSlider) {
+        if (msg.vbr_threshold !== undefined && vbrThresholdSlider && vbrThresholdValue) {
             vbrThresholdSlider.value = msg.vbr_threshold.toString();
             vbrThresholdValue.textContent = msg.vbr_threshold.toString();
         }
-        if (vbrThresholdGroup) {
-            vbrThresholdGroup.style.display = vbrCheckbox.checked ? 'flex' : 'none';
-        }
-
         if (msg.damageTracking !== undefined && damageTrackingCheckbox) {
             damageTrackingCheckbox.checked = msg.damageTracking;
         }
         if (msg.mpdecimate !== undefined && mpdecimateCheckbox) {
             mpdecimateCheckbox.checked = msg.mpdecimate;
         }
-
-        if (msg.enable_hybrid !== undefined && hybridCheckbox) {
-            hybridCheckbox.checked = msg.enable_hybrid;
-        }
-        if (msg.settle_time !== undefined && settleSlider) {
-            settleSlider.value = msg.settle_time.toString();
-            settleValue.textContent = msg.settle_time.toString() + 'ms';
-        }
-        if (msg.tile_size !== undefined && tileSizeSlider) {
-            tileSizeSlider.value = msg.tile_size.toString();
-            tileSizeValue.textContent = msg.tile_size.toString() + 'px';
-        }
-        updateHybridSlidersState();
-
         if (msg.keyframe_interval !== undefined && keyframeIntervalSelect) {
             keyframeIntervalSelect.value = msg.keyframe_interval.toString();
         }
-
-        if (msg.bandwidth && bandwidthSelect) {
-            bandwidthSelect.value = msg.bandwidth.toString();
-            for (const radio of targetTypeRadios) {
-                if (radio.value === 'bandwidth') radio.checked = true;
-            }
-        } else if (msg.quality && qualitySlider) {
-            qualitySlider.value = msg.quality.toString();
-            for (const radio of targetTypeRadios) {
-                if (radio.value === 'quality') radio.checked = true;
-            }
-        }
-
-        if (msg.framerate && framerateSelect) {
+        if (msg.framerate !== undefined && framerateSelect) {
             framerateSelect.value = msg.framerate.toString();
         }
-
-        if (msg.cpu_effort !== undefined && cpuEffortSlider) {
+        if (msg.cpu_effort !== undefined && cpuEffortSlider && cpuEffortValue) {
             cpuEffortSlider.value = msg.cpu_effort.toString();
+            cpuEffortValue.textContent = msg.cpu_effort.toString();
         }
-
         if (msg.cpu_threads !== undefined && cpuThreadsSelect) {
             cpuThreadsSelect.value = msg.cpu_threads.toString();
         }
-
-        if (msg.nvenc_latency !== undefined && nvencLatencyCheckbox) {
-            nvencLatencyCheckbox.checked = msg.nvenc_latency;
-        }
-
         if (msg.enable_desktop_mouse !== undefined && desktopMouseCheckbox) {
             desktopMouseCheckbox.checked = msg.enable_desktop_mouse;
         }
-
-        if (msg.activity_hz !== undefined && activityHzSlider) {
+        if (msg.settle_time !== undefined && settleSlider && settleValue) {
+            settleSlider.value = msg.settle_time.toString();
+            settleValue.textContent = msg.settle_time.toString() + ' ms';
+        }
+        if (msg.tile_size !== undefined && tileSizeSlider && tileSizeValue) {
+            tileSizeSlider.value = msg.tile_size.toString();
+            tileSizeValue.textContent = msg.tile_size.toString() + ' px';
+        }
+        if (msg.activity_hz !== undefined && activityHzSlider && activityHzValue) {
             activityHzSlider.value = msg.activity_hz.toString();
             activityHzValue.textContent = msg.activity_hz.toString() + ' Hz';
         }
-
-        if (msg.activity_timeout !== undefined && activityTimeoutSlider) {
+        if (msg.activity_timeout !== undefined && activityTimeoutSlider && activityTimeoutValue) {
             activityTimeoutSlider.value = msg.activity_timeout.toString();
             activityTimeoutValue.textContent = msg.activity_timeout.toString() + ' ms';
         }
@@ -213,25 +192,18 @@ function handleJsonMessage(msg: Record<string, any>) {
         updateDirectBufferUi(msg);
 
         hasReceivedInitialConfig = true;
-        if (pendingHdpi !== null || pendingMaxRes !== null) {
-            const h = pendingHdpi !== null ? pendingHdpi : parseInt(hdpiSelect.value, 10);
-            const r = pendingMaxRes !== null ? pendingMaxRes : parseInt(maxResSelect.value, 10);
-            pendingHdpi = null;
-            pendingMaxRes = null;
-            const updatedConfig = buildConfigMessage();
-            updatedConfig.hdpi = h;
-            updatedConfig.max_res = r;
-            session.sendConfig(updatedConfig);
-        }
+        pendingHdpi = null;
+        pendingMaxRes = null;
     }
 
     if (msg.type === 'display_effect') {
         handleDisplayEffectMessage(msg, currentHdpi);
     }
-}
+});
 
 wireConfigControls({
     sendConfig,
+    sendConfigSync,
     scheduleResize: () => triggerResizeUpdate(),
     reinitDecoder: () => webcodecs.initDecoder(),
     setPendingHdpi: (val) => { pendingHdpi = val; },
@@ -239,9 +211,13 @@ wireConfigControls({
 });
 
 triggerResizeUpdate = () => {
-    const width = (globalThis as any).innerWidth;
-    const height = (globalThis as any).innerHeight;
-    session.sendResize(width, height);
+    if (!displayContainerEl) return;
+    const dpr = globalThis.devicePixelRatio || 1;
+    const width = Math.round(displayContainerEl.clientWidth * dpr);
+    const height = Math.round(displayContainerEl.clientHeight * dpr);
+    if (width > 0 && height > 0) {
+        session.sendResize(width, height, dpr);
+    }
 };
 
 (globalThis as any).addEventListener('resize', () => {
@@ -262,3 +238,5 @@ if (clipboardCheckbox) {
         }
     });
 }
+
+triggerResizeUpdate();

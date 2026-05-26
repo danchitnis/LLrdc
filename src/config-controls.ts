@@ -46,6 +46,7 @@ export function updateHybridSlidersState() {
 
 interface ConfigControlHandlers {
     sendConfig: () => void;
+    sendConfigSync: () => void;
     scheduleResize: () => void;
     reinitDecoder: () => void;
     setPendingHdpi: (value: number) => void;
@@ -53,7 +54,7 @@ interface ConfigControlHandlers {
 }
 
 export function wireConfigControls(handlers: ConfigControlHandlers) {
-    const { sendConfig, scheduleResize, reinitDecoder, setPendingHdpi, setPendingMaxRes } = handlers;
+    const { sendConfig, sendConfigSync, scheduleResize, reinitDecoder, setPendingHdpi, setPendingMaxRes } = handlers;
 
     if (configBtn && configDropdown) {
         configBtn.addEventListener('click', () => {
@@ -115,7 +116,7 @@ export function wireConfigControls(handlers: ConfigControlHandlers) {
     if (maxResSelect) {
         maxResSelect.addEventListener('change', () => {
             setPendingMaxRes(parseInt(maxResSelect.value, 10));
-            sendConfig();
+            sendConfigSync();
             scheduleResize();
         });
     }

@@ -30,14 +30,20 @@ export class BrowserClientSession {
     constructor() {
         this.webcodecs = new WebCodecsManager();
 
+        const onConnected = () => {
+            this.events.emit('connected', undefined);
+        };
+
         this.webtransport = new WebTransportManager(
             (buffer) => this.handleBinaryMessage(buffer),
-            (msg) => this.handleJsonMessage(msg)
+            (msg) => this.handleJsonMessage(msg),
+            onConnected
         );
 
         this.websocket = new WebSocketTransport(
             (buffer) => this.handleBinaryMessage(buffer),
-            (msg) => this.handleJsonMessage(msg)
+            (msg) => this.handleJsonMessage(msg),
+            onConnected
         );
 
         (window as any).webcodecsManager = this.webcodecs;
@@ -85,8 +91,15 @@ export class BrowserClientSession {
         const displayLatency = this.webcodecs.latencyMonitor;
         const codec = this.webcodecs.videoCodec;
 
-        const width = (globalThis as any).innerWidth;
-        const height = (globalThis as any).innerHeight;
+        // Try to get resolution from WebCodecs first, then fall back to WebRTC video element
+        let width = this.webcodecs.width;
+        let height = this.webcodecs.height;
+        
+        const videoEl = document.getElementById('webrtc-video') as HTMLVideoElement | null;
+        if ((width === 0 || height === 0) && videoEl && videoEl.videoWidth > 0) {
+            width = videoEl.videoWidth;
+            height = videoEl.videoHeight;
+        }
 
         const isWT = this.webtransport.isWebTransportActive;
         const isWS = this.websocket.isActive;
@@ -124,8 +137,8 @@ export class BrowserClientSession {
         }
     }
 
-    public sendResize(width: number, height: number) {
-        const msg = JSON.stringify({ type: 'resize', width, height });
+    public sendResize(width: number, height: number, dpr?: number) {
+        const msg = JSON.stringify({ type: 'resize', width, height, dpr });
         if (this.webtransport.isWebTransportActive) {
             this.webtransport.sendMsg(msg);
         } else if (this.websocket.isActive) {
