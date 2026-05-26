@@ -46,8 +46,6 @@ export const clipboardCheckbox = document.getElementById('clipboard-checkbox') a
 export const enableAudioCheckbox = document.getElementById('enable-audio-checkbox') as HTMLInputElement;
 export const audioBitrateSelect = document.getElementById('audio-bitrate-select') as HTMLSelectElement;
 
-export const downloadCertBtn = document.getElementById('download-cert-btn') as HTMLButtonElement;
-
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
 if (ctx) {
     ctx.imageSmoothingEnabled = false;
@@ -96,7 +94,8 @@ export function updateStatusText(
     height: number = 0, 
     codec: string = 'vp8',
     isWebTransportActive: boolean = false,
-    webtransportFps: number = 0
+    webtransportFps: number = 0,
+    isWebSocket: boolean = false
 ) {
     if (!statusEl) return;
     
@@ -105,7 +104,10 @@ export function updateStatusText(
     const displayCodec = codec.replace('_nvenc', '').replace('_qsv', '');
     const gpuTag = isGpu ? ' 🚀 GPU' : '';
     
-    const transport = isWebTransportActive ? 'WebTransport' : 'WebCodecs';
+    let transport = 'WebCodecs';
+    if (isWebTransportActive) {
+        transport = isWebSocket ? 'WebSocket' : 'WebTransport';
+    }
     
     // Change color based on latency
     let color = '#4f4'; // Green

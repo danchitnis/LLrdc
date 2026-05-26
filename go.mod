@@ -3,10 +3,12 @@ module github.com/danchitnis/llrdc
 go 1.24.0
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	github.com/pion/interceptor v0.1.45
 	github.com/pion/rtcp v1.2.16
 	github.com/pion/rtp v1.10.2
 	github.com/pion/transport/v4 v4.0.1
+	github.com/pion/webrtc/v4 v4.2.13
 	github.com/quic-go/quic-go v0.43.0
 	github.com/quic-go/webtransport-go v0.8.0
 	github.com/veandco/go-sdl2 v0.4.40

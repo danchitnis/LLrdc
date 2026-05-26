@@ -1,4 +1,4 @@
-import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, cpuEffortSlider, cpuThreadsSelect, nvencLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode, downloadCertBtn } from './ui';
+import { log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, cpuEffortSlider, cpuThreadsSelect, nvencLatencyCheckbox, desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, activityTimeoutValue, videoCodecSelect, codecGpuOpts, clipboardCheckbox, enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, setServerIntelGpuUtil, setAcceleratorMode } from './ui';
 import { WebCodecsManager } from './webcodecs';
 import { setupInput } from './input';
 import { BrowserClientSession } from './client/session';
@@ -23,21 +23,6 @@ session.events.on('serverMessage', (msg) => {
 setupInput((data) => {
     session.sendInput(data);
 });
-
-if (downloadCertBtn) {
-    downloadCertBtn.addEventListener('click', () => {
-        // Construct the URL for the cert endpoint on the WebTransport port
-        const port = window.location.port;
-        // If we are already on HTTPS (WebTransport port), just use relative path
-        // Otherwise, try to guess the WT port (Port + 10)
-        let certUrl = '/cert';
-        if (window.location.protocol !== 'https:') {
-            const wtPort = parseInt(port, 10) + 10;
-            certUrl = `https://${window.location.hostname}:${wtPort}/cert`;
-        }
-        window.open(certUrl, '_blank');
-    });
-}
 
 let configDebounceTimer: number | null = null;
 let deferredConfigTimer: number | null = null;

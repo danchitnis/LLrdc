@@ -82,8 +82,9 @@ export class WebTransportManager {
         } catch (e) {
             const msg = (e as Error).message || 'Unknown error';
             log(`[WebTransport] Connection FAILED: ${msg}`);
-            if (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('hash')) {
-                log('[WebTransport] Tip: If on Safari, try manually trusting the certificate in Keychain Access.');
+            const isWS = (globalThis as any).websocketTransport?.isActive;
+            if (!isWS && (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('hash'))) {
+                log('[WebTransport] Tip: If on Safari, try manually trusting the certificate in Keychain Access OR use the WebSocket fallback.');
             }
             this.isWebTransportActive = false;
             this.isConnecting = false;

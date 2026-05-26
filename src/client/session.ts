@@ -1,5 +1,6 @@
 import { WebCodecsManager } from '../webcodecs';
 import { WebTransportManager } from '../webtransport';
+import { WebSocketTransport } from '../websocket-transport';
 import { ClientEventEmitter } from './hooks';
 import { detectKeyFrame, parseBinaryVideoPacket } from './protocol';
 import { updateStatusText, log } from '../ui';
@@ -19,6 +20,7 @@ export class BrowserClientSession {
     public readonly events = new ClientEventEmitter<BrowserClientEvents>();
     public readonly webcodecs: WebCodecsManager;
     public readonly webtransport: WebTransportManager;
+    public readonly websocket: WebSocketTransport;
 
     private presentedFrames: PresentedFrameMeta[] = [];
     private masterPollInterval: ReturnType<typeof setInterval>;
@@ -33,16 +35,23 @@ export class BrowserClientSession {
             (msg) => this.handleJsonMessage(msg)
         );
 
+        this.websocket = new WebSocketTransport(
+            (buffer) => this.handleBinaryMessage(buffer),
+            (msg) => this.handleJsonMessage(msg)
+        );
+
         (window as any).webcodecsManager = this.webcodecs;
         (window as any).webtransportManager = this.webtransport;
+        (window as any).websocketTransport = this.websocket;
 
         this.installWindowApi();
 
         this.masterPollInterval = setInterval(() => this.masterPollStats(), 1000);
 
-        // Auto-reconnect if WebTransport is lost AND we are in a secure context
+        // Auto-reconnect if no transport is active
         setInterval(() => {
-            if (!this.webtransport.isWebTransportActive && !this.webtransport.isConnecting && this.isSecureContext) {
+            if (!this.webtransport.isWebTransportActive && !this.webtransport.isConnecting && 
+                !this.websocket.isActive && !this.websocket.isConnecting) {
                 this.bootstrap();
             }
         }, 5000);
@@ -53,16 +62,6 @@ export class BrowserClientSession {
     private async bootstrap() {
         if (this.isBootstrapping) return;
         this.isBootstrapping = true;
-
-        if (!('WebTransport' in (globalThis as any))) {
-            const reason = this.isSecureContext ? 'Browser too old' : 'Non-secure context (needs Localhost or HTTPS)';
-            log(`[WebTransport] API not available: ${reason}.`);
-            if (!this.isSecureContext) {
-                log(`[WebTransport] Tip: Try loading the page over HTTPS at https://${(globalThis as any).location.hostname}:8091/`);
-                this.isBootstrapping = false;
-                return;
-            }
-        }
 
         try {
             const resp = await fetch('/config');
@@ -89,6 +88,11 @@ export class BrowserClientSession {
         const width = (globalThis as any).innerWidth;
         const height = (globalThis as any).innerHeight;
 
+        const isWT = this.webtransport.isWebTransportActive;
+        const isWS = this.websocket.isActive;
+        const transportActive = isWT || isWS;
+        const transportFps = isWT ? this.webtransport.fps : this.websocket.fps;
+
         updateStatusText(
             false,
             fps,
@@ -98,26 +102,34 @@ export class BrowserClientSession {
             width,
             height,
             codec,
-            this.webtransport.isWebTransportActive,
-            this.webtransport.fps
+            transportActive,
+            transportFps,
+            isWS // Added as a hint for status display
         );
     }
 
     public sendInput(data: string) {
         if (this.webtransport.isWebTransportActive) {
             this.webtransport.sendMsg(data);
+        } else if (this.websocket.isActive) {
+            this.websocket.sendMsg(data);
         }
     }
 
     public sendConfig(config: ConfigMessage) {
         if (this.webtransport.isWebTransportActive) {
             this.webtransport.sendMsg(JSON.stringify(config));
+        } else if (this.websocket.isActive) {
+            this.websocket.sendMsg(JSON.stringify(config));
         }
     }
 
     public sendResize(width: number, height: number) {
+        const msg = JSON.stringify({ type: 'resize', width, height });
         if (this.webtransport.isWebTransportActive) {
-            this.webtransport.sendMsg(JSON.stringify({ type: 'resize', width, height }));
+            this.webtransport.sendMsg(msg);
+        } else if (this.websocket.isActive) {
+            this.websocket.sendMsg(msg);
         }
     }
 
@@ -130,24 +142,25 @@ export class BrowserClientSession {
     }
 
     public getStats(): BrowserStats {
+        const isWT = this.webtransport.isWebTransportActive;
         return {
             fps: this.webcodecs.fps,
             latency: this.webcodecs.latencyMonitor,
             totalDecoded: this.webcodecs.totalDecoded,
-            bytesReceived: this.webtransport.totalBytesReceived,
-            webtransportFps: this.webtransport.fps
+            bytesReceived: isWT ? this.webtransport.totalBytesReceived : this.websocket.totalBytesReceived,
+            webtransportFps: isWT ? this.webtransport.fps : this.websocket.fps
         };
     }
 
     public getState(): BrowserClientState {
         return {
-            wsConnected: false,
+            wsConnected: this.websocket.isActive,
             webrtcActive: false,
             videoCodec: this.webcodecs.videoCodec,
             totalDecoded: this.webcodecs.totalDecoded,
             networkLatency: 0,
             webrtcLatency: 0,
-            webSocketBytesReceived: 0,
+            webSocketBytesReceived: this.websocket.totalBytesReceived,
             lastPresentedFrame: this.presentedFrames.length > 0 ? { ...this.presentedFrames[this.presentedFrames.length - 1] } : null,
         };
     }
@@ -192,9 +205,30 @@ export class BrowserClientSession {
             }
             this.webcodecs.initDecoder();
 
-            if (msg.webtransportFingerprint && msg.webtransportPort) {
-                const wtUrl = `https://${(globalThis as any).location.hostname}:${msg.webtransportPort}/webtransport`;
-                this.webtransport.connect(wtUrl, msg.webtransportFingerprint as string);
+            const wtFingerprint = msg.webtransportFingerprint as string;
+            const wtPort = msg.webtransportPort as number;
+
+            if (wtFingerprint && wtPort) {
+                const canUseWT = ('WebTransport' in (globalThis as any)) && this.isSecureContext;
+                
+                if (canUseWT) {
+                    const wtUrl = `https://${(globalThis as any).location.hostname}:${wtPort}/webtransport`;
+                    this.webtransport.connect(wtUrl, wtFingerprint);
+                    
+                    // Fallback to WS if WT connection hangs or fails quickly
+                    setTimeout(() => {
+                        if (!this.webtransport.isWebTransportActive && !this.websocket.isActive) {
+                            log('[Transport] WebTransport taking too long, trying WebSocket fallback...');
+                            const wsUrl = `ws://${(globalThis as any).location.hostname}:${(globalThis as any).location.port || 8080}/ws`;
+                            this.websocket.connect(wsUrl);
+                        }
+                    }, 2000);
+                } else {
+                    const reason = this.isSecureContext ? 'Browser too old' : 'Non-secure context';
+                    log(`[Transport] WebTransport not available (${reason}), falling back to WebSocket...`);
+                    const wsUrl = `ws://${(globalThis as any).location.hostname}:${(globalThis as any).location.port || 8080}/ws`;
+                    this.websocket.connect(wsUrl);
+                }
             }
         }
         this.events.emit('serverMessage', msg);

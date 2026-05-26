@@ -186,6 +186,8 @@ func startHTTPServer() {
 		json.NewEncoder(w).Encode(configPayload(false))
 	})
 
+	http.HandleFunc("/ws", common.HandleWebSocket)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("HTTP %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		if r.Method == http.MethodGet {
@@ -222,11 +224,11 @@ func startHTTPServer() {
 }
 
 func CloseAllClients() {
-	common.CloseAllWebTransportSessions()
+	common.CloseAllSessions()
 }
 
 func broadcastJSON(msg interface{}) {
-	common.BroadcastWebTransportJSON(msg)
+	common.BroadcastJSON(msg)
 }
 
 func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string) {
@@ -235,10 +237,10 @@ func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string)
 	if frame.LatencyTrace != nil {
 		noteLatencyProbeFrameDispatch(frame.LatencyTrace, benchmarkClockNowMs())
 	}
-	// Copy frame for WebTransport delivery so we don't share memory with IVF reader
+	// Copy frame for delivery so we don't share memory with IVF reader
 	copyFrame := make([]byte, len(frame.Data))
 	copy(copyFrame, frame.Data)
-	common.WriteWebTransportFrame(copyFrame, streamID, captureTime)
+	common.WriteFrame(copyFrame, streamID, captureTime)
 }
 
 func broadcastConfig(restarted bool) {

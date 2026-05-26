@@ -22,7 +22,6 @@
                     <button class="config-tab-btn" data-tab="tab-performance">Performance</button>
                     <button class="config-tab-btn" data-tab="tab-input">Input</button>
                     <button class="config-tab-btn" data-tab="tab-audio">Audio</button>
-                    <button class="config-tab-btn" data-tab="tab-security">Security</button>
                 </div>
 
                 <!-- TAB 1: STREAM SETTINGS -->
@@ -192,25 +191,6 @@
                             <option value="256k">256 kbps</option>
                             <option value="512k">512 kbps</option>
                         </select>
-                    </div>
-                </div>
-
-                <!-- TAB 6: SECURITY -->
-                <div id="tab-security" class="config-tab-content" style="display: none !important;">
-                    <div class="config-group" style="flex-direction: column; align-items: flex-start;">
-                        <p style="font-size: 0.8rem; color: #ccc; margin-bottom: 10px;">
-                            Safari and some other browsers require the self-signed certificate to be trusted at the OS level for WebTransport to work on non-localhost IPs.
-                        </p>
-                        <button id="download-cert-btn" style="width: 100%; padding: 10px; cursor: pointer; background: #555; color: white; border: 1px solid #777; border-radius: 8px; font-size: 0.85rem;">
-                            Download Certificate (.crt)
-                        </button>
-                        <p style="font-size: 0.75rem; color: #aaa; margin-top: 10px;">
-                            <b>Instructions:</b><br>
-                            1. Download and open the certificate.<br>
-                            2. Add it to <b>Keychain Access</b> (System) or <b>Windows Certificate Store</b> (Trusted Root).<br>
-                            3. Set trust level to <b>"Always Trust"</b>.<br>
-                            4. Refresh the page.
-                        </p>
                     </div>
                 </div>
             </div>
