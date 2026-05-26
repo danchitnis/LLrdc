@@ -8,13 +8,13 @@ var (
 	// OnForceKeyframe is triggered when a keyframe is requested (e.g., via signaling or RTCP PLI).
 	OnForceKeyframe func()
 
-	// OnPeerConnected is triggered when a new WebRTC peer is fully connected.
+	// OnPeerConnected is triggered when a new peer is fully connected.
 	OnPeerConnected func()
 
 	// OnTriggerPing is triggered to inject a damage-tracking ping into the compositor.
 	OnTriggerPing func()
 
-	// OnInputMessage is triggered when a new input control event arrives on the WebRTC data channel.
+	// OnInputMessage is triggered when a new input control event arrives.
 	OnInputMessage func(msg map[string]interface{})
 
 	// OnConfigChanged is triggered when a fallback or runtime configuration change is applied.

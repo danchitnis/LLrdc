@@ -1,3 +1,6 @@
+import { WebCodecsManager } from '../webcodecs';
+import { WebTransportManager } from '../webtransport';
+
 export interface ConfigMessage {
     type: 'config';
     bandwidth?: number;
@@ -21,9 +24,7 @@ export interface ConfigMessage {
     tile_size?: number;
     enable_audio?: boolean;
     audio_bitrate?: string;
-    webrtc_buffer?: number;
     nvenc_latency?: boolean;
-    webrtc_low_latency?: boolean;
     activity_hz?: number;
     activity_timeout?: number;
     restarted?: boolean;
@@ -34,6 +35,8 @@ export interface ConfigMessage {
     directBufferReason?: string;
     h264Nvenc444Available?: boolean;
     h265Nvenc444Available?: boolean;
+    webtransportFingerprint?: string;
+    webtransportPort?: number;
 }
 
 export interface PresentedFrameMeta {
@@ -62,9 +65,16 @@ export interface BrowserStats {
     fps: number;
     latency: number;
     totalDecoded: number;
-    webrtcFps: number;
     bytesReceived: number;
-    jitterBufferDelay?: number;
-    jitterBufferTarget?: number;
-    webrtcLowLatency?: boolean;
+    webtransportFps: number;
+}
+
+export interface BrowserClientApi {
+    getState: () => BrowserClientState;
+    getStats: () => BrowserStats;
+    getPresentedFrames: () => PresentedFrameMeta[];
+    clearPresentedFrames: () => void;
+    sendConfig: (config: ConfigMessage) => void;
+    sendResize: (width: number, height: number) => void;
+    sendInput: (data: string) => void;
 }

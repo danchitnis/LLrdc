@@ -14,7 +14,7 @@ import (
 var cleanupTasks []func()
 
 func HandlePeerConnected() {
-	log.Println("WebRTC peer connected, triggering low-latency stream restart concurrently")
+	log.Println("New peer connected, triggering low-latency stream restart concurrently")
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		KillFFmpegWithTimestamp()
@@ -59,7 +59,11 @@ func Run() error {
 		log.Println("TEST_PATTERN mode: skipping display server setup.")
 	}
 
-	InitWebRTC()
+	wtAddr := ":" + fmt.Sprintf("%d", Port+10)
+	common.MessageHandler = func(msg map[string]interface{}, writeJSON func(interface{}) error) {
+		HandleControlMessage(msg, writeJSON)
+	}
+	common.InitWebTransport(wtAddr)
 	startStreaming(broadcastVideoFrame)
 	if CaptureMode == CaptureModeAgent {
 		go startAgentControl()

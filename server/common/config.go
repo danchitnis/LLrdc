@@ -24,38 +24,33 @@ var (
 	IntelRenderNode string
 	CaptureMode     string
 
-	AV1NVENCAvailable       bool
-	H264NVENC444Available   bool
-	H265NVENC444Available   bool
-	QSVAvailable            bool
-	H265QSVAvailable        bool
-	AV1QSVAvailable         bool
-	UseDebugFFmpeg          bool
-	UseDebugInput           bool
-	TestPattern             bool
-	EnableAudio             bool
-	AudioBitrate            string
-	Wallpaper               string
-	WebRTCPublicIP          string
-	WebRTCInterfaces        string
-	WebRTCExcludeInterfaces string
-	WebRTCBufferSize        int
-	ActivityPulseHz         int
-	ActivityTimeout         int
-	NVENCLatencyMode        bool
-	HDPI                    int
-	SettleTime              int
-	TileSize                int
-	WebRTCLowLatency        bool
-	InitialRes              int
-	AgentAddress            string
+	AV1NVENCAvailable     bool
+	H264NVENC444Available bool
+	H265NVENC444Available bool
+	QSVAvailable          bool
+	H265QSVAvailable      bool
+	AV1QSVAvailable       bool
+	UseDebugFFmpeg        bool
+	UseDebugInput         bool
+	TestPattern           bool
+	EnableAudio           bool
+	AudioBitrate          string
+	Wallpaper             string
+	ActivityPulseHz       int
+	ActivityTimeout       int
+	NVENCLatencyMode      bool
+	HDPI                  int
+	SettleTime            int
+	TileSize              int
+	InitialRes            int
+	AgentAddress          string
 
 	// Globally shared settings (historically in ffmpeg.go or others)
-	TargetBandwidthMbps int = 5
-	TargetVBR           bool = false
-	TargetVBRThreshold  int = 0
+	TargetBandwidthMbps  int  = 5
+	TargetVBR            bool = false
+	TargetVBRThreshold   int  = 0
 	TargetDamageTracking bool = false
-	TargetCpuEffort     int = 6
+	TargetCpuEffort      int  = 6
 )
 
 func InitConfig() {
@@ -105,14 +100,6 @@ func InitConfig() {
 	}
 
 	defaultWallpaper := os.Getenv("WALLPAPER")
-	defaultWebRTCPublicIP := os.Getenv("WEBRTC_PUBLIC_IP")
-	defaultWebRTCInterfaces := os.Getenv("WEBRTC_INTERFACES")
-	defaultWebRTCExcludeInterfaces := os.Getenv("WEBRTC_EXCLUDE_INTERFACES")
-
-	defaultWebRTCBufferSize := 1
-	if bs, err := strconv.Atoi(os.Getenv("WEBRTC_BUFFER_SIZE")); err == nil {
-		defaultWebRTCBufferSize = bs
-	}
 
 	defaultActivityPulseHz := 30
 	if ap, err := strconv.Atoi(os.Getenv("ACTIVITY_PULSE_HZ")); err == nil {
@@ -145,8 +132,6 @@ func InitConfig() {
 	if ts, err := strconv.Atoi(os.Getenv("TILE_SIZE")); err == nil {
 		defaultTileSize = ts
 	}
-
-	defaultWebRTCLowLatency := os.Getenv("WEBRTC_LOW_LATENCY") == "true"
 
 	defaultVBR := false
 	if vbr, err := strconv.ParseBool(os.Getenv("VBR")); err == nil {
@@ -181,10 +166,10 @@ func InitConfig() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of llrdc:\n")
 		fmt.Fprintf(os.Stderr, "  llrdc [flags]\n\n")
-		fmt.Fprintf(os.Stderr, "Note: --port configures both the HTTP and WebRTC UDP port.\n\n")
+		fmt.Fprintf(os.Stderr, "Note: --port configures the HTTP server port. WebTransport uses Port + 10.\n\n")
 
 		fmt.Fprintf(os.Stderr, "User Flags:\n")
-		printFlag(os.Stderr, "port", "Port for HTTP and WebRTC UDP", Port)
+		printFlag(os.Stderr, "port", "Port for HTTP server", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
 		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", TargetBandwidthMbps)
 		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)", VideoCodec)
@@ -196,23 +181,18 @@ func InitConfig() {
 		printFlag(os.Stderr, "agent-address", "TCP address for remote agent streaming (e.g. host.docker.internal:12345)", AgentAddress)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
 		printFlag(os.Stderr, "wallpaper", "Path to wallpaper image", Wallpaper)
-		printFlag(os.Stderr, "webrtc-public-ip", "Public IP for WebRTC", WebRTCPublicIP)
-		printFlag(os.Stderr, "webrtc-interfaces", "Comma-separated allowed network interfaces for WebRTC", WebRTCInterfaces)
-		printFlag(os.Stderr, "webrtc-exclude-interfaces", "Comma-separated excluded network interfaces for WebRTC", WebRTCExcludeInterfaces)
 		printFlag(os.Stderr, "enable-audio", "Enable audio streaming", EnableAudio)
 		printFlag(os.Stderr, "audio-bitrate", "Audio bitrate (e.g. 64k, 128k)", AudioBitrate)
 		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
 		printFlag(os.Stderr, "res", "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.", InitialRes)
 
 		fmt.Fprintf(os.Stderr, "\nLatency & Smoothness Flags:\n")
-		printFlag(os.Stderr, "webrtc-buffer", "WebRTC frame channel size (default 30)", WebRTCBufferSize)
 		printFlag(os.Stderr, "activity-hz", "Input heartbeat frequency in Hz (default 30)", ActivityPulseHz)
 		printFlag(os.Stderr, "activity-timeout", "Inactivity timeout in ms before stopping heartbeat (default 1500)", ActivityTimeout)
 		printFlag(os.Stderr, "vbr", "Enable variable bitrate (encoder rate control) (default false)", defaultVBR)
 		printFlag(os.Stderr, "vbr-threshold", "VBR threshold for static content (default 100)", defaultVBRThreshold)
 		printFlag(os.Stderr, "damage-tracking", "Enable Wayland damage tracking (frame skipping) (default false)", defaultDamageTracking)
 		printFlag(os.Stderr, "nvenc-latency", "Enable ultra-low latency NVENC optimizations (default true)", NVENCLatencyMode)
-		printFlag(os.Stderr, "webrtc-low-latency", "Enable ultra-low latency WebRTC transport optimizations (ICE Lite, disabled replay protection) (default false)", WebRTCLowLatency)
 
 		fmt.Fprintf(os.Stderr, "\nTesting Flags:\n")
 		printFlag(os.Stderr, "test-pattern", "Run with test pattern instead of Wayland session", TestPattern)
@@ -221,7 +201,7 @@ func InitConfig() {
 	}
 
 	// Define flags
-	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP and WebRTC UDP")
+	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP server")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
 	flag.IntVar(&TargetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
 	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h264_vaapi, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)")
@@ -235,19 +215,14 @@ func InitConfig() {
 	flag.BoolVar(&UseDebugInput, "use-debug-input", defaultUseDebugInput, "Enable Input debugging")
 	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of Wayland session")
 	flag.StringVar(&Wallpaper, "wallpaper", defaultWallpaper, "Path to wallpaper image")
-	flag.StringVar(&WebRTCPublicIP, "webrtc-public-ip", defaultWebRTCPublicIP, "Public IP for WebRTC")
-	flag.StringVar(&WebRTCInterfaces, "webrtc-interfaces", defaultWebRTCInterfaces, "Comma-separated allowed network interfaces for WebRTC")
-	flag.StringVar(&WebRTCExcludeInterfaces, "webrtc-exclude-interfaces", defaultWebRTCExcludeInterfaces, "Comma-separated excluded network interfaces for WebRTC")
 	EnableAudio = true
 	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
 	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
 	flag.IntVar(&InitialRes, "res", defaultInitialRes, "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.")
-	flag.IntVar(&WebRTCBufferSize, "webrtc-buffer", defaultWebRTCBufferSize, "WebRTC frame channel size (default 30)")
 	flag.IntVar(&ActivityPulseHz, "activity-hz", defaultActivityPulseHz, "Input heartbeat frequency in Hz (default 30)")
 	flag.IntVar(&ActivityTimeout, "activity-timeout", defaultActivityTimeout, "Inactivity timeout in ms before stopping heartbeat (default 1500)")
 	flag.BoolVar(&NVENCLatencyMode, "nvenc-latency", defaultNVENCLatencyMode, "Enable ultra-low latency NVENC optimizations (default true)")
-	flag.BoolVar(&WebRTCLowLatency, "webrtc-low-latency", defaultWebRTCLowLatency, "Enable ultra-low latency WebRTC transport optimizations (default false)")
 	flag.IntVar(&SettleTime, "settle-time", defaultSettleTime, "Hybrid sharpness settle time (ms)")
 	flag.IntVar(&TileSize, "tile-size", defaultTileSize, "Hybrid sharpness tile size (px)")
 	flag.BoolVar(&TargetVBR, "vbr", defaultVBR, "Enable variable bitrate (encoder rate control)")
@@ -255,8 +230,6 @@ func InitConfig() {
 	flag.BoolVar(&TargetDamageTracking, "damage-tracking", defaultDamageTracking, "Enable Wayland damage tracking (frame skipping)")
 	flag.IntVar(&TargetCpuEffort, "cpu-effort", defaultCpuEffort, "FFmpeg CPU effort/used (default 6)")
 
-	// In Go, package flag.Parse can only be called once, typically in main.
-	// But both linux.Run and macOS main can call InitConfig.
 	if flag.Parsed() {
 		return
 	}

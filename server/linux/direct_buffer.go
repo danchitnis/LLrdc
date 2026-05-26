@@ -11,12 +11,6 @@ import (
 	"sync"
 )
 
-const (
-	CaptureModeCompat = "compat"
-	CaptureModeDirect = "direct"
-	CaptureModeAgent  = "agent"
-)
-
 type directBufferStatus struct {
 	Requested            bool   `json:"requested"`
 	Supported            bool   `json:"supported"`

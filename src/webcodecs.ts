@@ -13,14 +13,7 @@ export class WebCodecsManager {
     private isInitializing = false;
     private decoderInitTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    private getIsWebRtcActive: () => boolean;
-    private getNetworkLatency: () => number;
-    private getWsBandwidthMbps: () => number;
-
-    constructor(getIsWebRtcActive: () => boolean, getNetworkLatency: () => number, getWsBandwidthMbps: () => number) {
-        this.getIsWebRtcActive = getIsWebRtcActive;
-        this.getNetworkLatency = getNetworkLatency;
-        this.getWsBandwidthMbps = getWsBandwidthMbps;
+    constructor() {
         this.initDecoder();
     }
 
@@ -45,6 +38,7 @@ export class WebCodecsManager {
             return;
         }
         this.isInitializing = true;
+        window.hasReceivedKeyFrame = false; // Reset keyframe tracking on init
 
         if (this.decoderInitTimeout !== null) {
             clearTimeout(this.decoderInitTimeout);

@@ -13,7 +13,6 @@ import (
 
 var (
 	targetMode             = "bandwidth" // "bandwidth" or "quality"
-	TargetBandwidthMbps    = 5           // Initial default: 5 Mbps
 	targetQuality          = 70          // 10-100
 	targetVBR              = false       // Default VBR to false
 	targetVBRThreshold     = 0           // Default VBR threshold to 0
@@ -83,8 +82,6 @@ func SetChroma(chroma string) {
 	SyncConfigToCommon()
 	log.Printf("Received chroma config: %s", chroma)
 
-	InitWebRTCTrack()
-
 	KillFFmpegWithTimestamp()
 }
 
@@ -114,35 +111,9 @@ func SetVideoCodec(codec string) {
 
 	VideoCodec = codec
 	SyncConfigToCommon()
-	log.Printf("Target video codec changed to %s, reinitializing WebRTC track and restarting ffmpeg...", codec)
-
-	InitWebRTCTrack() // Re-create track
+	log.Printf("Target video codec changed to %s, restarting ffmpeg...", codec)
 
 	KillFFmpegWithTimestamp()
-}
-
-func ResolveRequestedVideoCodec(codec string) string {
-	if UseIntel {
-		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv" {
-			if H265QSVAvailable {
-				return "h265_qsv"
-			}
-			return "h265_vaapi"
-		}
-		if codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv" {
-			if QSVAvailable {
-				return "h264_qsv"
-			}
-			return "h264_vaapi"
-		}
-		if codec == "av1" || codec == "av1_qsv" || codec == "av1_vaapi" {
-			if AV1QSVAvailable {
-				return "av1_qsv"
-			}
-			return "av1_vaapi"
-		}
-	}
-	return codec
 }
 
 func SetKeyframeInterval(interval int) {
@@ -485,9 +456,6 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				}
 
 				bufferSize := fmt.Sprintf("%d", FPS)
-				if WebRTCLowLatency {
-					bufferSize = "5"
-				}
 
 				if !targetDamageTracking {
 					args = append(args, "-D") // Disable damage tracking

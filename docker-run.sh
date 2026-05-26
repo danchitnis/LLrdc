@@ -35,16 +35,11 @@ USE_HOST_NET="false"
 USE_DRY_RUN="false"
 USE_DEBUG_FFMPEG="false"
 USE_DEBUG_INPUT="false"
-WEBRTC_INTERFACES_ENV=""
-WEBRTC_INTERFACES="${WEBRTC_INTERFACES:-}"
-WEBRTC_EXCLUDE_INTERFACES="${WEBRTC_EXCLUDE_INTERFACES:-}"
 SERVER_HDPI="${HDPI:-0}"
 HOST_RENDER_GID="${RENDER_GID:-}"
 HOST_VIDEO_GID="${VIDEO_GID:-}"
 INTEL_RENDER_NODE="${INTEL_RENDER_NODE:-/dev/dri/renderD128}"
 
-WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}"
-WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}"
 ACTIVITY_PULSE_HZ="${ACTIVITY_PULSE_HZ:-}"
 ACTIVITY_TIMEOUT="${ACTIVITY_TIMEOUT:-}"
 NVENC_LATENCY_MODE="${NVENC_LATENCY_MODE:-}"
@@ -108,19 +103,6 @@ while [[ $# -gt 0 ]]; do
       CHROMA="444"
       shift
       ;;
-    --webrtc-buffer)
-      if [ -n "${2:-}" ]; then
-        WEBRTC_BUFFER_SIZE="$2"
-        shift 2
-      else
-        echo "Error: --webrtc-buffer requires an argument."
-        exit 1
-      fi
-      ;;
-    --webrtc-low-latency)
-      WEBRTC_LOW_LATENCY="true"
-      shift
-      ;;
     --activity-hz)
       if [ -n "${2:-}" ]; then
         ACTIVITY_PULSE_HZ="$2"
@@ -182,25 +164,6 @@ while [[ $# -gt 0 ]]; do
       USE_DEBUG_FFMPEG="true"
       USE_DEBUG_INPUT="true"
       shift
-      ;;
-    --iface|-i)
-      if [ -n "${2:-}" ]; then
-        WEBRTC_INTERFACES="$2"
-        WEBRTC_INTERFACES_ENV="$2"
-        shift 2
-      else
-        echo "Error: --iface requires an argument."
-        exit 1
-      fi
-      ;;
-    --exclude-iface|-x)
-      if [ -n "${2:-}" ]; then
-        WEBRTC_EXCLUDE_INTERFACES="$2"
-        shift 2
-      else
-        echo "Error: --exclude-iface requires an argument."
-        exit 1
-      fi
       ;;
     --name)
       if [ -n "${2:-}" ]; then
@@ -365,8 +328,12 @@ if [ "$USE_HOST_NET" = "true" ]; then
   NETWORK_ARGS="--network host"
   echo "  Net   : Host (--network host)"
 else
-  NETWORK_ARGS="--publish ${HOST_PORT}:${CONTAINER_PORT}/tcp --publish ${HOST_PORT}:${CONTAINER_PORT}/udp"
-  echo "  Port  : ${HOST_PORT} → ${CONTAINER_PORT} (TCP/UDP)"
+  WT_HOST_PORT=$((HOST_PORT + 10))
+  WT_CONTAINER_PORT=$((CONTAINER_PORT + 10))
+  # WebTransport port must be published for both TCP (for initial HTTPS handshake) and UDP (for HTTP/3)
+  NETWORK_ARGS="--publish ${HOST_PORT}:${CONTAINER_PORT}/tcp --publish ${WT_HOST_PORT}:${WT_CONTAINER_PORT}/tcp --publish ${WT_HOST_PORT}:${WT_CONTAINER_PORT}/udp"
+  echo "  Port  : ${HOST_PORT} → ${CONTAINER_PORT} (TCP)"
+  echo "  WebTransport: ${WT_HOST_PORT} → ${WT_CONTAINER_PORT} (TCP/UDP)"
 fi
 
 echo "  CPUs  : ${NUM_CPUS} (cores ${CPU_LIST})"
@@ -388,20 +355,6 @@ if [ "$USE_DETACHED" = "true" ]; then
   DETACHED_ARGS="--detach"
 fi
 
-# Detect IP for WebRTC only when explicitly provided or when an interface was pinned.
-# Otherwise the server derives the advertised IP from the incoming request host.
-if [ -z "${WEBRTC_PUBLIC_IP:-}" ] && [ -n "${WEBRTC_INTERFACES:-}" ]; then
-  WEBRTC_PUBLIC_IP=$(ip -4 addr show "${WEBRTC_INTERFACES%%,*}" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1 || true)
-fi
-
-if [ -n "${WEBRTC_PUBLIC_IP:-}" ]; then
-  echo "  WebRTC IP : ${WEBRTC_PUBLIC_IP}"
-else
-  echo "  WebRTC IP : request-host derived"
-fi
-if [ -n "${WEBRTC_INTERFACES:-}" ]; then
-  echo "  WebRTC Iface : ${WEBRTC_INTERFACES} (host IP selection only in Docker bridge mode)"
-fi
 UINPUT_ARGS=""
 if [ -e /dev/uinput ]; then
   UINPUT_ARGS="--device /dev/uinput:/dev/uinput"
@@ -433,11 +386,6 @@ DOCKER_RUN_CMD+=(
   --env "LIBVA_DRIVER_NAME=iHD"
   --env "CAPTURE_MODE=${SERVER_CAPTURE_MODE}"
   --env "TEST_PATTERN=${TEST_PATTERN:-}"
-  --env "WEBRTC_PUBLIC_IP=${WEBRTC_PUBLIC_IP:-}"
-  --env "WEBRTC_INTERFACES=${WEBRTC_INTERFACES_ENV}"
-  --env "WEBRTC_EXCLUDE_INTERFACES=${WEBRTC_EXCLUDE_INTERFACES:-}"
-  --env "WEBRTC_BUFFER_SIZE=${WEBRTC_BUFFER_SIZE:-}"
-  --env "WEBRTC_LOW_LATENCY=${WEBRTC_LOW_LATENCY:-}"
   --env "ACTIVITY_PULSE_HZ=${ACTIVITY_PULSE_HZ:-}"
   --env "ACTIVITY_TIMEOUT=${ACTIVITY_TIMEOUT:-}"
   --env "CPU_EFFORT=${CPU_EFFORT:-}"

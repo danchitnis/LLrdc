@@ -4,6 +4,9 @@ import { waitForServerReady } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-test';
 const PORT = '8081';
+const WT_PORT = '8091';
+
+test.use({ ignoreHTTPSErrors: true });
 
 test.describe('Minimal Wayland E2E', () => {
   test.beforeAll(async () => {
@@ -33,16 +36,17 @@ test.describe('Minimal Wayland E2E', () => {
     }
   });
 
-  test('should establish WebRTC and handle mouse click', async ({ page }) => {
+  test('should establish WebTransport via HTTPS and handle mouse click', async ({ page }) => {
     page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
     await page.setViewportSize({ width: 1280, height: 819 });
-    // 1. Load the page
-    await page.goto(`http://localhost:${PORT}`);
     
-    // 2. Wait for WebRTC connection
-    // The status element shows "[WebRTC ...]" when active
+    // 1. Load the page via the HTTPS port (TCP TLS)
+    console.log(`Navigating to https://localhost:${WT_PORT}...`);
+    await page.goto(`https://localhost:${WT_PORT}`);
+    
+    // 2. Wait for WebTransport connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebRTC/i, { timeout: 20000 });
+    await expect(statusEl).toHaveText(/\[WebTransport/i, { timeout: 20000 });
 
     console.log('Switching to H.264 to verify it does not crash...');
     await page.click('#config-btn');
@@ -60,27 +64,26 @@ test.describe('Minimal Wayland E2E', () => {
         timeout: 20000,
     }).toContain('Target video codec changed to h264');
 
-    await expect(statusEl).toHaveText(/\[WebRTC h264\]/i, { timeout: 30000 });
+    // After codec change, server restarts. Client should reconnect.
+    await expect(statusEl).toHaveText(/\[WebTransport/i, { timeout: 30000 });
 
     // Close config dropdown
     await page.click('#config-btn');
     await expect(page.locator('#config-dropdown')).not.toBeVisible();
 
     // 3. Simulate mouse click
-    // Our Wayland implementation has an xfce4-terminal running in the background.
-    // Clicking on it might do something, or at least shouldn't crash.
     const displayContainer = page.locator('#display-container');
     await displayContainer.click({ position: { x: 100, y: 100 } });
     
     // Move the mouse and verify video frames are arriving (FPS > 0)
     await page.mouse.move(400, 300);
-    await page.waitForTimeout(5000); // Wait for pollStats to get samples after codec change and connection reset
+    await page.waitForTimeout(5000); 
 
     await expect(async () => {
         await page.mouse.move(200 + Math.random() * 400, 150 + Math.random() * 300);
         await page.waitForTimeout(200);
         const status = await statusEl.textContent() || '';
-        expect(status).toMatch(/\[WebRTC/i);
+        expect(status).toMatch(/\[WebTransport/i);
         const fpsMatch = status.match(/FPS: (\d+)/);
         const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : 0;
         expect(fps).toBeGreaterThan(0);
@@ -88,7 +91,5 @@ test.describe('Minimal Wayland E2E', () => {
     
     const finalStatus = await statusEl.textContent();
     console.log(`Final Status: ${finalStatus}`);
-    
-    // Verification complete
   });
 });

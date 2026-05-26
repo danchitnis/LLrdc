@@ -3,8 +3,6 @@ package linux
 import (
 	"time"
 
-	"github.com/pion/webrtc/v4"
-
 	"github.com/danchitnis/llrdc/server/common"
 )
 
@@ -49,18 +47,6 @@ func benchmarkClockNowMs() int64 {
 	return common.BenchmarkClockNowMs()
 }
 
-func InitWebRTC() {
-	common.InitWebRTC()
-}
-
-func InitWebRTCTrack() {
-	common.InitWebRTCTrack()
-}
-
-func WriteWebRTCFrame(frame []byte, streamID uint32, captureTime time.Time, codec string, trace *common.LatencyProbeSendTrace) {
-	common.WriteWebRTCFrame(frame, streamID, captureTime, codec, trace)
-}
-
 func setLastInputReceivedAt(t int64) {
 	common.SetLastInputReceivedAt(t)
 }
@@ -80,12 +66,3 @@ func startLatencyProbeEncodedFrame(frameAtMs int64, containerTimestamp uint64) *
 func noteLatencyProbeFrameDispatch(trace *common.LatencyProbeSendTrace, dispatchAtMs int64) {
 	common.NoteLatencyProbeFrameDispatch(trace, dispatchAtMs)
 }
-
-func HandleWebRTCOffer(msg map[string]interface{}, requestHost string, pc **webrtc.PeerConnection, writeJSON func(interface{}) error) {
-	common.HandleWebRTCOffer(msg, requestHost, pc, writeJSON)
-}
-
-func HandleWebRTCICE(msg map[string]interface{}, pc *webrtc.PeerConnection) {
-	common.HandleWebRTCICE(msg, pc)
-}
-

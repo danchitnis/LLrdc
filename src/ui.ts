@@ -2,7 +2,6 @@ export const statusEl = document.getElementById('status') as HTMLDivElement;
 export const displayContainerEl = document.getElementById('display-container') as HTMLDivElement;
 export const displayEl = document.getElementById('display') as HTMLCanvasElement;
 export const sharpnessLayerEl = document.getElementById('sharpness-layer') as HTMLCanvasElement;
-export const videoEl = document.getElementById('webrtc-video') as HTMLVideoElement;
 export const overlayEl = document.getElementById('input-overlay') as HTMLDivElement;
 export const clipboardArea = document.getElementById('clipboard-area') as HTMLTextAreaElement;
 export const bandwidthSelect = document.getElementById('bandwidth-select') as HTMLSelectElement;
@@ -32,10 +31,7 @@ export const maxResSelect = document.getElementById('max-res-select') as HTMLSel
 export const cpuEffortSlider = document.getElementById('cpu-effort-slider') as HTMLInputElement;
 export const cpuEffortValue = document.getElementById('cpu-effort-value') as HTMLSpanElement;
 export const cpuThreadsSelect = document.getElementById('cpu-threads-select') as HTMLSelectElement;
-export const webrtcBufferSlider = document.getElementById('webrtc-buffer-slider') as HTMLInputElement;
-export const webrtcBufferValue = document.getElementById('webrtc-buffer-value') as HTMLSpanElement;
 export const nvencLatencyCheckbox = document.getElementById('nvenc-latency-checkbox') as HTMLInputElement;
-export const webrtcLowLatencyCheckbox = document.getElementById('webrtc-low-latency-checkbox') as HTMLInputElement;
 
 export const desktopMouseCheckbox = document.getElementById('desktop-mouse-checkbox') as HTMLInputElement;
 export const activityHzSlider = document.getElementById('activity-hz-slider') as HTMLInputElement;
@@ -49,6 +45,8 @@ export const clientGpuCheckbox = document.getElementById('client-gpu-checkbox') 
 export const clipboardCheckbox = document.getElementById('clipboard-checkbox') as HTMLInputElement;
 export const enableAudioCheckbox = document.getElementById('enable-audio-checkbox') as HTMLInputElement;
 export const audioBitrateSelect = document.getElementById('audio-bitrate-select') as HTMLSelectElement;
+
+export const downloadCertBtn = document.getElementById('download-cert-btn') as HTMLButtonElement;
 
 export const ctx = displayEl.getContext('2d', { alpha: false, desynchronized: true });
 if (ctx) {
@@ -88,26 +86,38 @@ export function setAcceleratorMode(mode: 'cpu' | 'intel' | 'nvidia') {
     acceleratorMode = mode;
 }
 
-export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMonitor: number, networkLatency: number, bandwidthMbps: number = 0, width: number = 0, height: number = 0, codec: string = 'vp8') {
+export function updateStatusText(
+    _unused_isWebRtcActive: boolean, 
+    fps: number, 
+    latencyMonitor: number, 
+    _unused_networkLatency: number, 
+    _unused_bandwidthMbps: number = 0, 
+    width: number = 0, 
+    height: number = 0, 
+    codec: string = 'vp8',
+    isWebTransportActive: boolean = false,
+    webtransportFps: number = 0
+) {
     if (!statusEl) return;
     
     // Clean up codec name for display and check for GPU
     const isGpu = codec.includes('nvenc') || codec.includes('qsv');
     const displayCodec = codec.replace('_nvenc', '').replace('_qsv', '');
     const gpuTag = isGpu ? ' 🚀 GPU' : '';
-    const transport = isWebRtcActive ? 'WebRTC' : 'WebCodecs';
+    
+    const transport = isWebTransportActive ? 'WebTransport' : 'WebCodecs';
     
     // Change color based on latency
     let color = '#4f4'; // Green
-    if (latencyMonitor > 150 || networkLatency > 100) {
+    if (latencyMonitor > 150) {
         color = '#fa4'; // Orange
     }
-    if (latencyMonitor > 300 || networkLatency > 200) {
+    if (latencyMonitor > 300) {
         color = '#f44'; // Red
     }
     
     if (keyframeIntervalSelect) {
-        keyframeIntervalSelect.disabled = !isWebRtcActive;
+        keyframeIntervalSelect.disabled = !isWebTransportActive;
     }
     
     statusEl.style.color = color;
@@ -115,7 +125,9 @@ export function updateStatusText(isWebRtcActive: boolean, fps: number, latencyMo
     
     // Condensed labels
     const displayRes = (width > 0 && height > 0) ? `${width}x${height} | ` : '';
-    let statsText = `[${transport} ${displayCodec}${gpuTag}] [${displayCodec}${gpuTag}] ${displayRes}FPS: ${fps} | Lat: ${Math.round(latencyMonitor)}ms | Ping: ${Math.round(networkLatency)}ms | BW: ${bandwidthMbps.toFixed(1)}Mb | CPU: ${Math.round(serverFfmpegCpu)}%`;
+    const displayFps = isWebTransportActive ? webtransportFps : fps;
+    
+    let statsText = `[${transport} ${displayCodec}${gpuTag}] ${displayRes}FPS: ${displayFps} | Lat: ${Math.round(latencyMonitor)}ms | CPU: ${Math.round(serverFfmpegCpu)}%`;
     
     if (acceleratorMode === 'intel') {
         statsText += ` | Enc: ${Math.round(serverIntelGpuUtil)}%`;

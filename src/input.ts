@@ -1,4 +1,4 @@
-import { overlayEl, displayContainerEl, displayEl, videoEl } from './ui';
+import { overlayEl, displayContainerEl, displayEl } from './ui';
 
 export function setupInput(sendMsg: (data: string) => void) {
     if (!overlayEl) return;
@@ -18,17 +18,9 @@ export function setupInput(sendMsg: (data: string) => void) {
     };
 
     const getNormalizedPos = (e: MouseEvent): { x: number, y: number } | null => {
-        // Determine the active display element (canvas for WebCodecs, video for WebRTC)
-        let activeEl: HTMLElement = displayEl;
-        let internalW = displayEl.width;
-        let internalH = displayEl.height;
-
-        // If WebRTC mode is active, use the video element
-        if (videoEl && videoEl.style.display !== 'none' && videoEl.videoWidth > 0) {
-            activeEl = videoEl;
-            internalW = videoEl.videoWidth;
-            internalH = videoEl.videoHeight;
-        }
+        const activeEl = displayEl;
+        const internalW = displayEl.width;
+        const internalH = displayEl.height;
 
         if (!activeEl) return null;
         const rect = activeEl.getBoundingClientRect();

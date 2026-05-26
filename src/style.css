@@ -59,7 +59,7 @@ body {
   position: relative !important;
 }
 
-#display, #sharpness-layer, #webrtc-video {
+#display, #sharpness-layer {
   display: block !important;
   position: absolute !important;
   top: 0 !important;
@@ -74,7 +74,6 @@ body {
 
 #display { z-index: 1 !important; }
 #sharpness-layer { z-index: 2 !important; background-color: transparent !important; }
-#webrtc-video { z-index: 0 !important; opacity: 0.001 !important; }
 
 #input-overlay {
   position: absolute !important;

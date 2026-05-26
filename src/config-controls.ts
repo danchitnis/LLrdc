@@ -30,9 +30,6 @@ import {
     vbrThresholdSlider,
     vbrThresholdValue,
     videoCodecSelect,
-    webrtcBufferSlider,
-    webrtcBufferValue,
-    webrtcLowLatencyCheckbox,
     activityHzSlider,
     activityHzValue,
     activityTimeoutSlider,
@@ -81,7 +78,6 @@ export function wireConfigControls(handlers: ConfigControlHandlers) {
     wireSelect(framerateSelect, sendConfig);
     wireSelect(cpuThreadsSelect, sendConfig);
     if (nvencLatencyCheckbox) nvencLatencyCheckbox.addEventListener('change', sendConfig);
-    if (webrtcLowLatencyCheckbox) webrtcLowLatencyCheckbox.addEventListener('change', sendConfig);
     if (desktopMouseCheckbox) desktopMouseCheckbox.addEventListener('change', sendConfig);
     if (enableAudioCheckbox) enableAudioCheckbox.addEventListener('change', sendConfig);
     wireSelect(audioBitrateSelect, sendConfig);
@@ -106,7 +102,6 @@ export function wireConfigControls(handlers: ConfigControlHandlers) {
     wireSlider(tileSizeSlider, tileSizeValue, sendConfig);
     wireSlider(qualitySlider, qualityValue, sendConfig);
     wireSlider(cpuEffortSlider, cpuEffortValue, sendConfig);
-    wireSlider(webrtcBufferSlider, webrtcBufferValue, sendConfig);
     wireSlider(activityHzSlider, activityHzValue, sendConfig);
     wireSlider(activityTimeoutSlider, activityTimeoutValue, sendConfig);
 

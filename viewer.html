@@ -22,6 +22,7 @@
                     <button class="config-tab-btn" data-tab="tab-performance">Performance</button>
                     <button class="config-tab-btn" data-tab="tab-input">Input</button>
                     <button class="config-tab-btn" data-tab="tab-audio">Audio</button>
+                    <button class="config-tab-btn" data-tab="tab-security">Security</button>
                 </div>
 
                 <!-- TAB 1: STREAM SETTINGS -->
@@ -152,16 +153,8 @@
                             <option value="16">16</option>
                         </select>
                     </div>
-                    <div class="config-group">
-                        <label for="webrtc-buffer-slider" title="Frames to buffer before dropping (Lower = less lag, higher = smoother)">WebRTC Buffer</label>
-                        <input type="range" id="webrtc-buffer-slider" min="1" max="100" value="30">
-                        <span id="webrtc-buffer-value">30</span>
-                    </div>
                     <div class="config-group nvidia-only" style="display: none !important;">
                         <label><input type="checkbox" id="nvenc-latency-checkbox" checked> Enable NVENC ULL (Ultra Low Latency)</label>
-                    </div>
-                    <div class="config-group">
-                        <label title="Enable ultra-low latency WebRTC transport (ICE Lite, disabled replay protection). Recommended for low resolutions only."><input type="checkbox" id="webrtc-low-latency-checkbox"> Enable WebRTC Transport ULL</label>
                     </div>
                 </div>
 
@@ -201,6 +194,25 @@
                         </select>
                     </div>
                 </div>
+
+                <!-- TAB 6: SECURITY -->
+                <div id="tab-security" class="config-tab-content" style="display: none !important;">
+                    <div class="config-group" style="flex-direction: column; align-items: flex-start;">
+                        <p style="font-size: 0.8rem; color: #ccc; margin-bottom: 10px;">
+                            Safari and some other browsers require the self-signed certificate to be trusted at the OS level for WebTransport to work on non-localhost IPs.
+                        </p>
+                        <button id="download-cert-btn" style="width: 100%; padding: 10px; cursor: pointer; background: #555; color: white; border: 1px solid #777; border-radius: 8px; font-size: 0.85rem;">
+                            Download Certificate (.crt)
+                        </button>
+                        <p style="font-size: 0.75rem; color: #aaa; margin-top: 10px;">
+                            <b>Instructions:</b><br>
+                            1. Download and open the certificate.<br>
+                            2. Add it to <b>Keychain Access</b> (System) or <b>Windows Certificate Store</b> (Trusted Root).<br>
+                            3. Set trust level to <b>"Always Trust"</b>.<br>
+                            4. Refresh the page.
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
         </div>
@@ -211,7 +223,6 @@
         <!-- Replaced video with canvas for explicit painting control -->
         <canvas id="display" width="1280" height="720"></canvas>
         <canvas id="sharpness-layer" width="1280" height="720"></canvas>
-        <video id="webrtc-video" autoplay playsinline muted></video>
         <div id="input-overlay"></div>
         <!-- Hidden textarea for clipboard synchronization -->
         <textarea id="clipboard-area" style="position: absolute; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0.01;"></textarea>
