@@ -555,5 +555,10 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			resp := map[string]interface{}{"type": "pong", "timestamp": ts}
 			writeJSON(resp)
 		}
+	case "force_keyframe":
+		log.Printf("Received force_keyframe request from client")
+		if common.OnForceKeyframe != nil {
+			common.OnForceKeyframe()
+		}
 	}
 }

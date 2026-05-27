@@ -26,6 +26,8 @@ export class BrowserClientSession {
     private masterPollInterval: ReturnType<typeof setInterval>;
     private isSecureContext = (globalThis as any).isSecureContext;
     private isBootstrapping = false;
+    private lastReceivedKeyFrameTime = 0;
+    private lastKeyframeRequestTime = 0;
 
     constructor() {
         this.webcodecs = new WebCodecsManager();
@@ -201,9 +203,18 @@ export class BrowserClientSession {
         const isKey = detectKeyFrame(this.webcodecs.videoCodec, packet.chunkData);
         if (isKey) {
             (globalThis as any).hasReceivedKeyFrame = true;
+            this.lastReceivedKeyFrameTime = now;
         }
 
-        if (!(globalThis as any).hasReceivedKeyFrame) return;
+        if (!(globalThis as any).hasReceivedKeyFrame) {
+            // If we've been waiting for a keyframe for more than 2 seconds, ask the server for one
+            if (now - this.lastKeyframeRequestTime > 2000) {
+                log('[Transport] Waiting for keyframe... requesting one from server.');
+                this.lastKeyframeRequestTime = now;
+                this.sendInput(JSON.stringify({ type: 'force_keyframe' }));
+            }
+            return;
+        }
 
         this.webcodecs.decodeChunk(isKey, packet.timestampMs, packet.chunkData);
     }

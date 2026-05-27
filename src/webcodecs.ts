@@ -46,7 +46,6 @@ export class WebCodecsManager {
             return;
         }
         this.isInitializing = true;
-        window.hasReceivedKeyFrame = false; // Reset keyframe tracking on init
 
         if (this.decoderInitTimeout !== null) {
             clearTimeout(this.decoderInitTimeout);
@@ -121,7 +120,7 @@ export class WebCodecsManager {
         if (!this.decoder) return;
         try {
             this.decoder.configure(config);
-            window.hasReceivedKeyFrame = false;
+            window.hasReceivedKeyFrame = false; // Reset only after successful configuration
             log(`Decoder configured (${this.videoCodec}: ${config.codec}, chroma: ${this.chroma}). Waiting for Keyframe...`);
         } catch (e: unknown) {
             log(`Configuration failed: ${(e as Error).message}`);
@@ -202,8 +201,10 @@ export class WebCodecsManager {
                     this.initDecoder();
                 }
             }
-        } else if (this.decoder && (this.decoder.state === 'closed' || this.decoder.state === 'unconfigured')) {
+        } else {
+            // Decoder not ready. If not currently initializing, start it.
             if (!this.isInitializing && this.decoderInitTimeout === null) {
+                console.warn('decodeChunk called but decoder not ready, starting initialization...');
                 this.initDecoder();
             }
         }
