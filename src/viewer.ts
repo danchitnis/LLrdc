@@ -45,10 +45,13 @@ function buildConfigMessage(): ConfigMessage {
     const bandwidthStr = bandwidthSelect ? bandwidthSelect.value : '5';
     const mode = Array.from(targetTypeRadios).find(r => r.checked)?.value || 'bandwidth';
 
+    const videoCodec = videoCodecSelect ? videoCodecSelect.value : 'vp8';
+    const chroma = (videoCodec.includes('444') || videoCodec.includes('-444')) ? '444' : '420';
+
     const config: ConfigMessage = {
         type: 'config',
-        videoCodec: videoCodecSelect ? videoCodecSelect.value : 'vp8',
-        chroma: '420', // Default
+        videoCodec,
+        chroma,
         framerate: framerateSelect ? parseInt(framerateSelect.value, 10) : 30,
         vbr: vbrCheckbox ? vbrCheckbox.checked : false,
         vbr_threshold: vbrThresholdSlider ? parseInt(vbrThresholdSlider.value, 10) : 0,
@@ -104,7 +107,40 @@ function sendConfigSync() {
 session.events.on('serverMessage', (msg: any) => {
     if (msg.type === 'config') {
         if (msg.videoCodec && videoCodecSelect) {
-            videoCodecSelect.value = normalizeCodecFamily(msg.videoCodec);
+            const serverCodec = msg.videoCodec as string;
+            const chroma = msg.chroma as string;
+            let targetValue = serverCodec;
+
+            const options = Array.from(videoCodecSelect.options);
+
+            // Special handling for 4:4:4 profiles to match UI values
+            if (chroma === '444' && !targetValue.includes('444')) {
+                if (targetValue.startsWith('h264')) {
+                    if (targetValue.includes('_nvenc')) targetValue = 'h264_nvenc-444';
+                    else targetValue = 'h264-444';
+                } else if (targetValue.startsWith('h265') || targetValue.startsWith('hevc')) {
+                    if (targetValue.includes('_nvenc')) targetValue = 'h265_nvenc-444';
+                    else if (targetValue.includes('_qsv') || targetValue.includes('_vaapi')) targetValue = 'h265_qsv-444';
+                    else targetValue = 'h265-444';
+                }
+            }
+
+            // Standard mapping for _vaapi to _qsv for 4:2:0 profiles
+            if (!options.some(opt => opt.value === targetValue)) {
+                if (targetValue.includes('_vaapi')) {
+                    const qsvMapped = targetValue.replace('_vaapi', '_qsv');
+                    if (options.some(opt => opt.value === qsvMapped)) {
+                        targetValue = qsvMapped;
+                    }
+                }
+            }
+
+            // Fallback to normalized family if still no match, otherwise use targetValue
+            if (!options.some(opt => opt.value === targetValue)) {
+                videoCodecSelect.value = normalizeCodecFamily(serverCodec);
+            } else {
+                videoCodecSelect.value = targetValue;
+            }
         }
         if (msg.bandwidth !== undefined && bandwidthSelect) {
             bandwidthSelect.value = msg.bandwidth.toString();
@@ -210,14 +246,20 @@ wireConfigControls({
     setPendingMaxRes: (val) => { pendingMaxRes = val; }
 });
 
+let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 triggerResizeUpdate = () => {
     if (!displayContainerEl) return;
-    const dpr = globalThis.devicePixelRatio || 1;
-    const width = Math.round(displayContainerEl.clientWidth * dpr);
-    const height = Math.round(displayContainerEl.clientHeight * dpr);
-    if (width > 0 && height > 0) {
-        session.sendResize(width, height, dpr);
-    }
+    if (resizeDebounceTimer !== null) clearTimeout(resizeDebounceTimer);
+    
+    resizeDebounceTimer = setTimeout(() => {
+        resizeDebounceTimer = null;
+        const dpr = globalThis.devicePixelRatio || 1;
+        const width = Math.round(displayContainerEl.clientWidth * dpr);
+        const height = Math.round(displayContainerEl.clientHeight * dpr);
+        if (width > 0 && height > 0) {
+            session.sendResize(width, height, dpr);
+        }
+    }, 250); // 250ms debounce
 };
 
 (globalThis as any).addEventListener('resize', () => {

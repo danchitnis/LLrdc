@@ -86,15 +86,15 @@ func SetChroma(chroma string) {
 }
 
 func SetVideoCodec(codec string) {
-	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h264_qsv" && codec != "h264_vaapi" && codec != "h265" && codec != "h265_nvenc" && codec != "h265_qsv" && codec != "h265_vaapi" && codec != "hevc_vaapi" && codec != "av1" && codec != "av1_nvenc" && codec != "av1_qsv" {
-		log.Printf("Invalid video codec: %s", codec)
-		return
-	}
-
 	requestedCodec := codec
 	codec = ResolveRequestedVideoCodec(codec)
 	if requestedCodec != codec {
-		log.Printf("Mapping requested codec %s to %s for Intel acceleration", requestedCodec, codec)
+		log.Printf("Mapping requested codec %s to %s", requestedCodec, codec)
+	}
+
+	if codec != "vp8" && codec != "h264" && codec != "h264_nvenc" && codec != "h264_qsv" && codec != "h264_vaapi" && codec != "h265" && codec != "h265_nvenc" && codec != "hevc_nvenc" && codec != "h265_qsv" && codec != "h265_vaapi" && codec != "hevc_vaapi" && codec != "av1" && codec != "av1_nvenc" && codec != "av1_qsv" {
+		log.Printf("Invalid video codec resolved: %s", codec)
+		return
 	}
 
 	if CaptureMode == CaptureModeDirect && !isHardwareCodec(codec) {
@@ -541,12 +541,6 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					if NVENCLatencyMode {
 						args = append(args, "-p", "rc-lookahead=0", "-p", "no-scenecut=1", "-p", "b_ref_mode=0")
 					}
-					if !targetVBR {
-						args = append(args, "-p", "rc=cbr")
-					} else {
-						args = append(args, "-p", "rc=vbr", "-p", "cq=30")
-					}
-
 					if codec == "h264_nvenc" {
 						args = append(args, "-p", "aud=1")
 					}

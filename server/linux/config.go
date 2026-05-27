@@ -3,7 +3,9 @@ package linux
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -239,6 +241,67 @@ func InitConfig() {
 		return
 	}
 	flag.Parse()
+
+	if err := validateCaptureModeConfig(); err != nil {
+		log.Fatalf("Invalid direct-buffer configuration: %v", err)
+	}
+
+	if UseNVIDIA {
+		log.Printf("Checking NVIDIA GPU capabilities...")
+		outAV1, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_nvenc && echo true || echo false").Output()
+		AV1NVENCAvailable = strings.TrimSpace(string(outAV1)) == "true"
+		if AV1NVENCAvailable {
+			log.Printf("AV1 NVENC support detected")
+		}
+
+		log.Printf("Checking H.264 NVENC 4:4:4 support...")
+		outH264, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v h264_nvenc -profile:v high444p -tune lossless -f null - > /dev/null 2>&1 && echo true || echo false").Output()
+		H264NVENC444Available = strings.TrimSpace(string(outH264)) == "true"
+		if H264NVENC444Available {
+			log.Printf("H.264 NVENC 4:4:4 support detected")
+		}
+
+		log.Printf("Checking H.265 NVENC 4:4:4 support...")
+		outH265, _ := exec.Command("bash", "-c", "ffmpeg -y -f lavfi -i testsrc=size=256x256:rate=1 -t 1 -pix_fmt yuv444p -c:v hevc_nvenc -profile:v rext -tune lossless -f null - > /dev/null 2>&1 && echo true || echo false").Output()
+		H265NVENC444Available = strings.TrimSpace(string(outH265)) == "true"
+		if H265NVENC444Available {
+			log.Printf("H.265 NVENC 4:4:4 support detected")
+		}
+	}
+
+	if UseIntel {
+		log.Printf("Checking Intel QSV capabilities...")
+		outQSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q h264_qsv && echo true || echo false").Output()
+		QSVAvailable = strings.TrimSpace(string(outQSV)) == "true"
+		if QSVAvailable {
+			log.Printf("Intel QSV hardware acceleration detected")
+			renderNode := resolveIntelRenderNode()
+			checkCmd := fmt.Sprintf("TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -init_hw_device vaapi=hw:%s -filter_hw_device hw -vf format=nv12,hwupload -c:v hevc_vaapi -bf 0 -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -f hevc \"$TMP\" >/dev/null 2>&1 && echo true || echo false", renderNode)
+			cmd := exec.Command("bash", "-c", checkCmd)
+			cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run")
+			outH265QSV, _ := cmd.Output()
+			H265QSVAvailable = strings.TrimSpace(string(outH265QSV)) == "true"
+			if H265QSVAvailable {
+				log.Printf("Intel H.265 hardware encode support detected")
+			}
+			outAV1QSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_qsv && echo true || echo false").Output()
+			AV1QSVAvailable = strings.TrimSpace(string(outAV1QSV)) == "true"
+			if AV1QSVAvailable {
+				log.Printf("AV1 QSV support detected")
+			}
+		}
+	}
+
+	if UseIntel && (VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi") && !H265QSVAvailable {
+		if CaptureMode == CaptureModeDirect {
+			log.Fatalf("Invalid direct-buffer configuration: Intel H.265 hardware encode is not supported on this FFmpeg/driver stack")
+		}
+		log.Printf("Intel H.265 hardware encode is not supported; falling back to CPU h265")
+		VideoCodec = "h265"
+	}
+
+	VideoCodec = ResolveRequestedVideoCodec(VideoCodec)
+	SyncConfigToCommon()
 }
 
 func printFlag(w *os.File, name, usage string, def any) {
@@ -282,34 +345,52 @@ func SyncConfigToCommon() {
 }
 
 func ResolveRequestedVideoCodec(codec string) string {
+	// Strip -444 suffix if present for resolution logic, but we'll use Chroma to decide 4:4:4 later
+	baseCodec := strings.Split(codec, "-")[0]
+
 	if UseIntel {
-		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv" {
+		if baseCodec == "h265" || baseCodec == "hevc" || baseCodec == "h265_vaapi" || baseCodec == "hevc_vaapi" || baseCodec == "h265_qsv" {
 			if H265QSVAvailable {
 				return "h265_qsv"
 			}
 			return "h265_vaapi"
 		}
-		if codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv" {
+		if baseCodec == "h264" || baseCodec == "h264_vaapi" || baseCodec == "h264_qsv" {
 			if QSVAvailable {
 				return "h264_qsv"
 			}
 			return "h264_vaapi"
 		}
-		if codec == "av1" || codec == "av1_qsv" || codec == "av1_vaapi" {
+		if baseCodec == "av1" || baseCodec == "av1_qsv" || baseCodec == "av1_vaapi" {
 			if AV1QSVAvailable {
 				return "av1_qsv"
 			}
 			return "av1_vaapi"
 		}
 	}
-	return codec
+
+	if UseNVIDIA {
+		if baseCodec == "h265" || baseCodec == "hevc" || baseCodec == "hevc_nvenc" || baseCodec == "h265_nvenc" {
+			return "h265_nvenc"
+		}
+		if baseCodec == "h264" || baseCodec == "h264_nvenc" {
+			return "h264_nvenc"
+		}
+		if baseCodec == "av1" || baseCodec == "av1_nvenc" {
+			if AV1NVENCAvailable {
+				return "av1_nvenc"
+			}
+		}
+	}
+
+	return baseCodec
 }
 
 func NormalizeCodecFamily(codec string) string {
 	switch codec {
 	case "h264", "h264_nvenc", "h264_qsv", "h264_vaapi":
 		return "h264"
-	case "h265", "h265_nvenc", "h265_qsv", "h265_vaapi", "hevc_vaapi":
+	case "h265", "h265_nvenc", "hevc_nvenc", "h265_qsv", "h265_vaapi", "hevc_vaapi":
 		return "h265"
 	case "av1", "av1_nvenc", "av1_qsv", "av1_vaapi":
 		return "av1"

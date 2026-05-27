@@ -100,8 +100,8 @@ export function updateStatusText(
     if (!statusEl) return;
     
     // Clean up codec name for display and check for GPU
-    const isGpu = codec.includes('nvenc') || codec.includes('qsv');
-    const displayCodec = codec.replace('_nvenc', '').replace('_qsv', '');
+    const isGpu = codec.includes('nvenc') || codec.includes('qsv') || codec.includes('vaapi');
+    const displayCodec = codec.replace('_nvenc', '').replace('_qsv', '').replace('_vaapi', '');
     const gpuTag = isGpu ? ' 🚀 GPU' : '';
     
     let transport = 'WebCodecs';

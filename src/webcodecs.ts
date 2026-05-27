@@ -82,7 +82,7 @@ export class WebCodecsManager {
             });
 
             const isH264 = this.videoCodec.startsWith('h264');
-            const isH265 = this.videoCodec.startsWith('h265');
+            const isH265 = this.videoCodec.startsWith('h265') || this.videoCodec.startsWith('hevc');
             const isAV1 = this.videoCodec.startsWith('av1');
             
             let codecStr = 'vp8';
@@ -141,22 +141,27 @@ export class WebCodecsManager {
 
         log(`Probing HEVC 4:4:4 support across ${candidates.length} codec strings...`);
 
+        let found = false;
         for (const codec of candidates) {
             const config = { ...baseConfig, codec };
             try {
                 const res = await VideoDecoder.isConfigSupported(config);
                 if (res.supported) {
-                    log(`Found supported HEVC string: ${codec}`);
+                    log(`[WebCodecs] Found supported HEVC 4:4:4 string: ${codec}`);
                     this.configureDecoder(res.config!);
-                    return;
+                    found = true;
+                    break;
                 }
-            } catch {
-                // Ignore error and try next
+            } catch (e) {
+                // Ignore errors for individual strings
             }
         }
 
-        log('None of the HEVC 4:4:4 codec strings are supported by this browser.');
-        if (statusEl) statusEl.textContent = 'HEVC 4:4:4 Not Supported';
+        if (!found) {
+            log('[WebCodecs] WARNING: No supported HEVC 4:4:4 codec strings found. Falling back to default HEVC config.');
+            this.configureDecoder(baseConfig);
+            if (statusEl) statusEl.textContent += ' (4:4:4? ❌)';
+        }
     }
 
     private handleFrame(frame: VideoFrame) {

@@ -7,9 +7,9 @@ export interface BinaryVideoPacket {
 export function normalizeCodecFamily(codec: string): string {
     if (!codec) return 'vp8';
     if (codec === 'h264-444') return 'h264-444';
-    if (codec === 'h265-444') return 'h265-444';
+    if (codec === 'h265-444' || codec === 'hevc-444') return 'h265-444';
     if (codec.startsWith('h264')) return 'h264';
-    if (codec.startsWith('h265')) return 'h265';
+    if (codec.startsWith('h265') || codec.startsWith('hevc')) return 'h265';
     if (codec.startsWith('av1')) return 'av1';
     return codec;
 }

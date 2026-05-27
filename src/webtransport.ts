@@ -167,31 +167,51 @@ export class WebTransportManager {
     private async handleVideoStream(stream: any) {
         log('[WebTransport] Video stream received');
         const reader = stream.getReader();
-        let buffer = new Uint8Array(0);
+        let buffer = new Uint8Array(10 * 1024 * 1024); // 10MB persistent buffer
+        let offset = 0;
 
         try {
             while (true) {
                 const { value, done } = await reader.read();
                 if (done) break;
 
-                const newBuffer = new Uint8Array(buffer.length + value.length);
-                newBuffer.set(buffer);
-                newBuffer.set(value, buffer.length);
-                buffer = newBuffer;
+                // Ensure buffer has enough space
+                if (offset + value.length > buffer.length) {
+                    const newSize = Math.max(buffer.length * 2, offset + value.length);
+                    const newBuffer = new Uint8Array(newSize);
+                    newBuffer.set(buffer.subarray(0, offset));
+                    buffer = newBuffer;
+                }
 
-                while (buffer.length >= 4) {
-                    const dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+                buffer.set(value, offset);
+                offset += value.length;
+
+                let processed = 0;
+                while (offset - processed >= 4) {
+                    const dv = new DataView(buffer.buffer, buffer.byteOffset + processed, 4);
                     const packetLen = dv.getUint32(0, false);
 
-                    if (buffer.length >= 4 + packetLen) {
-                        const packet = buffer.slice(4, 4 + packetLen);
+                    if (offset - processed >= 4 + packetLen) {
+                        const packetStart = processed + 4;
+                        const packetEnd = packetStart + packetLen;
+                        
+                        // Copy only the required packet slice
+                        const packet = buffer.slice(packetStart, packetEnd);
                         this.totalBytesReceived += 4 + packetLen;
                         this.frameCount++;
-                        this.onBinaryMessage(packet.buffer.slice(packet.byteOffset, packet.byteOffset + packet.byteLength));
-                        buffer = buffer.slice(4 + packetLen);
+                        this.onBinaryMessage(packet.buffer);
+                        
+                        processed = packetEnd;
                     } else {
                         break;
                     }
+                }
+
+                if (processed > 0) {
+                    if (processed < offset) {
+                        buffer.copyWithin(0, processed, offset);
+                    }
+                    offset -= processed;
                 }
             }
         } catch (e) {

@@ -16,8 +16,7 @@ test.describe('NVIDIA 4:4:4 Chroma Codec Selection', () => {
         } catch (e) {}
         
         console.log('Starting LLrdc server with NVIDIA support...');
-        const imageTag = 'nvidia-test';
-        execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --nvidia --tag ${imageTag} --network-host`, { stdio: 'inherit' });
+        execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --nvidia --network-host`, { stdio: 'inherit' });
             
         await waitForServerReady(`http://localhost:${PORT}`);
     });
@@ -34,7 +33,7 @@ test.describe('NVIDIA 4:4:4 Chroma Codec Selection', () => {
         await page.click('body');
 
         // Step 1: Verify initial connection
-        await expect(page.locator('#status')).toContainText(/\[WebRTC/i, { timeout: 30000 });
+        await expect(page.locator('#status')).toContainText(/\[WebTransport/i, { timeout: 30000 });
         
         // Step 2: Ensure initial 4:2:0 stream is flowing
         console.log('Waiting for initial H.264 4:2:0 stream...');
@@ -76,7 +75,7 @@ test.describe('NVIDIA 4:4:4 Chroma Codec Selection', () => {
         await page.goto(SERVER_URL);
         await page.click('body');
 
-        await expect(page.locator('#status')).toContainText(/\[WebRTC/i, { timeout: 30000 });
+        await expect(page.locator('#status')).toContainText(/\[WebTransport/i, { timeout: 30000 });
         await waitForStreamingFrames(page, 'Initial H.264 streaming', 30000);
 
         console.log('Selecting standard H.264 (NVIDIA NVENC)...');
