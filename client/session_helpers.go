@@ -9,23 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v4"
 )
-
-func (s *Session) consumeAudioTrack(track *webrtc.TrackRemote) {
-	for {
-		packet, _, err := track.ReadRTP()
-		if err != nil {
-			s.setError(err)
-			return
-		}
-
-		s.mu.Lock()
-		s.stats.AudioPackets++
-		s.stats.AudioBytes += uint64(packet.MarshalSize())
-		s.mu.Unlock()
-	}
-}
 
 func (s *Session) emit(event Event, data map[string]any) {
 	s.hooks.Emit(event, EventPayload{
@@ -83,8 +67,8 @@ func httpToWebsocketURL(raw string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported URL scheme %q", parsed.Scheme)
 	}
-	if parsed.Path == "" {
-		parsed.Path = "/"
+	if parsed.Path == "" || parsed.Path == "/" {
+		parsed.Path = "/ws"
 	}
 	return parsed.String(), nil
 }

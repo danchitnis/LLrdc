@@ -29,7 +29,7 @@ var (
 
 	WebTransportFingerprint string
 	wtServer                *webtransport.Server
-	
+
 	// Store the DER bytes to serve them for manual trust (Safari)
 	certDerBytes []byte
 

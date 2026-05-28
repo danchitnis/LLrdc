@@ -11,8 +11,7 @@ echo "▶ Native client Docker native/cgo unit tests..."
 docker build -f "${ROOT_DIR}/Dockerfile.client" --target test -t "${IMAGE_NAME}-test" "${ROOT_DIR}"
 
 echo "▶ Native client ULL latency benchmark..."
-export WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-true}"
-export WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-0}"
+export WEBTRANSPORT_ENABLED="${WEBTRANSPORT_ENABLED:-true}"
 export LLRDC_VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-vp8}"
 "${ROOT_DIR}/tests/linux-wayland-native/benchmark-wayland-native-latency.sh"
 

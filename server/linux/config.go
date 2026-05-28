@@ -40,15 +40,15 @@ var (
 	TestPattern           bool
 	EnableAudio           bool
 	AudioBitrate          string
-	Wallpaper               string
+	Wallpaper             string
 	ActivityPulseHz       int
 	ActivityTimeout       int
-	NVENCLatencyMode        bool
-	HDPI                    int
-	SettleTime              int
-	TileSize                int
-	InitialRes              int
-	AgentAddress            string
+	NVENCLatencyMode      bool
+	HDPI                  int
+	SettleTime            int
+	TileSize              int
+	InitialRes            int
+	AgentAddress          string
 
 	displayChangeMu sync.Mutex
 

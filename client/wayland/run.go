@@ -1,4 +1,4 @@
-//go:build (linux && native && cgo)
+//go:build linux && native && cgo
 
 package wayland
 
@@ -129,7 +129,6 @@ func (r *NativeRenderer) Run() error {
 			case *sdl.MouseButtonEvent:
 				if e.Type == sdl.MOUSEBUTTONDOWN && e.Button == sdl.BUTTON_LEFT {
 					clicked = true
-					fmt.Println("DEBUG: BUTTON CLICKED - STARTING STREAM")
 				}
 			case *sdl.WindowEvent:
 				if e.Event == sdl.WINDOWEVENT_CLOSE {

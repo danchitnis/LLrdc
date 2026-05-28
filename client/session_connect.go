@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/interceptor"
-	"github.com/pion/webrtc/v4"
 )
 
 func (s *Session) Connect(serverURL string) error {
@@ -46,143 +44,30 @@ func (s *Session) Connect(serverURL string) error {
 		}
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
-	// Read initial config message synchronously
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	messageType, raw, err := conn.ReadMessage()
-	_ = conn.SetReadDeadline(time.Time{})
-	if err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("read initial config: %w", err)
-	}
-	if messageType != websocket.TextMessage {
-		_ = conn.Close()
-		return fmt.Errorf("expected text message for initial config, got %d", messageType)
-	}
-
+	// Read messages until we get the initial config
 	var initMsg map[string]any
-	if err := json.Unmarshal(raw, &initMsg); err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("parse initial config: %w", err)
-	}
-	m := &webrtc.MediaEngine{}
-
-	// Register H.264 4:4:4 profile (High 4:4:4 Predictive, Level 5.0) FIRST to prioritize it
-	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    webrtc.MimeTypeH264,
-			ClockRate:   90000,
-			Channels:    0,
-			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=f40032",
-		},
-		PayloadType: 120,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("register h264-444 codec: %w", err)
-	}
-
-	// Register H.265 4:4:4 profile (Main 4:4:4, Level 4.1)
-	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    "video/H265",
-			ClockRate:   90000,
-			Channels:    0,
-			SDPFmtpLine: "profile-id=4;tier-flag=0;level-id=123",
-		},
-		PayloadType: 121,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("register h265-444 codec: %w", err)
-	}
-
-	// Register standard H.265 profile (Main, Level 4.0)
-	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType:    "video/H265",
-			ClockRate:   90000,
-			Channels:    0,
-			SDPFmtpLine: "profile-id=1;tier-flag=0;level-id=120",
-		},
-		PayloadType: 122,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("register h265 codec: %w", err)
-	}
-
-	if err := m.RegisterDefaultCodecs(); err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("register default codecs: %w", err)
-	}
-
-	lowLatency, _ := initMsg["webrtc_low_latency"].(bool)
-	if toggler, ok := s.renderer.(LowLatencyRenderer); ok {
-		toggler.SetLowLatency(lowLatency)
-	}
-
-	i := &interceptor.Registry{}
-	if !lowLatency {
-		log.Printf("WebRTC using default interceptors (NACK, Jitter Buffer)")
-		if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		messageType, raw, err := conn.ReadMessage()
+		_ = conn.SetReadDeadline(time.Time{})
+		if err != nil {
 			_ = conn.Close()
-			return fmt.Errorf("register default interceptors: %w", err)
+			return fmt.Errorf("read initial config: %w", err)
 		}
-	} else {
-		log.Printf("WebRTC skipping interceptors for low-latency mode")
-		i.Add(newRemotePacketTimestampInterceptorFactory(BenchmarkClockNowMs, s.recordRemotePacketAt))
-	}
 
-	se := webrtc.SettingEngine{}
-	se.DisableSRTPReplayProtection(true)
-	se.DisableSRTCPReplayProtection(true)
-	if lowLatency {
-		se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
-		se.BufferFactory = newLatencyBufferFactory(BenchmarkClockNowMs, s.recordDecryptedPacketAt)
-	}
-
-	api := webrtc.NewAPI(
-		webrtc.WithMediaEngine(m),
-		webrtc.WithSettingEngine(se),
-		webrtc.WithInterceptorRegistry(i),
-	)
-
-	pc, err := api.NewPeerConnection(webrtc.Configuration{
-		BundlePolicy: webrtc.BundlePolicyMaxBundle,
-	})
-	if err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("create peer connection: %w", err)
-	}
-	// Wait for PeerConnection to reach a stable state
-	ready := make(chan bool, 1)
-	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		if state == webrtc.PeerConnectionStateConnected {
-			select {
-			case ready <- true:
-			default:
+		if messageType == websocket.TextMessage {
+			if err := json.Unmarshal(raw, &initMsg); err == nil {
+				if msgType, _ := initMsg["type"].(string); msgType == "config" {
+					break // Found it
+				}
 			}
 		}
-	})
-
-	ordered := false
-	maxRetransmits := uint16(0)
-	dc, err := pc.CreateDataChannel("input", &webrtc.DataChannelInit{
-		Ordered:        &ordered,
-		MaxRetransmits: &maxRetransmits,
-	})
-	if err != nil {
-		_ = pc.Close()
-		_ = conn.Close()
-		return fmt.Errorf("create input data channel: %w", err)
+		// Ignore binary or non-config messages during handshake
 	}
 
-	if _, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
-		_ = pc.Close()
-		_ = conn.Close()
-		return fmt.Errorf("add video transceiver: %w", err)
-	}
-	if _, err := pc.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
-		_ = pc.Close()
-		_ = conn.Close()
-		return fmt.Errorf("add audio transceiver: %w", err)
+	lowLatency, _ := initMsg["low_latency"].(bool)
+	if toggler, ok := s.renderer.(LowLatencyRenderer); ok {
+		toggler.SetLowLatency(lowLatency)
 	}
 
 	var connectionID uint64
@@ -190,14 +75,8 @@ func (s *Session) Connect(serverURL string) error {
 	s.connectionID++
 	connectionID = s.connectionID
 	s.conn = conn
-	s.pc = pc
-	s.input = dc
 	s.state.ServerURL = serverURL
 	s.state.Connected = true
-	s.state.WebRTCConnected = false
-	s.state.PeerConnectionState = webrtc.PeerConnectionStateNew.String()
-	s.state.ICEConnectionState = webrtc.ICEConnectionStateNew.String()
-	s.state.InputChannelOpen = false
 
 	s.state.VideoCodec = ""
 	s.state.LastConfig = nil
@@ -234,9 +113,18 @@ func (s *Session) Connect(serverURL string) error {
 		ConnectedAt: time.Now(),
 	}
 	s.mu.Unlock()
-	s.remotePacketMu.Lock()
-	s.remotePacketTimes = make(map[packetTimingKey]packetTiming)
-	s.remotePacketMu.Unlock()
+
+	wtFingerprint, ok1 := initMsg["webtransportFingerprint"].(string)
+	wtPort, ok2 := numberToInt(initMsg["webtransportPort"])
+
+	if ok1 && ok2 && wtFingerprint != "" && wtPort > 0 {
+		go func(cid uint64) {
+			if err := s.connectWebTransport(cid, serverURL, wtPort, wtFingerprint); err != nil {
+				log.Printf("WebTransport connection failed: %v", err)
+			}
+		}(connectionID)
+	}
+
 	s.emit(EventStateChanged, map[string]any{
 		"connected": true,
 		"serverUrl": serverURL,
@@ -245,107 +133,11 @@ func (s *Session) Connect(serverURL string) error {
 		s.emit(EventConfig, cloneMap(initMsg))
 	}
 
-	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		if candidate == nil {
-			return
-		}
-		_ = s.sendJSON(map[string]any{
-			"type":      "webrtc_ice",
-			"candidate": candidate.ToJSON(),
-		})
-	})
-
-	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		shouldSendReady, shouldReconnect := s.handlePeerConnectionStateChange(connectionID, state)
-		if shouldReconnect {
-			s.emit(EventReconnectRequest, nil)
-		}
-		if shouldSendReady {
-			_ = s.sendMessage(map[string]any{"type": "webrtc_ready"})
-		}
-		s.emit(EventStateChanged, map[string]any{
-			"peerConnectionState": state.String(),
-		})
-	})
-
-	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		s.mu.Lock()
-		if s.connectionID != connectionID {
-			s.mu.Unlock()
-			return
-		}
-		s.state.ICEConnectionState = state.String()
-		s.mu.Unlock()
-		s.emit(EventStateChanged, map[string]any{
-			"iceConnectionState": state.String(),
-		})
-	})
-
-	pc.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		codec := track.Codec().MimeType
-		s.mu.Lock()
-		if s.connectionID != connectionID {
-			s.mu.Unlock()
-			return
-		}
-		s.state.CurrentTrackCodecs[track.Kind().String()] = codec
-		if track.Kind() == webrtc.RTPCodecTypeVideo {
-			s.state.VideoCodec = codec
-		}
-		s.mu.Unlock()
-		if track.Kind() == webrtc.RTPCodecTypeVideo {
-			if resetter, ok := s.renderer.(VideoStreamResetter); ok {
-				resetter.ResetVideoStream(codec)
-			}
-			go s.consumeVideoTrack(pc, track, lowLatency)
-			return
-		}
-		go s.consumeAudioTrack(track)
-	})
-
-	dc.OnOpen(func() {
-		if s.setInputChannelOpen(connectionID, true) {
-			s.emit(EventStateChanged, map[string]any{
-				"inputChannelOpen": true,
-			})
-		}
-	})
-
-	dc.OnClose(func() {
-		if s.setInputChannelOpen(connectionID, false) {
-			s.emit(EventStateChanged, map[string]any{
-				"inputChannelOpen": false,
-			})
-		}
-	})
-
-	offer, err := pc.CreateOffer(nil)
-	if err != nil {
-		_ = s.Disconnect()
-		return fmt.Errorf("create offer: %w", err)
-	}
-	if err := pc.SetLocalDescription(offer); err != nil {
-		_ = s.Disconnect()
-		return fmt.Errorf("set local description: %w", err)
-	}
-	if err := s.sendJSON(map[string]any{
-		"type": "webrtc_offer",
-		"sdp":  pc.LocalDescription(),
-	}); err != nil {
-		_ = s.Disconnect()
-		return fmt.Errorf("send webrtc offer: %w", err)
-	}
-
-	go s.readLoop(connectionID, conn, pc)
-
-	// Wait for PeerConnection to connect or timeout
-	select {
-	case <-ready:
-	case <-time.After(2 * time.Second):
-	}
+	go s.readLoop(connectionID, conn)
 
 	return nil
 }
+
 func numberToInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:
@@ -375,40 +167,6 @@ func (s *Session) Disconnect() error {
 	return s.disconnectLocked()
 }
 
-func (s *Session) handlePeerConnectionStateChange(connectionID uint64, state webrtc.PeerConnectionState) (shouldSendReady bool, shouldReconnect bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.connectionID != connectionID {
-		return false, false
-	}
-
-	s.state.WebRTCConnected = state == webrtc.PeerConnectionStateConnected
-	s.state.PeerConnectionState = state.String()
-
-	isDown := state == webrtc.PeerConnectionStateFailed ||
-		state == webrtc.PeerConnectionStateDisconnected ||
-		state == webrtc.PeerConnectionStateClosed
-
-	if isDown {
-		s.state.InputChannelOpen = false
-		shouldReconnect = !s.state.ShutdownRequested
-	}
-
-	return state == webrtc.PeerConnectionStateConnected, shouldReconnect
-}
-
-func (s *Session) setInputChannelOpen(connectionID uint64, open bool) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.connectionID != connectionID {
-		return false
-	}
-	s.state.InputChannelOpen = open
-	return true
-}
-
 func (s *Session) disconnectLocked() error {
 	return s.disconnectIfCurrentLocked(s.connectionID)
 }
@@ -426,41 +184,30 @@ func (s *Session) disconnectIfCurrentLocked(connectionID uint64) error {
 		return nil
 	}
 	conn := s.conn
-	pc := s.pc
-	input := s.input
+	wtSession := s.wtSession
+	wtControl := s.wtControl
 	udpConn := s.udpConn
 	s.connectionID++
 	s.conn = nil
-	s.pc = nil
-	s.input = nil
+	s.wtSession = nil
+	s.wtControl = nil
 	s.udpConn = nil
 	s.state.Connected = false
-	s.state.WebRTCConnected = false
-	s.state.PeerConnectionState = ""
-	s.state.ICEConnectionState = ""
-	s.state.InputChannelOpen = false
+	s.state.WebTransportConnected = false
 	s.state.Presenting = false
 	s.mu.Unlock()
 
 	if conn != nil {
 		_ = conn.Close()
 	}
-	if input != nil {
-		_ = input.Close()
+	if wtControl != nil {
+		_ = wtControl.Close()
+	}
+	if wtSession != nil {
+		_ = wtSession.CloseWithError(0, "disconnect")
 	}
 	if udpConn != nil {
 		_ = udpConn.Close()
-	}
-	if pc != nil {
-		done := make(chan struct{})
-		go func() {
-			_ = pc.Close()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(500 * time.Millisecond):
-		}
 	}
 
 	s.emit(EventStateChanged, map[string]any{

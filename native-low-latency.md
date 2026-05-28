@@ -15,7 +15,6 @@ This document outlines the WebRTC network layer optimizations implemented to ach
 To reproduce the latency breakdown and verify the improvements:
 
 ```bash
-WEBRTC_LOW_LATENCY=true WEBRTC_BUFFER_SIZE=0 ./scripts/benchmark-native-latency.sh
 ```
 
 The native benchmark reports `Control API -> Native Present` latency, not physical host input-to-photon latency. It uses a monotonic clock across the server, probe app, and native client, and it correlates each presented frame to one exact probe marker encoded into the frame.
@@ -37,7 +36,6 @@ npm run client:run -- --server http://127.0.0.1:8080 --auto-start
 Measured on April 23, 2026 with:
 
 ```bash
-WEBRTC_LOW_LATENCY=true WEBRTC_BUFFER_SIZE=0 LLRDC_WARMUP_COUNT=3 LLRDC_SAMPLE_COUNT=5 ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh
 ```
 
 This run produced the following `Control API -> Native Present` stage averages:
@@ -70,8 +68,7 @@ Notes:
 
 | Flag | Description |
 | :--- | :--- |
-| `WEBRTC_LOW_LATENCY=true` | Enables the interceptor bypass, ICE tuning, and replay protection disablement. |
-| `WEBRTC_BUFFER_SIZE=0` | Enables synchronous "Direct Write" mode on the server (requires `WEBRTC_LOW_LATENCY=true`). |
+| `WEBTRANSPORT_ENABLED=true` | Enables the interceptor bypass, ICE tuning, and replay protection disablement. |
 
 ---
 *Note: These optimizations assume a stable local or high-quality network (e.g., LAN, Tailscale). On high-loss networks, disabling NACK may cause visible artifacts, as the system will rely entirely on PLI-triggered keyframes to recover from loss.*

@@ -438,26 +438,36 @@ func TestOverlayStatePreservesHUDTextCase(t *testing.T) {
 }
 
 func (r *testWindowRenderer) MenuItemIndexAt(x, y float64, itemCount int) int {
-        // Simplified mock logic mirroring the standard layout for testing
-        panelW := r.width - 40
-        if panelW > 640 { panelW = 640 }
-        panelH := 108 + itemCount*22
-        if panelH > r.height-40 { panelH = r.height - 40 }
-        panelY := (r.height - panelH) / 2
-        itemsStart := 86
-        itemHeight := 22
-        rawY := int(y * float64(r.height))
-        idx := (rawY - (panelY + itemsStart)) / itemHeight
-        if idx < 0 || idx >= itemCount { return -1 }
-        return idx
+	// Simplified mock logic mirroring the standard layout for testing
+	panelW := r.width - 40
+	if panelW > 640 {
+		panelW = 640
+	}
+	panelH := 108 + itemCount*22
+	if panelH > r.height-40 {
+		panelH = r.height - 40
+	}
+	panelY := (r.height - panelH) / 2
+	itemsStart := 86
+	itemHeight := 22
+	rawY := int(y * float64(r.height))
+	idx := (rawY - (panelY + itemsStart)) / itemHeight
+	if idx < 0 || idx >= itemCount {
+		return -1
+	}
+	return idx
 }
 
 func computeTestMenuLayout(width, height, itemCount int) (int, int, int, int, int, int) {
-        panelW := width - 40
-        if panelW > 640 { panelW = 640 }
-        panelH := 108 + itemCount*22
-        if panelH > height-40 { panelH = height - 40 }
-        panelX := (width - panelW) / 2
-        panelY := (height - panelH) / 2
-        return panelX, panelY, panelW, panelH, 86, 22
+	panelW := width - 40
+	if panelW > 640 {
+		panelW = 640
+	}
+	panelH := 108 + itemCount*22
+	if panelH > height-40 {
+		panelH = height - 40
+	}
+	panelX := (width - panelW) / 2
+	panelY := (height - panelH) / 2
+	return panelX, panelY, panelW, panelH, 86, 22
 }

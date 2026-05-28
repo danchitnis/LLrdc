@@ -21,6 +21,7 @@ var inputChan chan inputTask
 func init() {
 	inputChan = common.GetInputChannel()
 }
+
 var inputStdin io.WriteCloser
 var inputStdinMu sync.Mutex
 
@@ -314,7 +315,6 @@ func triggerPingLocked() {
 	}
 }
 
-
 func injectMouseMove(nx, ny float64, sentTime int64) {
 	select {
 	case inputChan <- inputTask{Type: "mousemove", NX: nx, NY: ny, SentTime: sentTime}:
@@ -343,8 +343,6 @@ func injectMouseWheel(dx, dy float64, sentTime int64) {
 	}
 }
 
-
 func spawnApp(command string) {
 	log.Printf("Spawning app (stubbed): %s", command)
 }
-

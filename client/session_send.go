@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
-
-	"github.com/pion/webrtc/v4"
 )
 
 func (s *Session) SendResize(width, height int) error {
@@ -74,12 +72,13 @@ func (s *Session) sendMessage(msg map[string]any) error {
 	if msgType, _ := msg["type"].(string); msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "wheel" {
 		s.stats.InputMessagesSent++
 	}
-	input := s.input
 	conn := s.conn
+	wtControl := s.wtControl
 	s.mu.Unlock()
 
-	if input != nil && input.ReadyState() == webrtc.DataChannelStateOpen {
-		return input.SendText(string(body))
+	if wtControl != nil {
+		_, err := wtControl.Write(append(body, '\n'))
+		return err
 	}
 
 	if conn == nil {

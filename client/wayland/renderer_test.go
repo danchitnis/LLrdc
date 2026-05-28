@@ -1,4 +1,4 @@
-//go:build (linux && native && cgo)
+//go:build linux && native && cgo
 
 package wayland
 

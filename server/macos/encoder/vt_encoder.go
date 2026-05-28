@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 )
+
 type VTEncoder struct {
 	ptr           *C.VTEncoder
 	handle        cgo.Handle

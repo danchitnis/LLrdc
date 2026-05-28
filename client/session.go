@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v4"
+	"github.com/quic-go/webtransport-go"
 )
 
 type Renderer interface {
@@ -99,10 +99,7 @@ type SessionState struct {
 	ServerScreenWidth       int                `json:"serverScreenWidth,omitempty"`
 	ServerScreenHeight      int                `json:"serverScreenHeight,omitempty"`
 	Connected               bool               `json:"connected"`
-	WebRTCConnected         bool               `json:"webrtcConnected"`
-	PeerConnectionState     string             `json:"peerConnectionState,omitempty"`
-	ICEConnectionState      string             `json:"iceConnectionState,omitempty"`
-	InputChannelOpen        bool               `json:"inputChannelOpen"`
+	WebTransportConnected   bool               `json:"webtransportConnected"`
 	RenderLoopStarted       bool               `json:"renderLoopStarted"`
 	ShutdownRequested       bool               `json:"shutdownRequested"`
 	ShutdownReason          string             `json:"shutdownReason,omitempty"`
@@ -164,17 +161,14 @@ type Session struct {
 	connecting   atomic.Bool
 	connectionID uint64
 	conn         *websocket.Conn
-	pc           *webrtc.PeerConnection
-	input        *webrtc.DataChannel
+	wtSession    *webtransport.Session
+	wtControl    webtransport.Stream
 	udpConn      *net.UDPConn
 	state        SessionState
 	stats        SessionStats
 	closed       chan struct{}
 
 	keyframeRequests chan struct{}
-
-	remotePacketMu    sync.Mutex
-	remotePacketTimes map[packetTimingKey]packetTiming
 }
 
 func NewSession(renderer Renderer) *Session {
@@ -188,9 +182,8 @@ func NewSession(renderer Renderer) *Session {
 			WindowDesktop:      -1,
 			CurrentTrackCodecs: make(map[string]string),
 		},
-		closed:            make(chan struct{}),
-		keyframeRequests:  make(chan struct{}, 1),
-		remotePacketTimes: make(map[packetTimingKey]packetTiming),
+		closed:           make(chan struct{}),
+		keyframeRequests: make(chan struct{}, 1),
 	}
 }
 

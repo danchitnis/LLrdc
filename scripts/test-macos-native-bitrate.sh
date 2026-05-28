@@ -63,7 +63,7 @@ CLIENT_PID=$!
 echo "▶ Waiting for client window and initial stream..."
 for i in {1..30}; do
     STATE=$(curl -s "http://127.0.0.1:${CONTROL_PORT}/readyz" || echo "{}")
-    WEBRTC_OK=$(echo "$STATE" | jq -r '.webrtcConnected')
+    WEBRTC_OK=$(echo "$STATE" | jq -r '.webtransportConnected')
     
     if [ "$WEBRTC_OK" == "true" ]; then
         STATS=$(curl -s "http://127.0.0.1:${CONTROL_PORT}/statsz" || echo "{}")

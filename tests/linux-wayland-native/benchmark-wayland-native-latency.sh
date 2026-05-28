@@ -91,7 +91,7 @@ wait_for_client_ready() {
   for i in {1..45}; do
     local ready=""
     ready="$(curl -fsS "http://127.0.0.1:${CONTROL_PORT}/readyz" 2>/dev/null || true)"
-    if printf '%s' "${ready}" | jq -e '.webrtcConnected == true and .windowVisible == true and .windowHasSurface == true and .renderLoopStarted == true' >/dev/null 2>&1; then
+    if printf '%s' "${ready}" | jq -e '.webtransportConnected == true and .windowVisible == true and .windowHasSurface == true and .renderLoopStarted == true' >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -128,8 +128,6 @@ start_server() {
     -e TEST_PATTERN="${TEST_PATTERN:-}" \
     -e DAMAGE_TRACKING="${DAMAGE_TRACKING:-}" \
     -e CAPTURE_MODE="${CAPTURE_MODE:-}" \
-    -e WEBRTC_LOW_LATENCY="${WEBRTC_LOW_LATENCY:-}" \
-    -e WEBRTC_BUFFER_SIZE="${WEBRTC_BUFFER_SIZE:-}" \
     danchitnis/llrdc:latest \
     /app/llrdc --port "${SERVER_PORT}" --res "${WINDOW_HEIGHT}" >/dev/null
   

@@ -15,17 +15,13 @@ type WindowRenderer interface {
 	CaptureSnapshotPNG() ([]byte, error)
 	Size() (int, int)
 	MenuItemIndexAt(x, y float64, itemCount int) int
-	}
+}
 type VideoStreamResetter interface {
 	ResetVideoStream(codec string)
 }
 
 type LowLatencyRenderer interface {
 	SetLowLatency(enabled bool)
-}
-
-type WebSocketVideoFallbackProvider interface {
-	SupportsWebSocketVideoFallback() bool
 }
 
 type NativeRendererOptions struct {
@@ -121,14 +117,14 @@ type OverlayState struct {
 }
 
 type TimedVideoFrameHandler interface {
-        HandleVideoFrameWithTiming(
-                codec string,
-                frame []byte,
-                packetTimestamp uint32,
-                firstPacketSequenceNumber uint16,
-                firstDecryptedPacketQueuedAt int64,
-                firstRemotePacketAt int64,
-                firstPacketReadAt int64,
-                receiveAt int64,
-        ) error
+	HandleVideoFrameWithTiming(
+		codec string,
+		frame []byte,
+		packetTimestamp uint32,
+		firstPacketSequenceNumber uint16,
+		firstDecryptedPacketQueuedAt int64,
+		firstRemotePacketAt int64,
+		firstPacketReadAt int64,
+		receiveAt int64,
+	) error
 }

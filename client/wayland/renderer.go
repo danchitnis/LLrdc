@@ -1,4 +1,4 @@
-//go:build (linux && native && cgo)
+//go:build linux && native && cgo
 
 package wayland
 
@@ -265,8 +265,8 @@ type nativeSnapshotResult struct {
 }
 
 func (r *NativeRenderer) MenuItemIndexAt(x, y float64, itemCount int) int {
-        r.mu.RLock()
-        w, h := r.width, r.height
-        r.mu.RUnlock()
-        return menuItemIndexAt(w, h, x, y, itemCount)
+	r.mu.RLock()
+	w, h := r.width, r.height
+	r.mu.RUnlock()
+	return menuItemIndexAt(w, h, x, y, itemCount)
 }

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/danchitnis/llrdc/server/common"
 	"github.com/danchitnis/llrdc/internal/splitproto"
+	"github.com/danchitnis/llrdc/server/common"
 )
 
 func startVideoReceiver() {

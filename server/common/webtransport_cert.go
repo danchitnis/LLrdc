@@ -22,8 +22,8 @@ func GenerateSelfSignedCert() (tls.Certificate, string, error) {
 	}
 
 	notBefore := time.Now()
-	// WebTransport certs must be valid for <= 14 days. 
-	notAfter := notBefore.Add(13 * 24 * time.Hour) 
+	// WebTransport certs must be valid for <= 14 days.
+	notAfter := notBefore.Add(13 * 24 * time.Hour)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)

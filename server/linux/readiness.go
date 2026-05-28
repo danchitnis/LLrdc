@@ -124,19 +124,19 @@ func waitForCommandSuccess(name string, args []string, env []string, timeout, po
 }
 
 func marshalReadinessStatus() ([]byte, error) {
-        directState := snapshotDirectBufferState()
-        screenWidth, screenHeight := GetScreenSize()
-        payload := map[string]interface{}{
-                "ready":           readiness.IsReady(),
-                "conditions":      readiness.Snapshot(),
-                "directBuffer":    directState,
-                "acceleratorMode": currentAcceleratorMode(),
-                "useIntel":        UseIntel,
-                "useNvidia":       UseNVIDIA,
-                "screenWidth":     screenWidth,
-                "screenHeight":    screenHeight,
-                "videoCodec":      VideoCodec,
-                "chroma":          Chroma,
-        }
-        return json.Marshal(payload)
+	directState := snapshotDirectBufferState()
+	screenWidth, screenHeight := GetScreenSize()
+	payload := map[string]interface{}{
+		"ready":           readiness.IsReady(),
+		"conditions":      readiness.Snapshot(),
+		"directBuffer":    directState,
+		"acceleratorMode": currentAcceleratorMode(),
+		"useIntel":        UseIntel,
+		"useNvidia":       UseNVIDIA,
+		"screenWidth":     screenWidth,
+		"screenHeight":    screenHeight,
+		"videoCodec":      VideoCodec,
+		"chroma":          Chroma,
+	}
+	return json.Marshal(payload)
 }

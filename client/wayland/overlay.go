@@ -1,4 +1,4 @@
-//go:build (linux && native && cgo)
+//go:build linux && native && cgo
 
 package wayland
 
@@ -15,7 +15,6 @@ import (
 	"github.com/danchitnis/llrdc/client"
 	"github.com/veandco/go-sdl2/sdl"
 )
-
 
 func (r *NativeRenderer) drawClickToStart(renderer *sdl.Renderer) {
 	var w, h int32

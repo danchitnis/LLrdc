@@ -218,7 +218,6 @@ npm run client:test
 That command:
 - runs host-safe Go unit tests for `internal/client` and `cmd/client`
 - runs `go test -tags native ./internal/client ./cmd/client` in the Docker `test` stage
-- runs the native latency benchmark with WebRTC ULL enabled by default (`WEBRTC_LOW_LATENCY=true`, `WEBRTC_BUFFER_SIZE=0`, `LLRDC_VIDEO_CODEC=vp8`)
 
 The E2E alias uses the same benchmark-based path:
 
@@ -308,7 +307,6 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
 | `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
 | `WEBRTC_PUBLIC_IP` | Public IP override | `--webrtc-public-ip` |
-| `WEBRTC_BUFFER_SIZE` | WebRTC frame channel size | `--webrtc-buffer` |
 | `ACTIVITY_PULSE_HZ` | Heartbeat frequency (Hz) | `--activity-hz` |
 | `ACTIVITY_TIMEOUT` | Inactivity timeout (ms) | `--activity-timeout` |
 | `NVENC_LATENCY_MODE` | Toggle NVENC ULL (Ultra Low Latency) | `--nvenc-latency` |

@@ -219,10 +219,6 @@ func (r *NativeRenderer) SupportedVideoCodecs() []string {
 	return []string{"h265", "hevc", "h264", "h264-444", "h265-444"}
 }
 
-func (r *NativeRenderer) SupportsWebSocketVideoFallback() bool {
-	return true
-}
-
 func (r *NativeRenderer) ResetVideoStream(codec string) {
 	lower := strings.ToLower(codec)
 	if !strings.Contains(lower, "h264") && !strings.Contains(lower, "h265") && !strings.Contains(lower, "hevc") {

@@ -124,7 +124,7 @@ echo "▶ Waiting for client to connect and present"
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 while true; do
   if client_state=$(curl -fsS "http://127.0.0.1:${CONTROL_PORT}/statez" 2>/dev/null); then
-    webrtc_connected="$(echo "${client_state}" | jq -r '.webrtcConnected')"
+    webrtc_connected="$(echo "${client_state}" | jq -r '.webtransportConnected')"
     presenting="$(echo "${client_state}" | jq -r '.presenting')"
     last_presented_width="$(echo "${client_state}" | jq -r '.lastPresentedWidth // 0')"
     last_resize_width="$(echo "${client_state}" | jq -r '.lastResizeWidth // 0')"

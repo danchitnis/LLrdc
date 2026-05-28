@@ -67,4 +67,3 @@ func SafeFallbackCodec(codec string) {
 		OnFallbackCodec(codec)
 	}
 }
-

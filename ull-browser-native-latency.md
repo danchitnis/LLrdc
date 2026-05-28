@@ -58,8 +58,7 @@ test-results/browser-ull-latency/webrtc-ull-comparison.json
 Command:
 
 ```bash
-WEBRTC_LOW_LATENCY=true \
-WEBRTC_BUFFER_SIZE=0 \
+WEBTRANSPORT_ENABLED=true \
 LLRDC_VIDEO_CODEC=vp8 \
 LLRDC_ARTIFACT_DIR=/tmp/llrdc-native-latency-ull-default \
 ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh
@@ -67,8 +66,7 @@ LLRDC_ARTIFACT_DIR=/tmp/llrdc-native-latency-ull-default \
 
 Native benchmark configuration:
 
-- WebRTC ULL enabled: `WEBRTC_LOW_LATENCY=true`
-- WebRTC buffer size: `WEBRTC_BUFFER_SIZE=0`
+- WebRTC ULL enabled: `WEBTRANSPORT_ENABLED=true`
 - Codec: `vp8`
 - Resolution: `1280x720`
 - Target FPS: `60`
