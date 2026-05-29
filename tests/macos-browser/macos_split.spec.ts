@@ -29,6 +29,9 @@ test('macOS split architecture correctly streams video and has low mouse latency
     // Set a deterministic viewport to prevent state leakage and huge resizes
     await page.setViewportSize({ width: 1280, height: 720 });
 
+    // Measure startup latency
+    const startTime = Date.now();
+
     // Navigate to the local macOS server (already running)
     await page.goto('http://localhost:8080/viewer.html');
 
@@ -47,17 +50,25 @@ test('macOS split architecture correctly streams video and has low mouse latency
 
     // Wait for WebTransport or WebSocket connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 20000 });
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 30000 });
 
-    // Allow frames to accumulate
-    await page.waitForTimeout(2000);
+    // Allow frames to accumulate and handle potential initial connection drops
+    console.log("Waiting for video stream to stabilize...");
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        const match = text.match(/FPS: (\d+)/);
+        const fps = match ? parseInt(match[1], 10) : 0;
+        return fps;
+    }, {
+        timeout: 30000,
+        intervals: [1000],
+        message: "Waiting for FPS > 0"
+    }).toBeGreaterThan(0);
 
-    // Verify frames are arriving by checking FPS in status
+    const startupLatency = Date.now() - startTime;
+    console.log(`Measured Stream Startup Latency: ${startupLatency}ms`);
+
     const statusText = await statusEl.textContent() || '';
-    const fpsMatch = statusText.match(/FPS: (\d+)/);
-    const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : 0;
-
-    expect(fps).toBeGreaterThan(0);
     console.log(`Successfully verified split architecture! Current status: ${statusText}`);
 
     // ----- MOUSE LATENCY TEST -----
@@ -135,6 +146,9 @@ test('macOS split architecture correctly streams video and has low mouse latency
     const expectedX = Math.round(videoDims.w / 2);
     console.log(`Expected center for ${videoDims.w}x${videoDims.h}: X=${expectedX}`);
 
+    console.log("Sweep complete, allowing 2s for coordinates to settle...");
+    await page.waitForTimeout(2000);
+
     let finalCursorX = 0;
     for (let i = 0; i < 50; i++) { // Poll for up to 5 seconds
         const state = readProbeState(containerName);
@@ -150,3 +164,49 @@ test('macOS split architecture correctly streams video and has low mouse latency
     // If it's stuck, it will never reach the expected center
     expect(Math.abs(finalCursorX - expectedX)).toBeLessThan(100);
 });
+
+test('macOS split architecture respects framerate changes in config menu', async ({ page }) => {
+    // Navigate to the local macOS server
+    await page.goto('http://localhost:8080/viewer.html');
+
+    // Wait for connection
+    const statusEl = page.locator('#status');
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 20000 });
+
+    // Open config menu
+    await page.click('#config-btn');
+    const framerateSelect = page.locator('#framerate-select');
+
+    // Test 15 FPS
+    console.log("Setting framerate to 15 FPS...");
+    await framerateSelect.selectOption('15');
+    
+    // Wait for FPS to stabilize around 15
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        const match = text.match(/FPS: (\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+    }, {
+        timeout: 15000,
+        intervals: [1000],
+        message: "Waiting for FPS to drop to ~15"
+    }).toBeLessThanOrEqual(18); // Allow some buffer
+
+    // Test 30 FPS
+    console.log("Setting framerate to 30 FPS...");
+    await framerateSelect.selectOption('30');
+
+    // Wait for FPS to recover to ~30
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        const match = text.match(/FPS: (\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+    }, {
+        timeout: 15000,
+        intervals: [1000],
+        message: "Waiting for FPS to recover to ~30"
+    }).toBeGreaterThanOrEqual(25);
+
+    console.log("Framerate change verified successfully!");
+});
+

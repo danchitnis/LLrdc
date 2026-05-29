@@ -38,7 +38,7 @@ func startAgentRelay() {
 					}
 
 					log.Printf("Agent relay: new connection from %v", s.RemoteAddr())
-					dst, err := net.Dial("tcp", AgentAddress)
+					dst, err := net.Dial("tcp4", AgentAddress)
 					if err != nil {
 						log.Printf("Agent relay failed to connect to host %s: %v", AgentAddress, err)
 						return

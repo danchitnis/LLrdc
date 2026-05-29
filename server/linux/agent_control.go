@@ -17,7 +17,8 @@ var (
 	controlConns   = make(map[net.Conn]struct{})
 	controlConnsMu sync.Mutex
 	splitStateMu   sync.RWMutex
-	splitState     struct {
+
+	splitState struct {
 		generation uint64
 		fps        int
 		width      int
@@ -146,9 +147,6 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 	if displayChangeRequested {
 		actualW, actualH := GetScreenSize()
 		_ = resizeDisplay(actualW, actualH)
-
-		// Wait for display to be ready before restarting capture
-		_ = waitForDisplayState(actualW, actualH, 5*time.Second)
 		captureChangeRequested = true
 	}
 
@@ -159,6 +157,7 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 		// Brief pause to allow wf-recorder to fully exit and Wayland to settle
 		time.Sleep(200 * time.Millisecond)
 	}
+
 	// Send ConfigApplied
 	resp := splitproto.Message{
 		Type: splitproto.MsgConfigApplied,

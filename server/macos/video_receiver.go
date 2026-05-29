@@ -50,13 +50,21 @@ func startVideoReceiver() {
 			generation := h.Generation
 			log.Printf("Video producer header: %dx%d (gen %d)", width, height, generation)
 
+			// OPTIMIZATION: If the producer is sending a stale generation, don't even bother.
+			// The agent is likely already restarting it because of a client resize.
+			if generation < getGeneration() {
+				log.Printf("Ignoring stale producer connection (gen %d < current %d)", generation, getGeneration())
+				return
+			}
+
 			codecFamily := common.VideoCodec
 			pixFmt := int(h.PixFmt)
 			enc, encGen := encMgr.Get()
 			// If the encoder state doesn't match the incoming stream, recreate it (synchronously in encMgr)
-			if enc == nil || enc.Width != width || enc.Height != height || encGen != generation || enc.PixFmt != pixFmt {
-				log.Printf("Encoder mismatch: stream %dx%d (fmt %d, gen %d), encoder %v (gen %d). Recreating...", width, height, pixFmt, generation, enc, encGen)
-				encMgr.Recreate(codecFamily, width, height, int(h.FPS), common.TargetBandwidthMbps*1000, pixFmt, generation)
+			if enc == nil || enc.Width != width || enc.Height != height || encGen != generation || enc.PixFmt != pixFmt || enc.FPS != common.FPS || enc.BitrateKbps() != common.TargetBandwidthMbps*1000 {
+				log.Printf("Encoder mismatch: stream %dx%d (fmt %d, gen %d), encoder %v (gen %d, fps %d, bw %d). Recreating with target FPS %d, BW %d...", 
+					width, height, pixFmt, generation, enc, encGen, encMgr.FPS(), encMgr.BitrateKbps(), common.FPS, common.TargetBandwidthMbps*1000)
+				encMgr.Recreate(codecFamily, width, height, common.FPS, common.TargetBandwidthMbps*1000, pixFmt, generation)
 				enc, encGen = encMgr.Get()
 			}
 
@@ -89,10 +97,10 @@ func startVideoReceiver() {
 			const fpsCheckInterval = 60
 			go func() {
 				for frame := range encodeChan {
-					// Always use the latest encoder, but GUARD against mismatched frames or generations.
+					// Always use the latest encoder, but GUARD against mismatched frames.
 					// This prevents mangling during transitions when an old stream is still closing.
-					currentEnc, currentGen := encMgr.Get()
-					if currentEnc != nil && currentGen == generation && currentEnc.Width == width && currentEnc.Height == height && currentEnc.Encode(frame) == 0 {
+					currentEnc, _ := encMgr.Get()
+					if currentEnc != nil && currentEnc.Width == width && currentEnc.Height == height && currentEnc.Encode(frame) == 0 {
 						frameCount++
 						if frameCount%fpsCheckInterval == 0 {
 							now := time.Now()

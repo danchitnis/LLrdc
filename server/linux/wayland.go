@@ -348,47 +348,14 @@ touch "$READY_FILE"
 		return err
 	}
 
-	// Start PulseAudio
-	log.Println("Starting pulseaudio with null-sink for desktop audio capture...")
-	paCmd := exec.Command("pulseaudio", "-D", "--exit-idle-time=-1")
-	paCmd.Env = waylandEnv
-	if err := paCmd.Run(); err == nil {
-		// Wait for PA to be ready by polling pactl
-		paReady := false
-		for i := 0; i < 40; i++ {
-			if err := exec.Command("pactl", "info").Run(); err == nil {
-				paReady = true
-				break
-			}
-			time.Sleep(250 * time.Millisecond)
-		}
-		if paReady {
-			// Create a virtual sink for "Desktop Audio"
-			_ = runWithEnv("pactl", []string{"load-module", "module-null-sink", "sink_name=remote", "sink_properties=device.description=Desktop-Audio"}, waylandEnv)
-			_ = runWithEnv("pactl", []string{"set-default-sink", "remote"}, waylandEnv)
-			// Prevent the sink from suspending to keep audio stream active
-			_ = runWithEnv("pactl", []string{"unload-module", "module-suspend-on-idle"}, waylandEnv)
-			log.Println("PulseAudio virtual sink 'remote' initialized.")
-			readiness.Set(readinessPulseAudio, true)
-		} else {
-			log.Printf("Warning: PulseAudio daemon started but pactl timed out.")
-		}
-	} else {
-		log.Printf("Warning: pulseaudio failed to start: %v", err)
-	}
-	if !EnableAudio {
-		readiness.Set(readinessPulseAudio, true)
-	}
+	// PulseAudio is disabled to minimize startup latency and avoid unnecessary overhead in low-latency mode.
+	readiness.Set(readinessPulseAudio, true)
 
-	if !minimal {
-		if err := waitForFile(desktopReadyMarker, 30*time.Second, 100*time.Millisecond); err != nil {
-			log.Printf("Warning: desktop session readiness failed: %v", err)
-		}
-	}
+	// XFCE Desktop session components (panels, etc.) are allowed to boot in the background.
+	// We don't block video capture on them being fully ready.
 	readiness.Set(readinessDesktopSession, true)
-	log.Println("Desktop session is fully ready.")
+	log.Println("Wayland and Input ready. Desktop session booting in background.")
 	PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
-	// We consider it "ready enough" to start streaming once the socket is there and input is ready
 	return nil
 }

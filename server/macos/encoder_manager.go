@@ -34,7 +34,34 @@ func (m *EncoderManager) Codec() string {
 	return m.codec
 }
 
+func (m *EncoderManager) BitrateKbps() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.bitrateKbps
+}
+
+func (m *EncoderManager) FPS() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.fps
+}
+
+func (m *EncoderManager) Width() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.width
+}
+
+func (m *EncoderManager) Height() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.height
+}
+
 func (m *EncoderManager) Recreate(codec string, width, height, fps, bitrateKbps, pixFmt int, generation uint64) {
+	if fps < 1 {
+		fps = 30
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

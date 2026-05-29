@@ -680,9 +680,14 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 			PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
 			if CaptureMode == CaptureModeAgent {
+				startTime := time.Now()
 				// We just wait for it to exit.
 				_ = cmd.Wait()
-				time.Sleep(1 * time.Second) // Prevent rapid spin loop if TCP is refused
+				// Prevent rapid spin loop if TCP is refused or config is invalid,
+				// but allow instantaneous restart if it ran for a bit.
+				if time.Since(startTime) < 100*time.Millisecond {
+					time.Sleep(100 * time.Millisecond)
+				}
 				continue
 			}
 

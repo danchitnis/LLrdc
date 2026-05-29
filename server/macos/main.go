@@ -16,6 +16,7 @@ var (
 	encMgr            *EncoderManager
 	currentGeneration uint64
 	generationMu      sync.Mutex
+	displayChangeMu   sync.Mutex
 )
 
 func nextGeneration() uint64 {
@@ -40,29 +41,27 @@ func main() {
 	common.InitConfig()
 	common.CaptureMode = common.CaptureModeAgent
 	common.VideoCodec = "h264"
+	common.FPS = 30
+	common.TargetBandwidthMbps = 5
 
-	// Set initial macOS split mode dimensions (1280x720 is a safe default)
-	common.SetScreenSize(1280, 720)
-	width, height := common.GetScreenSize()
+	// Set initial macOS split mode dimensions (1920x1080 to match container default)
+	common.SetScreenSize(1920, 1080)
 
-	// 2. Initialize VideoToolbox Encoder
-	gen := nextGeneration()
-	pixFmt := 0
-	if common.Chroma == "444" {
-		pixFmt = 1
-	}
-	encMgr.Recreate(common.VideoCodec, width, height, common.FPS, common.TargetBandwidthMbps*1000, pixFmt, gen)
-	if enc, _ := encMgr.Get(); enc == nil {
-		log.Fatal("Failed to create initial VideoToolbox encoder")
-	}
-	defer encMgr.Close()
-
+	// 2. Setup Force Keyframe and Connection Callbacks
 	common.OnForceKeyframe = func() {
 		log.Printf("Forcing VideoToolbox IDR frame")
 		if enc, _ := encMgr.Get(); enc != nil {
 			enc.ForceKeyframe()
 		}
 	}
+
+	common.OnPeerConnected = func() {
+		log.Printf("Client connected, forcing VideoToolbox IDR frame")
+		if enc, _ := encMgr.Get(); enc != nil {
+			enc.ForceKeyframe()
+		}
+	}
+	defer encMgr.Close()
 
 	// 3. Set up input forwarding and control client
 	agentHost := "127.0.0.1"
@@ -94,6 +93,7 @@ func main() {
 
 	http.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		width, height := common.GetScreenSize()
 		config := map[string]interface{}{
 			"type":             "config",
 			"videoCodec":       common.VideoCodec,
@@ -101,8 +101,8 @@ func main() {
 			"captureMode":      common.CaptureMode,
 			"webtransportPort": 8090,
 			"webtransportFingerprint": common.WebTransportFingerprint,
-			"screenWidth":      encMgr.width,
-			"screenHeight":     encMgr.height,
+			"screenWidth":      width,
+			"screenHeight":     height,
 		}
 		json.NewEncoder(w).Encode(config)
 	})
@@ -159,7 +159,52 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 	case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 		common.HandleInputMessage(msg)
 	case "config":
-		// Handle basic config updates if needed
+		fpsFloat, fOk := msg["framerate"].(float64)
+		bandwidthFloat, bOk := msg["bandwidth"].(float64)
+		codec, cOk := msg["videoCodec"].(string)
+		chroma, crOk := msg["chroma"].(string)
+		if fOk && bOk && cOk && crOk {
+			fps := int(fpsFloat)
+			bandwidth := int(bandwidthFloat)
+			width, height := common.GetScreenSize()
+			
+			// Only update if something changed
+			if common.FPS != fps || common.TargetBandwidthMbps != bandwidth || common.VideoCodec != codec || common.Chroma != chroma {
+				displayChangeMu.Lock()
+				gen := nextGeneration()
+				pixFmt := 0
+				if chroma == "444" {
+					pixFmt = 1
+				}
+
+				log.Printf("Client requested config update: %s (%s) %d FPS, %d Mbps (Gen %d)", codec, chroma, fps, bandwidth, gen)
+				common.FPS = fps
+				common.TargetBandwidthMbps = bandwidth
+				common.VideoCodec = codec
+				common.Chroma = chroma
+				encMgr.Recreate(codec, width, height, fps, bandwidth*1000, pixFmt, gen)
+
+				if globalControlClient != nil {
+					globalControlClient.ApplyConfig(width, height, fps, common.HDPI, bandwidth, gen, chroma)
+				}
+				displayChangeMu.Unlock()
+			}
+
+			// Update all clients with new config (including the requesting one to confirm)
+			config := map[string]interface{}{
+				"type":             "config",
+				"videoCodec":       common.VideoCodec,
+				"chroma":           common.Chroma,
+				"captureMode":      common.CaptureMode,
+				"webtransportPort": 8090,
+				"webtransportFingerprint": common.WebTransportFingerprint,
+				"screenWidth":      width,
+				"screenHeight":     height,
+				"framerate":        common.FPS,
+				"bandwidth":        common.TargetBandwidthMbps,
+			}
+			common.BroadcastJSON(config)
+		}
 	case "resize":
 		widthFloat, wOk := msg["width"].(float64)
 		heightFloat, hOk := msg["height"].(float64)
@@ -170,6 +215,8 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 				clampedW, clampedH := common.GetScreenSize()
 				log.Printf("Client requested resize to %dx%d (clamped %dx%d)", width, height, clampedW, clampedH)
 				go func() {
+					displayChangeMu.Lock()
+					defer displayChangeMu.Unlock()
 					if globalControlClient != nil {
 						gen := nextGeneration()
 						globalControlClient.ApplyConfig(clampedW, clampedH, common.FPS, common.HDPI, common.TargetBandwidthMbps, gen, common.Chroma)
@@ -184,6 +231,8 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 						"webtransportFingerprint": common.WebTransportFingerprint,
 						"screenWidth":      clampedW,
 						"screenHeight":     clampedH,
+						"framerate":        common.FPS,
+						"bandwidth":        common.TargetBandwidthMbps,
 					}
 					common.BroadcastJSON(config)
 				}()

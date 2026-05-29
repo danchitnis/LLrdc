@@ -36,13 +36,7 @@ func (c *AgentControlClient) loop() {
 	for {
 		err := c.connectAndRead()
 		if err != nil {
-			// If it's a "connection reset by peer" during initial boot, don't spam the logs
-			if !c.connectedOnce {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-			log.Printf("Agent control client error: %v. Retrying in 1s...", err)
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }

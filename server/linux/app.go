@@ -30,6 +30,10 @@ func Run() error {
 	initScreenSize(3840, 2160)
 	initReadiness()
 
+	if CaptureMode == CaptureModeAgent {
+		go startAgentControl()
+	}
+
 	// Register WebRTC callbacks to common package
 	common.OnForceKeyframe = KillFFmpegWithTimestamp
 	common.OnPeerConnected = HandlePeerConnected
@@ -65,9 +69,7 @@ func Run() error {
 	}
 	common.InitWebTransport(wtAddr)
 	startStreaming(broadcastVideoFrame)
-	if CaptureMode == CaptureModeAgent {
-		go startAgentControl()
-	} else {
+	if CaptureMode != CaptureModeAgent {
 		startAudioStreaming()
 	}
 	startHTTPServer()
