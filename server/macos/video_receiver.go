@@ -50,12 +50,6 @@ func startVideoReceiver() {
 			generation := h.Generation
 			log.Printf("Video producer header: %dx%d (gen %d)", width, height, generation)
 
-			// Drop connection if generation is behind current
-			if generation < getGeneration() {
-				log.Printf("Dropping stale connection (gen %d < current %d)", generation, getGeneration())
-				return
-			}
-
 			codecFamily := common.VideoCodec
 			pixFmt := int(h.PixFmt)
 			enc, encGen := encMgr.Get()

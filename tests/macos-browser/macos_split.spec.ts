@@ -32,9 +32,9 @@ test('macOS split architecture correctly streams video and has low mouse latency
     // Navigate to the local macOS server (already running)
     await page.goto('http://localhost:8080/viewer.html');
 
-    // Wait for the video element to be attached and have a source
-    const video = page.locator('#webrtc-video');
-    await expect(video).toBeAttached({ timeout: 15000 });
+    // Wait for the canvas to be attached
+    const display = page.locator('#display');
+    await expect(display).toBeAttached({ timeout: 15000 });
 
     // Reset settings in case of pollution from prior tests
     console.log("Resetting HDPI and Max Resolution to clean state...");
@@ -45,32 +45,20 @@ test('macOS split architecture correctly streams video and has low mouse latency
     await maxResSelect.selectOption('1080');
     await page.click('#config-btn'); // Close panel
 
-    // Ensure video reaches playing state
-    await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 0;
-    }, { timeout: 15000 });
+    // Wait for WebTransport or WebSocket connection
+    const statusEl = page.locator('#status');
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 20000 });
 
     // Allow frames to accumulate
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
 
-    // Verify decoder is receiving frames
-    const frameStats = await page.evaluate(async () => {
-        const pc = (window as any).webrtcPeerConnection || (window as any).rtcPeer;
-        if (!pc) return null;
-        
-        const stats = await pc.getStats();
-        let decodedFrames = 0;
-        stats.forEach((report: any) => {
-            if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                decodedFrames = report.framesDecoded || 0;
-            }
-        });
-        return decodedFrames;
-    });
+    // Verify frames are arriving by checking FPS in status
+    const statusText = await statusEl.textContent() || '';
+    const fpsMatch = statusText.match(/FPS: (\d+)/);
+    const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : 0;
 
-    expect(frameStats).toBeGreaterThan(10);
-    console.log(`Successfully verified split architecture! Decoded frames: ${frameStats}`);
+    expect(fps).toBeGreaterThan(0);
+    console.log(`Successfully verified split architecture! Current status: ${statusText}`);
 
     // ----- MOUSE LATENCY TEST -----
     console.log("Launching latency probe in Docker...");
@@ -143,7 +131,7 @@ test('macOS split architecture correctly streams video and has low mouse latency
     await page.mouse.move(midX, midY); // Jump to exact center
     
     // Get actual video dimensions to calculate expected center
-    const videoDims = await video.evaluate((v: HTMLVideoElement) => ({ w: v.videoWidth, h: v.videoHeight }));
+    const videoDims = await display.evaluate((v: HTMLCanvasElement) => ({ w: v.width, h: v.height }));
     const expectedX = Math.round(videoDims.w / 2);
     console.log(`Expected center for ${videoDims.w}x${videoDims.h}: X=${expectedX}`);
 

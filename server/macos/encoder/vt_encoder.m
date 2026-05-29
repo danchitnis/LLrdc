@@ -79,20 +79,20 @@ void compressionCallback(void* outputCallbackRefCon, void* sourceFrameRefCon, OS
 
     if (isKeyframe) {
         if (vps) {
-            uint32_t vpsLenBig = CFSwapInt32HostToBig((uint32_t)vpsSize);
-            memcpy(outPtr, &vpsLenBig, 4);
+            static const uint8_t startCode[] = {0, 0, 0, 1};
+            memcpy(outPtr, startCode, 4);
             memcpy(outPtr + 4, vps, vpsSize);
             outPtr += vpsSize + 4;
         }
         if (sps) {
-            uint32_t spsLenBig = CFSwapInt32HostToBig((uint32_t)spsSize);
-            memcpy(outPtr, &spsLenBig, 4);
+            static const uint8_t startCode[] = {0, 0, 0, 1};
+            memcpy(outPtr, startCode, 4);
             memcpy(outPtr + 4, sps, spsSize);
             outPtr += spsSize + 4;
         }
         if (pps) {
-            uint32_t ppsLenBig = CFSwapInt32HostToBig((uint32_t)ppsSize);
-            memcpy(outPtr, &ppsLenBig, 4);
+            static const uint8_t startCode[] = {0, 0, 0, 1};
+            memcpy(outPtr, startCode, 4);
             memcpy(outPtr + 4, pps, ppsSize);
             outPtr += ppsSize + 4;
         }
@@ -102,6 +102,19 @@ void compressionCallback(void* outputCallbackRefCon, void* sourceFrameRefCon, OS
     if (copyStatus != kCMBlockBufferNoErr) {
         free(dataPointer);
         return;
+    }
+
+    // Convert AVCC lengths to Annex-B start codes in the main data buffer
+    size_t pos = 0;
+    while (pos < totalLength - 4) {
+        uint32_t naluLen;
+        memcpy(&naluLen, outPtr + pos, 4);
+        naluLen = CFSwapInt32BigToHost(naluLen);
+        
+        static const uint8_t startCode[] = {0, 0, 0, 1};
+        memcpy(outPtr + pos, startCode, 4);
+        
+        pos += 4 + naluLen;
     }
 
     // Pass the safely copied data to Go

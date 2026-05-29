@@ -38,7 +38,7 @@ func (m *EncoderManager) Recreate(codec string, width, height, fps, bitrateKbps,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.current != nil && m.codec == codec && m.width == width && m.height == height && m.fps == fps && m.bitrateKbps == bitrateKbps && m.pixFmt == pixFmt && m.generation == generation {
+	if m.current != nil && m.codec == codec && m.width == width && m.height == height && m.fps == fps && m.bitrateKbps == bitrateKbps && m.pixFmt == pixFmt && m.generation >= generation {
 		return
 	}
 
