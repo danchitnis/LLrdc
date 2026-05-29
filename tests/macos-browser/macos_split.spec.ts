@@ -210,3 +210,79 @@ test('macOS split architecture respects framerate changes in config menu', async
     console.log("Framerate change verified successfully!");
 });
 
+test('macOS split architecture supports dynamic HDPI scaling', async ({ page }) => {
+    // Navigate to the local macOS server
+    await page.goto('http://localhost:8080/viewer.html');
+
+    // Wait for connection
+    const statusEl = page.locator('#status');
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 30000 });
+
+    // Open config menu
+    await page.click('#config-btn');
+    const hdpiSelect = page.locator('#hdpi-select');
+
+    // Change HDPI to 200%
+    console.log("Changing HDPI to 200%...");
+    await hdpiSelect.selectOption('200');
+
+    // Verify the server applied the new HDPI scaling by checking agent logs
+    const CONTAINER_NAME = 'llrdc-macos';
+    
+    await expect.poll(() => {
+        try {
+            const logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
+            return logs;
+        } catch (e) {
+            return '';
+        }
+    }, {
+        message: 'Agent should apply dynamic 200% HDPI scaling',
+        timeout: 15000,
+    }).toContain('Agent received HDPI config: 200%');
+
+    console.log("Agent received HDPI config!");
+
+    await expect.poll(() => {
+        try {
+            const logs = execSync(`docker logs ${CONTAINER_NAME}`).toString();
+            return logs;
+        } catch (e) {
+            return '';
+        }
+    }, {
+        message: 'Compositor should apply 2x scaling',
+        timeout: 15000,
+    }).toContain('with scale 2.000000');
+
+    console.log("HDPI 200% verified successfully!");
+});
+
+test('macOS split architecture supports fixed resolution switching', async ({ page }) => {
+    // Navigate to the local macOS server
+    await page.goto('http://localhost:8080/viewer.html');
+
+    // Wait for connection
+    const statusEl = page.locator('#status');
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 30000 });
+
+    // Open config menu
+    await page.click('#config-btn');
+    const maxResSelect = page.locator('#max-res-select');
+
+    // Switch to 720p
+    console.log("Switching to 720p...");
+    await maxResSelect.selectOption('720');
+
+    // Wait for status bar to reflect 720p (1280x720)
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        return text;
+    }, {
+        timeout: 20000,
+        message: "Waiting for status to show 1280x720"
+    }).toContain('1280x720');
+
+    console.log("Fixed resolution 720p verified successfully!");
+});
+

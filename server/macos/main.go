@@ -159,52 +159,69 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 	case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 		common.HandleInputMessage(msg)
 	case "config":
-		fpsFloat, fOk := msg["framerate"].(float64)
-		bandwidthFloat, bOk := msg["bandwidth"].(float64)
-		codec, cOk := msg["videoCodec"].(string)
-		chroma, crOk := msg["chroma"].(string)
-		if fOk && bOk && cOk && crOk {
-			fps := int(fpsFloat)
-			bandwidth := int(bandwidthFloat)
+		fpsFloat, _ := msg["framerate"].(float64)
+		bandwidthFloat, _ := msg["bandwidth"].(float64)
+		codec, _ := msg["videoCodec"].(string)
+		chroma, _ := msg["chroma"].(string)
+		hdpiFloat, _ := msg["hdpi"].(float64)
+		maxResFloat, _ := msg["max_res"].(float64)
+
+		fps := int(fpsFloat)
+		bandwidth := int(bandwidthFloat)
+		hdpi := int(hdpiFloat)
+		maxRes := int(maxResFloat)
+
+		// Only update if something changed
+		if common.FPS != fps || common.TargetBandwidthMbps != bandwidth || common.VideoCodec != codec || common.Chroma != chroma || common.HDPI != hdpi || common.InitialRes != maxRes {
+			displayChangeMu.Lock()
+			gen := nextGeneration()
+			pixFmt := 0
+			if chroma == "444" {
+				pixFmt = 1
+			}
+
+			log.Printf("Client requested config update: %s (%s) %d FPS, %d Mbps, HDPI %d%%, MaxRes %dp (Gen %d)",
+				codec, chroma, fps, bandwidth, hdpi, maxRes, gen)
+
+			common.FPS = fps
+			common.TargetBandwidthMbps = bandwidth
+			common.VideoCodec = codec
+			common.Chroma = chroma
+			common.HDPI = hdpi
+
+			if common.InitialRes != maxRes {
+				common.InitialRes = maxRes
+				if maxRes > 0 {
+					common.UpdateScreenSizeFromInitialRes()
+				}
+			}
+
 			width, height := common.GetScreenSize()
-			
-			// Only update if something changed
-			if common.FPS != fps || common.TargetBandwidthMbps != bandwidth || common.VideoCodec != codec || common.Chroma != chroma {
-				displayChangeMu.Lock()
-				gen := nextGeneration()
-				pixFmt := 0
-				if chroma == "444" {
-					pixFmt = 1
-				}
+			encMgr.Recreate(codec, width, height, fps, bandwidth*1000, pixFmt, gen)
 
-				log.Printf("Client requested config update: %s (%s) %d FPS, %d Mbps (Gen %d)", codec, chroma, fps, bandwidth, gen)
-				common.FPS = fps
-				common.TargetBandwidthMbps = bandwidth
-				common.VideoCodec = codec
-				common.Chroma = chroma
-				encMgr.Recreate(codec, width, height, fps, bandwidth*1000, pixFmt, gen)
-
-				if globalControlClient != nil {
-					globalControlClient.ApplyConfig(width, height, fps, common.HDPI, bandwidth, gen, chroma)
-				}
-				displayChangeMu.Unlock()
+			if globalControlClient != nil {
+				globalControlClient.ApplyConfig(width, height, fps, common.HDPI, bandwidth, gen, chroma)
 			}
-
-			// Update all clients with new config (including the requesting one to confirm)
-			config := map[string]interface{}{
-				"type":             "config",
-				"videoCodec":       common.VideoCodec,
-				"chroma":           common.Chroma,
-				"captureMode":      common.CaptureMode,
-				"webtransportPort": 8090,
-				"webtransportFingerprint": common.WebTransportFingerprint,
-				"screenWidth":      width,
-				"screenHeight":     height,
-				"framerate":        common.FPS,
-				"bandwidth":        common.TargetBandwidthMbps,
-			}
-			common.BroadcastJSON(config)
+			displayChangeMu.Unlock()
 		}
+
+		// Update all clients with new config (including the requesting one to confirm)
+		width, height := common.GetScreenSize()
+		config := map[string]interface{}{
+			"type":             "config",
+			"videoCodec":       common.VideoCodec,
+			"chroma":           common.Chroma,
+			"captureMode":      common.CaptureMode,
+			"webtransportPort": 8090,
+			"webtransportFingerprint": common.WebTransportFingerprint,
+			"screenWidth":      width,
+			"screenHeight":     height,
+			"framerate":        common.FPS,
+			"bandwidth":        common.TargetBandwidthMbps,
+			"hdpi":             common.HDPI,
+			"max_res":          common.InitialRes,
+		}
+		common.BroadcastJSON(config)
 	case "resize":
 		widthFloat, wOk := msg["width"].(float64)
 		heightFloat, hOk := msg["height"].(float64)
