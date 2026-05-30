@@ -205,8 +205,9 @@ session.events.on('serverMessage', (msg: any) => {
         }
 
         if (msg.hdpi !== undefined && hdpiSelect) {
-            hdpiSelect.value = msg.hdpi.toString();
-            currentHdpi = msg.hdpi;
+            const displayHdpi = msg.hdpi <= 0 ? 100 : msg.hdpi;
+            hdpiSelect.value = displayHdpi.toString();
+            currentHdpi = displayHdpi;
         }
 
         if (msg.max_res !== undefined && maxResSelect) {
