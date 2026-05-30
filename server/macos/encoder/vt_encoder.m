@@ -48,6 +48,14 @@ void compressionCallback(void* outputCallbackRefCon, void* sourceFrameRefCon, OS
             size_t spsCount, ppsCount;
             CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, 0, &sps, &spsSize, &spsCount, NULL);
             CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, 1, &pps, &ppsSize, &ppsCount, NULL);
+            if (sps && spsSize > 0) {
+                printf("VT Encoder H264 SPS hex: ");
+                for (size_t i = 0; i < spsSize; i++) {
+                    printf("%02x", sps[i]);
+                }
+                printf("\n");
+                fflush(stdout);
+            }
             if (sps) headerSize += spsSize + 4;
             if (pps) headerSize += ppsSize + 4;
         } else if (codecType == kCMVideoCodecType_HEVC) {
@@ -69,7 +77,7 @@ void compressionCallback(void* outputCallbackRefCon, void* sourceFrameRefCon, OS
         }
     }
 
-    // Calculate total buffer size including SPS/PPS/VPS (with 4-byte AVCC/HVCC length prefixes)
+    // Calculate total buffer size including SPS/PPS/VPS
     size_t allocSize = totalLength + headerSize;
 
     void* dataPointer = malloc(allocSize);
@@ -130,10 +138,36 @@ typedef struct {
     int height;
     int fps;
     int pix_fmt; // 0 for 420p, 1 for 444
+    OSType input_format;
     int64_t frame_count;
 } VTEncoder;
 
+void log_encoder_capabilities() {
+    CFArrayRef encoderList = NULL;
+    VTCopyVideoEncoderList(NULL, &encoderList);
+    if (encoderList) {
+        printf("VT Encoder: Available Encoders:\n");
+        for (CFIndex i = 0; i < CFArrayGetCount(encoderList); i++) {
+            CFDictionaryRef encoderDict = (CFDictionaryRef)CFArrayGetValueAtIndex(encoderList, i);
+            CFStringRef name = (CFStringRef)CFDictionaryGetValue(encoderDict, kVTVideoEncoderList_EncoderName);
+            CFStringRef codecName = (CFStringRef)CFDictionaryGetValue(encoderDict, kVTVideoEncoderList_CodecName);
+            CFBooleanRef isHW = (CFBooleanRef)CFDictionaryGetValue(encoderDict, kVTVideoEncoderList_IsHardwareAccelerated);
+            
+            char nameBuf[256], codecBuf[256];
+            CFStringGetCString(name, nameBuf, sizeof(nameBuf), kCFStringEncodingUTF8);
+            CFStringGetCString(codecName, codecBuf, sizeof(codecBuf), kCFStringEncodingUTF8);
+            printf("  - %s (%s) HW=%s\n", nameBuf, codecBuf, (isHW == kCFBooleanTrue) ? "YES" : "NO");
+        }
+        CFRelease(encoderList);
+    }
+    fflush(stdout);
+}
+
 VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, int bitrate_kbps, int pix_fmt, uintptr_t handle) {
+    log_encoder_capabilities();
+    printf("VT Encoder: Creating for codec=%s, %dx%d, fps=%d, bitrate=%d, pix_fmt=%d\n", codec, width, height, fps, bitrate_kbps, pix_fmt);
+    fflush(stdout);
+    
     VTEncoder* encoder = (VTEncoder*)malloc(sizeof(VTEncoder));
     encoder->width = width;
     encoder->height = height;
@@ -146,58 +180,119 @@ VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, 
         codecType = kCMVideoCodecType_HEVC;
     }
 
-    CFMutableDictionaryRef sourceAttributes = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    OSType inputFormat = kCVPixelFormatType_420YpCbCr8Planar;
-    if (pix_fmt == 1) {
-        inputFormat = kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange;
+    OSStatus status = -1;
+    OSType candidates[] = {
+        kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange, // 444v
+        kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange, // 422v
+        kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange  // 420v
+    };
+    int startIdx = (pix_fmt == 1) ? 0 : 2;
+
+    for (int i = startIdx; i < 3; i++) {
+        encoder->input_format = candidates[i];
+        
+        CFMutableDictionaryRef sourceAttributes = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        CFNumberRef formatNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &encoder->input_format);
+        CFDictionarySetValue(sourceAttributes, kCVPixelBufferPixelFormatTypeKey, formatNum);
+        CFRelease(formatNum);
+
+        CFMutableDictionaryRef encoderSpecs = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        // REQUIRE hardware acceleration as requested by user.
+        CFDictionarySetValue(encoderSpecs, kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder, kCFBooleanTrue);
+
+        status = VTCompressionSessionCreate(
+            kCFAllocatorDefault,
+            width, height,
+            codecType,
+            encoderSpecs,
+            sourceAttributes,
+            NULL,
+            compressionCallback,
+            (void*)handle,
+            &encoder->session
+        );
+
+        CFRelease(sourceAttributes);
+        CFRelease(encoderSpecs);
+
+        if (status == noErr) {
+            printf("VT Encoder: Successfully created session with format: %c%c%c%c\n", 
+                (char)((encoder->input_format >> 24) & 0xFF),
+                (char)((encoder->input_format >> 16) & 0xFF),
+                (char)((encoder->input_format >> 8) & 0xFF),
+                (char)(encoder->input_format & 0xFF));
+
+            CFBooleanRef usingHW = NULL;
+            VTSessionCopyProperty(encoder->session, kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder, kCFAllocatorDefault, &usingHW);
+            if (usingHW) {
+                printf("VT Encoder: Hardware Acceleration: %s\n", (usingHW == kCFBooleanTrue) ? "YES" : "NO");
+                CFRelease(usingHW);
+            }
+            fflush(stdout);
+            break;
+        }
     }
-    CFNumberRef formatNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &inputFormat);
-    CFDictionarySetValue(sourceAttributes, kCVPixelBufferPixelFormatTypeKey, formatNum);
-    CFRelease(formatNum);
-
-    OSStatus status = VTCompressionSessionCreate(
-        kCFAllocatorDefault,
-        width, height,
-        codecType,
-        NULL, // encoderSpecification
-        sourceAttributes, // sourceImageBufferAttributes
-        NULL, // compressedDataAllocator
-        compressionCallback,
-        (void*)handle, // outputCallbackRefCon
-        &encoder->session
-    );
-
-    CFRelease(sourceAttributes);
 
     if (status != noErr) {
         fprintf(stderr, "VTCompressionSessionCreate failed: %d\n", (int)status);
+        fflush(stderr);
         free(encoder);
         return NULL;
     }
 
-    // Set properties for low latency
-    VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
-    
+    // Set ProfileLevel
     if (codecType == kCMVideoCodecType_H264) {
         if (pix_fmt == 1) {
-            status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, CFSTR("H264_High444Predictive_AutoLevel"));
+            // H.264 4:4:4 or 4:2:2 profiles
+            const CFStringRef h264_profiles[] = {
+                CFSTR("H264_High444Predictive_AutoLevel"),
+                CFSTR("H264_High422_AutoLevel"),
+                kVTProfileLevel_H264_High_AutoLevel
+            };
+            for (int i = 0; i < 3; i++) {
+                status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, h264_profiles[i]);
+                if (status == noErr) {
+                    char buf[256];
+                    CFStringGetCString(h264_profiles[i], buf, sizeof(buf), kCFStringEncodingUTF8);
+                    printf("VT Encoder: Successfully applied H264 profile: %s (Index %d)\n", buf, i);
+                    break;
+                } else {
+                    printf("VT Encoder: Failed H264 profile index %d: %d\n", i, (int)status);
+                }
+            }
         } else {
             status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_High_AutoLevel);
+            printf("VT Encoder: Setting H264_High_AutoLevel status: %d\n", (int)status);
         }
     } else {
         // HEVC
         if (pix_fmt == 1) {
-            status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, CFSTR("HEVC_Main444_AutoLevel"));
+            const CFStringRef hevc_profiles[] = {
+                CFSTR("HEVC_Main44410_AutoLevel"),
+                CFSTR("HEVC_Main42210_AutoLevel"),
+                CFSTR("HEVC_Main444_AutoLevel"),
+                kVTProfileLevel_HEVC_Main10_AutoLevel,
+                kVTProfileLevel_HEVC_Main_AutoLevel
+            };
+            for (int i = 0; i < 5; i++) {
+                status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, hevc_profiles[i]);
+                if (status == noErr) {
+                    char buf[256];
+                    CFStringGetCString(hevc_profiles[i], buf, sizeof(buf), kCFStringEncodingUTF8);
+                    printf("VT Encoder: Successfully applied HEVC profile: %s (Index %d)\n", buf, i);
+                    break;
+                } else {
+                    printf("VT Encoder: Failed HEVC profile index %d: %d\n", i, (int)status);
+                }
+            }
         } else {
             status = VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_HEVC_Main_AutoLevel);
+            printf("VT Encoder: Setting HEVC_Main_AutoLevel status: %d\n", (int)status);
         }
     }
+    fflush(stdout);
 
-    if (status != noErr) {
-        fprintf(stderr, "Warning: Failed to set ProfileLevel: %d\n", (int)status);
-    }
-    
-    // Set color space for screen capture
+    VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_ITU_R_709_2);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2);
@@ -207,112 +302,94 @@ VTEncoder* vt_encoder_create(const char* codec, int width, int height, int fps, 
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_AverageBitRate, bitrateNum);
     CFRelease(bitrateNum);
 
-    int gop = fps; // 1 second GOP
+    int gop = fps;
     CFNumberRef gopNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &gop);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_MaxKeyFrameInterval, gopNum);
     CFRelease(gopNum);
 
-    // Disable B-frames for lowest latency
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse);
-
-    // Set expected frame rate to help the rate controller
+    
     CFNumberRef fpsNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &fps);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_ExpectedFrameRate, fpsNum);
     CFRelease(fpsNum);
 
-    // Ensure we don't delay frames for rate control
     int zero = 0;
     CFNumberRef zeroNum = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &zero);
     VTSessionSetProperty(encoder->session, kVTCompressionPropertyKey_MaxFrameDelayCount, zeroNum);
     CFRelease(zeroNum);
 
     VTCompressionSessionPrepareToEncodeFrames(encoder->session);
-
     return encoder;
 }
 
 int vt_encoder_encode(VTEncoder* encoder, uint8_t* yuv_data, int force_keyframe) {
     CVPixelBufferRef pixelBuffer = NULL;
-    
-    OSType formatType = kCVPixelFormatType_420YpCbCr8Planar;
-    if (encoder->pix_fmt == 1) {
-        formatType = kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange;
-    }
+    OSStatus status = CVPixelBufferCreate(kCFAllocatorDefault, encoder->width, encoder->height, encoder->input_format, NULL, &pixelBuffer);
+    if (status != kCVReturnSuccess || !pixelBuffer) return -1;
 
-    // Create a new pixel buffer that owns its memory
-    OSStatus status = CVPixelBufferCreate(
-        kCFAllocatorDefault,
-        encoder->width, encoder->height,
-        formatType,
-        NULL,
-        &pixelBuffer
-    );
-
-    if (status != kCVReturnSuccess || !pixelBuffer) {
-        return -1;
-    }
-
-    // Set attachments for the buffer
     CVBufferSetAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
     CVBufferSetAttachment(pixelBuffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
     CVBufferSetAttachment(pixelBuffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
 
-    // Lock the buffer and copy the data
     CVPixelBufferLockBaseAddress(pixelBuffer, 0);
 
+    uint8_t* yDest = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0);
+    uint8_t* uvDest = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1);
+    size_t yStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0);
+    size_t uvStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1);
+    
+    uint8_t* ySrc = yuv_data;
+    uint8_t* uSrc = yuv_data + (encoder->width * encoder->height);
+    uint8_t* vSrc;
+
+    // Plane offset based on input format knowledge
     if (encoder->pix_fmt == 1) {
-        // Bi-planar 444: Plane 0 is Y, Plane 1 is interleaved UV
-        uint8_t* yDest = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0);
-        uint8_t* uvDest = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1);
-        
-        size_t yStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0);
-        size_t uvStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1);
-        
-        uint8_t* ySrc = yuv_data;
-        uint8_t* uSrc = yuv_data + (encoder->width * encoder->height);
-        uint8_t* vSrc = uSrc + (encoder->width * encoder->height);
-        
-        // Copy Y
-        for (int i = 0; i < encoder->height; i++) {
-            memcpy(yDest + i * yStride, ySrc + i * encoder->width, encoder->width);
-        }
-        
-        // Interleave U and V into Plane 1 (CbCr order)
+        // Agent is sending yuv444p (full size U and V planes)
+        vSrc = uSrc + (encoder->width * encoder->height);
+    } else {
+        // Agent is sending yuv420p (quarter size U and V planes)
+        vSrc = uSrc + (encoder->width * encoder->height / 4);
+    }
+
+    // Copy Y
+    for (int i = 0; i < encoder->height; i++) {
+        memcpy(yDest + i * yStride, ySrc + i * encoder->width, encoder->width);
+    }
+
+    // Interleave U and V into Plane 1 (CbCr order)
+    if (encoder->input_format == kCVPixelFormatType_444YpCbCr8BiPlanarVideoRange) {
         for (int i = 0; i < encoder->height; i++) {
             uint8_t* lineDest = uvDest + i * uvStride;
             uint8_t* lineUSrc = uSrc + i * encoder->width;
             uint8_t* lineVSrc = vSrc + i * encoder->width;
             for (int j = 0; j < encoder->width; j++) {
+                // Restore CbCr (U then V) order for 4:4:4
                 lineDest[j*2] = lineUSrc[j];
                 lineDest[j*2+1] = lineVSrc[j];
             }
         }
-    } else {
-        // Planar 420
-        uint8_t* yDest = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0);
-        uint8_t* uDest = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1);
-        uint8_t* vDest = (uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 2);
-
-        size_t yStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0);
-        size_t uStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1);
-        size_t vStride = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 2);
-
-        // Copy Y plane
-        uint8_t* ySrc = yuv_data;
+    } else if (encoder->input_format == kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange) {
         for (int i = 0; i < encoder->height; i++) {
-            memcpy(yDest + i * yStride, ySrc + i * encoder->width, encoder->width);
+            uint8_t* lineDest = uvDest + i * uvStride;
+            uint8_t* lineUSrc = uSrc + i * encoder->width;
+            uint8_t* lineVSrc = vSrc + i * encoder->width;
+            for (int j = 0; j < encoder->width / 2; j++) {
+                // Restore CbCr (U then V) order for 4:2:2
+                lineDest[j*2] = lineUSrc[j*2];
+                lineDest[j*2+1] = lineVSrc[j*2];
+            }
         }
-
-        // Copy U plane
-        uint8_t* uSrc = yuv_data + (encoder->width * encoder->height);
+    } else {
+        // 4:2:0 BiPlanar
         for (int i = 0; i < encoder->height / 2; i++) {
-            memcpy(uDest + i * uStride, uSrc + i * (encoder->width / 2), encoder->width / 2);
-        }
-
-        // Copy V plane
-        uint8_t* vSrc = yuv_data + (encoder->width * encoder->height) + (encoder->width * encoder->height / 4);
-        for (int i = 0; i < encoder->height / 2; i++) {
-            memcpy(vDest + i * vStride, vSrc + i * (encoder->width / 2), encoder->width / 2);
+            uint8_t* lineDest = uvDest + i * uvStride;
+            uint8_t* lineUSrc = uSrc + i * (encoder->width / 2);
+            uint8_t* lineVSrc = vSrc + i * (encoder->width / 2);
+            for (int j = 0; j < encoder->width / 2; j++) {
+                // Restore Cb, Cr order for 4:2:0
+                lineDest[j*2] = lineUSrc[j];
+                lineDest[j*2+1] = lineVSrc[j];
+            }
         }
     }
 
@@ -328,20 +405,9 @@ int vt_encoder_encode(VTEncoder* encoder, uint8_t* yuv_data, int force_keyframe)
     CMTime pts = CMTimeMake(encoder->frame_count, encoder->fps);
     encoder->frame_count++;
 
-    status = VTCompressionSessionEncodeFrame(
-        encoder->session,
-        pixelBuffer,
-        pts, // PTS
-        kCMTimeInvalid, // Duration
-        frameProps, // frameProperties
-        NULL, // sourceFrameRefCon
-        NULL // infoFlagsOut
-    );
+    status = VTCompressionSessionEncodeFrame(encoder->session, pixelBuffer, pts, kCMTimeInvalid, frameProps, NULL, NULL);
 
-    if (frameProps) {
-        CFRelease(frameProps);
-    }
-
+    if (frameProps) CFRelease(frameProps);
     CVPixelBufferRelease(pixelBuffer);
 
     return (status == noErr) ? 0 : -1;

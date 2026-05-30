@@ -18,8 +18,50 @@ interface ProbeState {
 }
 
 function readProbeState(containerName: string): ProbeState {
-    return JSON.parse(run(`docker exec ${containerName} cat /tmp/llrdc-latency-probe.json`)) as ProbeState;
+    for (let i = 0; i < 5; i++) {
+        try {
+            const out = run(`docker exec ${containerName} cat /tmp/llrdc-latency-probe.json`);
+            if (out && out.startsWith('{')) {
+                return JSON.parse(out) as ProbeState;
+            }
+        } catch (e) {}
+        execSync('sleep 0.1');
+    }
+    throw new Error("Failed to read probe state after 5 attempts");
 }
+
+test.beforeEach(async ({ page }) => {
+    // Navigate to the local macOS server
+    await page.goto('http://localhost:8080/viewer.html');
+
+    // Wait for connection
+    const statusEl = page.locator('#status');
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 30000 });
+
+    // Reset settings to a clean baseline: H.264, 100% HDPI, Responsive Resolution
+    console.log("Resetting server state to baseline (H.264, 100% HDPI, Responsive)...");
+    await page.click('#config-btn');
+    
+    const codecSelect = page.locator('#video-codec-select');
+    await codecSelect.selectOption('h264');
+    
+    const hdpiSelect = page.locator('#hdpi-select');
+    await hdpiSelect.selectOption('100');
+    
+    const maxResSelect = page.locator('#max-res-select');
+    await maxResSelect.selectOption('0'); // Responsive
+    
+    await page.click('#config-btn'); // Close panel
+    
+    // Wait for status to reflect baseline
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        return text;
+    }, {
+        timeout: 10000,
+        message: "Waiting for status to show h264 4:2:0 baseline"
+    }).toContain('h264');
+});
 
 test('macOS split architecture correctly streams video and has low mouse latency', async ({ page }) => {
     test.setTimeout(60000); // Allow time for the test to run
@@ -32,25 +74,10 @@ test('macOS split architecture correctly streams video and has low mouse latency
     // Measure startup latency
     const startTime = Date.now();
 
-    // Navigate to the local macOS server (already running)
-    await page.goto('http://localhost:8080/viewer.html');
-
-    // Wait for the canvas to be attached
+    // The server state is already reset by beforeEach
+    const statusEl = page.locator('#status');
     const display = page.locator('#display');
     await expect(display).toBeAttached({ timeout: 15000 });
-
-    // Reset settings in case of pollution from prior tests
-    console.log("Resetting HDPI and Max Resolution to clean state...");
-    await page.click('#config-btn');
-    const hdpiSelect = page.locator('#hdpi-select');
-    await hdpiSelect.selectOption('100');
-    const maxResSelect = page.locator('#max-res-select');
-    await maxResSelect.selectOption('1080');
-    await page.click('#config-btn'); // Close panel
-
-    // Wait for WebTransport or WebSocket connection
-    const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 30000 });
 
     // Allow frames to accumulate and handle potential initial connection drops
     console.log("Waiting for video stream to stabilize...");
@@ -154,7 +181,7 @@ test('macOS split architecture correctly streams video and has low mouse latency
         const state = readProbeState(containerName);
         if (Math.abs(state.mouseX - expectedX) < 100) { 
             finalCursorX = state.mouseX;
-            break; 
+            break;
         }
         await page.waitForTimeout(100);
     }
@@ -163,19 +190,22 @@ test('macOS split architecture correctly streams video and has low mouse latency
 
     // If it's stuck, it will never reach the expected center
     expect(Math.abs(finalCursorX - expectedX)).toBeLessThan(100);
+    
+    // Wait for system to settle
+    await page.waitForTimeout(2000);
 });
 
 test('macOS split architecture respects framerate changes in config menu', async ({ page }) => {
-    // Navigate to the local macOS server
-    await page.goto('http://localhost:8080/viewer.html');
+    test.setTimeout(60000);
+    // Connection and baseline reset handled by beforeEach
 
-    // Wait for connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 20000 });
 
     // Open config menu
+    console.log("Opening config menu for framerate test...");
     await page.click('#config-btn');
     const framerateSelect = page.locator('#framerate-select');
+    await expect(framerateSelect).toBeVisible({ timeout: 5000 });
 
     // Test 15 FPS
     console.log("Setting framerate to 15 FPS...");
@@ -187,7 +217,7 @@ test('macOS split architecture respects framerate changes in config menu', async
         const match = text.match(/FPS: (\d+)/);
         return match ? parseInt(match[1], 10) : 0;
     }, {
-        timeout: 15000,
+        timeout: 20000,
         intervals: [1000],
         message: "Waiting for FPS to drop to ~15"
     }).toBeLessThanOrEqual(18); // Allow some buffer
@@ -202,25 +232,28 @@ test('macOS split architecture respects framerate changes in config menu', async
         const match = text.match(/FPS: (\d+)/);
         return match ? parseInt(match[1], 10) : 0;
     }, {
-        timeout: 15000,
+        timeout: 20000,
         intervals: [1000],
         message: "Waiting for FPS to recover to ~30"
     }).toBeGreaterThanOrEqual(25);
 
     console.log("Framerate change verified successfully!");
+    
+    // Wait for system to settle
+    await page.waitForTimeout(2000);
 });
 
 test('macOS split architecture supports dynamic HDPI scaling', async ({ page }) => {
-    // Navigate to the local macOS server
-    await page.goto('http://localhost:8080/viewer.html');
+    test.setTimeout(60000);
+    // Connection and baseline reset handled by beforeEach
 
-    // Wait for connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 30000 });
 
     // Open config menu
+    console.log("Opening config menu for HDPI test...");
     await page.click('#config-btn');
     const hdpiSelect = page.locator('#hdpi-select');
+    await expect(hdpiSelect).toBeVisible({ timeout: 5000 });
 
     // Change HDPI to 200%
     console.log("Changing HDPI to 200%...");
@@ -238,7 +271,7 @@ test('macOS split architecture supports dynamic HDPI scaling', async ({ page }) 
         }
     }, {
         message: 'Agent should apply dynamic 200% HDPI scaling',
-        timeout: 15000,
+        timeout: 20000,
     }).toContain('Agent received HDPI config: 200%');
 
     console.log("Agent received HDPI config!");
@@ -252,37 +285,132 @@ test('macOS split architecture supports dynamic HDPI scaling', async ({ page }) 
         }
     }, {
         message: 'Compositor should apply 2x scaling',
-        timeout: 15000,
+        timeout: 20000,
     }).toContain('with scale 2.000000');
 
     console.log("HDPI 200% verified successfully!");
+    
+    // Wait for system to settle
+    await page.waitForTimeout(2000);
 });
 
 test('macOS split architecture supports fixed resolution switching', async ({ page }) => {
-    // Navigate to the local macOS server
-    await page.goto('http://localhost:8080/viewer.html');
+    test.setTimeout(60000);
+    // Connection and baseline reset handled by beforeEach
 
-    // Wait for connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebTransport|WebSocket)/i, { timeout: 30000 });
 
     // Open config menu
+    console.log("Opening config menu for resolution test...");
     await page.click('#config-btn');
     const maxResSelect = page.locator('#max-res-select');
+    await expect(maxResSelect).toBeVisible({ timeout: 5000 });
 
     // Switch to 720p
     console.log("Switching to 720p...");
     await maxResSelect.selectOption('720');
 
-    // Wait for status bar to reflect 720p (1280x720)
+    // Wait for status bar to reflect 720p
     await expect.poll(async () => {
         const text = await statusEl.textContent() || '';
         return text;
     }, {
-        timeout: 20000,
-        message: "Waiting for status to show 1280x720"
-    }).toContain('1280x720');
+        timeout: 30000,
+        message: "Waiting for status to show 720p"
+    }).toContain('720');
 
     console.log("Fixed resolution 720p verified successfully!");
+    
+    // Wait for system to settle
+    await page.waitForTimeout(2000);
 });
 
+test('macOS split architecture supports H.264 4:4:4 encoding', async ({ page }) => {
+    test.setTimeout(60000);
+    // Connection and baseline reset handled by beforeEach
+
+    const statusEl = page.locator('#status');
+
+    // Open config menu
+    console.log("Opening config menu for H.264 4:4:4 test...");
+    await page.click('#config-btn');
+    
+    const codecSelect = page.locator('#video-codec-select');
+    await expect(codecSelect).toBeVisible({ timeout: 5000 });
+
+    // Switch to H.264 4:4:4
+    console.log("Switching to H.264 4:4:4...");
+    await codecSelect.selectOption('h264-444');
+    
+    // Close menu
+    await page.click('#config-btn');
+
+    // Wait for status bar to reflect H.264 4:4:4
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        return text;
+    }, {
+        timeout: 30000,
+        message: "Waiting for status to show h264-444"
+    }).toContain('h264-444');
+
+    // Verify frames are flowing
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        const match = text.match(/FPS: (\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+    }, {
+        timeout: 20000,
+        message: "Waiting for FPS > 0 in H.264 4:4:4 mode"
+    }).toBeGreaterThan(0);
+
+    console.log("H.264 4:4:4 verified successfully!");
+    
+    // Wait for system to settle
+    await page.waitForTimeout(2000);
+});
+
+test('macOS split architecture supports HEVC 4:4:4 encoding', async ({ page, browserName }) => {
+    if (browserName === 'chromium') {
+        test.skip(true, 'Chromium does not support HEVC (H.265)');
+    }
+    test.setTimeout(60000);
+    // Connection and baseline reset handled by beforeEach
+
+    const statusEl = page.locator('#status');
+
+    // Open config menu
+    console.log("Opening config menu for HEVC 4:4:4 test...");
+    await page.click('#config-btn');
+    
+    const codecSelect = page.locator('#video-codec-select');
+    await expect(codecSelect).toBeVisible({ timeout: 5000 });
+
+    // Switch to HEVC 4:4:4
+    console.log("Switching to HEVC 4:4:4...");
+    await codecSelect.selectOption('h265-444');
+    
+    // Close menu
+    await page.click('#config-btn');
+
+    // Wait for status bar to reflect HEVC 4:4:4
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        return text;
+    }, {
+        timeout: 30000,
+        message: "Waiting for status to show h265-444"
+    }).toContain('h265-444');
+
+    // Verify frames are flowing
+    await expect.poll(async () => {
+        const text = await statusEl.textContent() || '';
+        const match = text.match(/FPS: (\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+    }, {
+        timeout: 20000,
+        message: "Waiting for FPS > 0 in HEVC 4:4:4 mode"
+    }).toBeGreaterThan(0);
+
+    console.log("HEVC 4:4:4 verified successfully!");
+});

@@ -70,6 +70,15 @@ func (e *VTEncoder) Encode(yuvData []byte) int {
 		return -1
 	}
 
+	// Safety check: ensure buffer is large enough for the encoder's pixel format
+	expectedSize := e.Width * e.Height * 3 / 2 // 4:2:0
+	if e.PixFmt == 1 {
+		expectedSize = e.Width * e.Height * 3 // 4:4:4
+	}
+	if len(yuvData) < expectedSize {
+		return -1
+	}
+
 	force := 0
 	if e.forceNextIDR.CompareAndSwap(true, false) {
 		force = 1

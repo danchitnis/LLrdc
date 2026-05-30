@@ -9,26 +9,30 @@ import (
 	"time"
 )
 
-func runWithEnv(name string, args []string, env []string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("Command %s %v failed: %v\nOutput: %s", name, args, err, string(out))
-		return err
+func outputWithEnv(name string, args []string, env []string) (string, error) {
+	var out []byte
+	var err error
+	for i := 0; i < 20; i++ {
+		cmd := exec.Command(name, args...)
+		cmd.Env = env
+		out, err = cmd.CombinedOutput()
+		if err == nil {
+			return string(out), nil
+		}
+		// If it's a connection error or no outputs, retry.
+		outStr := string(out)
+		if strings.Contains(outStr, "failed to connect to display") || strings.Contains(outStr, "no outputs available") {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		return outStr, err
 	}
-	return nil
+	return string(out), err
 }
 
-func outputWithEnv(name string, args []string, env []string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("Command %s %v failed: %v\nOutput: %s", name, args, err, string(out))
-		return "", err
-	}
-	return string(out), nil
+func runWithEnv(name string, args []string, env []string) error {
+	_, err := outputWithEnv(name, args, env)
+	return err
 }
 
 func applyHdpiSettings(env []string) {
