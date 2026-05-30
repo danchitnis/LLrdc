@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -274,5 +275,28 @@ func NormalizeCodecFamily(codec string) string {
 		return "av1"
 	default:
 		return codec
+	}
+}
+
+func NumberToInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), true
+	case float32:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(i), true
+	default:
+		return 0, false
 	}
 }

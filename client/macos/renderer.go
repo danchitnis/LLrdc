@@ -98,6 +98,9 @@ type NativeRenderer struct {
 	pps    []byte
 	stopCh chan struct{}
 	doneCh chan struct{}
+
+	timingMu  sync.Mutex
+	timingMap map[uint32]client.NativeFramePresented
 }
 
 func NewNativeRenderer(opts client.NativeRendererOptions) (client.WindowRenderer, error) {
@@ -111,6 +114,7 @@ func NewNativeRenderer(opts client.NativeRendererOptions) (client.WindowRenderer
 		lowLatency:   opts.LowLatency,
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
+		timingMap:    make(map[uint32]client.NativeFramePresented),
 	}, nil
 }
 
@@ -233,6 +237,41 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 }
 
 func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
+	return r.HandleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, 0, 0, 0, client.BenchmarkClockNowMs())
+}
+
+func (r *NativeRenderer) HandleVideoFrameWithTiming(
+	codec string,
+	frame []byte,
+	packetTimestamp uint32,
+	firstPacketSequenceNumber uint16,
+	firstDecryptedPacketQueuedAt int64,
+	firstRemotePacketAt int64,
+	firstPacketReadAt int64,
+	receiveAt int64,
+) error {
+	r.timingMu.Lock()
+	r.timingMap[packetTimestamp] = client.NativeFramePresented{
+		PacketTimestamp:              packetTimestamp,
+		FirstPacketSequenceNumber:    firstPacketSequenceNumber,
+		FirstDecryptedPacketQueuedAt: firstDecryptedPacketQueuedAt,
+		FirstRemotePacketAt:          firstRemotePacketAt,
+		FirstPacketReadAt:            firstPacketReadAt,
+		ReceiveAt:                    receiveAt,
+	}
+	// Prune old entries if map gets too large (e.g., > 120 frames / 4 seconds at 30fps)
+	if len(r.timingMap) > 120 {
+		for ts := range r.timingMap {
+			if packetTimestamp > ts && packetTimestamp-ts > 300 { // Very basic pruning
+				delete(r.timingMap, ts)
+			}
+			if len(r.timingMap) <= 90 {
+				break
+			}
+		}
+	}
+	r.timingMu.Unlock()
+
 	lower := strings.ToLower(codec)
 	if strings.Contains(lower, "h264") {
 		return r.handleH264(frame, packetTimestamp)
@@ -486,16 +525,33 @@ func llrdc_present_callback(idPtr unsafe.Pointer, width C.int, height C.int, ts 
 	if r == nil {
 		return
 	}
+
+	packetTimestamp := uint32(ts)
 	now := client.BenchmarkClockNowMs()
-	r.emitPresent(client.NativeFramePresented{
-		Width:             int(width),
-		Height:            int(height),
-		PacketTimestamp:   uint32(ts),
-		FirstPacketReadAt: now,
-		ReceiveAt:         now,
-		DecodeReadyAt:     now,
-		PresentationAt:    now,
-	})
+
+	r.timingMu.Lock()
+	presented, ok := r.timingMap[packetTimestamp]
+	if ok {
+		delete(r.timingMap, packetTimestamp)
+	}
+	r.timingMu.Unlock()
+
+	if !ok {
+		// Fallback for cases where we didn't store timing (e.g. initial frames or dropped entries)
+		presented = client.NativeFramePresented{
+			PacketTimestamp:   packetTimestamp,
+			FirstPacketReadAt: now,
+			ReceiveAt:         now,
+		}
+	}
+
+	presented.Width = int(width)
+	presented.Height = int(height)
+	presented.DecodeReadyAt = now // Simplified for VT, as we get the callback when presentation is ready
+	presented.PresentationAt = now
+	presented.PresentationSource = "render_present"
+
+	r.emitPresent(presented)
 }
 
 func (r *NativeRenderer) MenuItemIndexAt(x, y float64, itemCount int) int {

@@ -56,10 +56,23 @@ func main() {
 	}
 
 	common.OnPeerConnected = func() {
-		log.Printf("Client connected, forcing VideoToolbox IDR frame")
+		log.Printf("Client connected, forcing VideoToolbox IDR frame and sending config")
 		if enc, _ := encMgr.Get(); enc != nil {
 			enc.ForceKeyframe()
 		}
+		// Send initial config to the new client
+		width, height := common.GetScreenSize()
+		config := map[string]interface{}{
+			"type":                    "config",
+			"videoCodec":              common.VideoCodec,
+			"chroma":                  common.Chroma,
+			"captureMode":             common.CaptureMode,
+			"webtransportPort":        8090,
+			"webtransportFingerprint": common.WebTransportFingerprint,
+			"screenWidth":             width,
+			"screenHeight":            height,
+		}
+		common.BroadcastJSON(config)
 	}
 	defer encMgr.Close()
 
@@ -159,17 +172,30 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 	case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 		common.HandleInputMessage(msg)
 	case "config":
-		fpsFloat, _ := msg["framerate"].(float64)
-		bandwidthFloat, _ := msg["bandwidth"].(float64)
+		fps, okF := common.NumberToInt(msg["framerate"])
+		if !okF || fps <= 0 {
+			fps = common.FPS
+		}
+		bandwidth, okB := common.NumberToInt(msg["bandwidth"])
+		if !okB || bandwidth <= 0 {
+			bandwidth = common.TargetBandwidthMbps
+		}
 		codec, _ := msg["videoCodec"].(string)
+		if codec == "" {
+			codec = common.VideoCodec
+		}
 		chroma, _ := msg["chroma"].(string)
-		hdpiFloat, _ := msg["hdpi"].(float64)
-		maxResFloat, _ := msg["max_res"].(float64)
-
-		fps := int(fpsFloat)
-		bandwidth := int(bandwidthFloat)
-		hdpi := int(hdpiFloat)
-		maxRes := int(maxResFloat)
+		if chroma == "" {
+			chroma = common.Chroma
+		}
+		hdpi, okH := common.NumberToInt(msg["hdpi"])
+		if !okH {
+			hdpi = common.HDPI
+		}
+		maxRes, okR := common.NumberToInt(msg["max_res"])
+		if !okR {
+			maxRes = common.InitialRes
+		}
 
 		// Only update if something changed
 		if common.FPS != fps || common.TargetBandwidthMbps != bandwidth || common.VideoCodec != codec || common.Chroma != chroma || common.HDPI != hdpi || common.InitialRes != maxRes {

@@ -203,6 +203,8 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 			codec := s.state.VideoCodec
 			s.mu.RUnlock()
 
+			receiveAt := BenchmarkClockNowMs()
+
 			s.mu.Lock()
 			now := time.Now()
 			s.stats.VideoPackets++
@@ -213,8 +215,24 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 			s.recordVideoByteSampleLocked(now, len(chunkData))
 			s.mu.Unlock()
 
-			if err := s.renderer.HandleVideoFrame(codec, chunkData, packetTimestamp); err != nil {
-				s.setError(err)
+			var renderErr error
+			if tr, ok := s.renderer.(TimedVideoFrameHandler); ok {
+				renderErr = tr.HandleVideoFrameWithTiming(
+					codec,
+					chunkData,
+					packetTimestamp,
+					0, // sequence number not used in WT uni-streams yet
+					0, // queue time not used
+					0, // remote packet time not used
+					receiveAt, // read at
+					receiveAt, // receive at
+				)
+			} else {
+				renderErr = s.renderer.HandleVideoFrame(codec, chunkData, packetTimestamp)
+			}
+
+			if renderErr != nil {
+				s.setError(renderErr)
 				continue
 			}
 

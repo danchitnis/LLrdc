@@ -16,6 +16,11 @@ func (a *NativeApp) Run() error {
 	a.startAuxiliaryTasks()
 	a.startConnectLoop()
 
+	// Schedule initial connect if we have a server URL
+	if strings.TrimSpace(a.desiredServerURL) != "" {
+		a.scheduleReconnect()
+	}
+
 	if a.renderer != nil {
 		a.attachRendererHooks()
 		a.refreshOverlay()
