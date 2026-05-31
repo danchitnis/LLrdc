@@ -29,6 +29,8 @@ export class BrowserClientSession {
     private lastReceivedKeyFrameTime = 0;
     private lastKeyframeRequestTime = 0;
     private lastBytesReceived = 0;
+    private serverTimeOffset = 0;
+    private ping = 0;
 
     constructor() {
         this.webcodecs = new WebCodecsManager();
@@ -73,6 +75,17 @@ export class BrowserClientSession {
         this.isBootstrapping = true;
 
         try {
+            const syncStart = Date.now();
+            const timezResp = await fetch('/timez');
+            if (timezResp.ok) {
+                const data = await timezResp.json();
+                const syncEnd = Date.now();
+                const rtt = syncEnd - syncStart;
+                // Assume symmetric delay: server sampled its clock at syncStart + RTT/2
+                this.serverTimeOffset = (syncStart + rtt / 2) - data.serverTimeMs;
+                log(`[Bootstrap] Time synchronized. Offset: ${this.serverTimeOffset}ms, RTT: ${rtt}ms`);
+            }
+
             const resp = await fetch('/config');
             if (resp.ok) {
                 const config = await resp.json();
@@ -89,6 +102,9 @@ export class BrowserClientSession {
 
     private masterPollStats() {
         this.webcodecs.pollStats();
+
+        // Send periodic ping for RTT measurement
+        this.sendInput(JSON.stringify({ type: 'ping', ts: Date.now() }));
 
         const fps = this.webcodecs.fps;
         const displayLatency = this.webcodecs.latencyMonitor;
@@ -118,7 +134,7 @@ export class BrowserClientSession {
             false,
             fps,
             displayLatency,
-            0, // networkLatency
+            this.ping, // networkLatency / ping
             bandwidthMbps,
             width,
             height,
@@ -204,7 +220,7 @@ export class BrowserClientSession {
         if (!packet) return;
 
         const now = Date.now();
-        this.webcodecs.latencyMonitor = Math.round(Math.abs(now - packet.timestampMs));
+        const localCaptureTimeMs = packet.timestampMs + this.serverTimeOffset;
 
         const isKey = detectKeyFrame(this.webcodecs.videoCodec, packet.chunkData);
         if (isKey) {
@@ -222,10 +238,21 @@ export class BrowserClientSession {
             return;
         }
 
-        this.webcodecs.decodeChunk(isKey, packet.timestampMs, packet.chunkData);
+        this.webcodecs.decodeChunk(isKey, localCaptureTimeMs, packet.chunkData);
     }
 
     private handleJsonMessage(msg: Record<string, unknown>) {
+        if (msg.type === 'pong') {
+            const now = Date.now();
+            const sentAt = msg.ts as number;
+            const serverTs = msg.serverTs as number;
+            const rtt = now - sentAt;
+            this.ping = rtt;
+            // Refine offset using same logic as bootstrap
+            this.serverTimeOffset = (sentAt + rtt / 2) - serverTs;
+            return;
+        }
+
         if (msg.type === 'config') {
             if (msg.videoCodec) {
                 this.webcodecs.videoCodec = msg.videoCodec as string;

@@ -170,6 +170,9 @@ export class WebCodecsManager {
         }
         this.totalDecoded++;
 
+        // Calculate end-to-end latency: presentation time - capture time
+        this.latencyMonitor = Math.max(0, Math.round(Date.now() - (frame.timestamp / 1000)));
+
         if (ctx && frame.displayWidth && frame.displayHeight) {
             if (displayEl.width !== frame.displayWidth || displayEl.height !== frame.displayHeight) {
                 displayEl.width = frame.displayWidth;

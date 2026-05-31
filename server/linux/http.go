@@ -151,9 +151,9 @@ func startHTTPServer() {
 	})
 
 	http.HandleFunc("/timez", func(w http.ResponseWriter, r *http.Request) {
-		now := benchmarkClockNowMs()
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, "{\"serverTimeMs\": %d}\n", now)
+		payload := fmt.Sprintf("{\"serverTimeMs\": %d}\n", benchmarkClockNowMs())
+		fmt.Fprint(w, payload)
 	})
 
 	http.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
@@ -233,14 +233,14 @@ func broadcastJSON(msg interface{}) {
 
 func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string) {
 	noteStreamFrame(streamID)
-	captureTime := time.Now()
+	timestampMs := benchmarkClockNowMs()
 	if frame.LatencyTrace != nil {
-		noteLatencyProbeFrameDispatch(frame.LatencyTrace, benchmarkClockNowMs())
+		noteLatencyProbeFrameDispatch(frame.LatencyTrace, timestampMs)
 	}
 	// Copy frame for delivery so we don't share memory with IVF reader
 	copyFrame := make([]byte, len(frame.Data))
 	copy(copyFrame, frame.Data)
-	common.WriteFrame(copyFrame, streamID, captureTime)
+	common.WriteFrame(copyFrame, streamID, timestampMs)
 }
 
 func broadcastConfig(restarted bool) {
@@ -332,6 +332,13 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 	msgType, _ := msg["type"].(string)
 
 	switch msgType {
+	case "ping":
+		ts, _ := msg["ts"].(float64)
+		_ = writeJSON(map[string]interface{}{
+			"type":     "pong",
+			"ts":       ts,
+			"serverTs": benchmarkClockNowMs(),
+		})
 	case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 		HandleInputMessage(msg)
 	case "config":
@@ -549,11 +556,6 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			} else {
 				log.Printf("Ignored resize request: %dx%d (InitialRes active or size unchanged)", width, height)
 			}
-		}
-	case "ping":
-		if ts, ok := msg["timestamp"].(float64); ok {
-			resp := map[string]interface{}{"type": "pong", "timestamp": ts}
-			writeJSON(resp)
 		}
 	case "force_keyframe":
 		log.Printf("Received force_keyframe request from client")

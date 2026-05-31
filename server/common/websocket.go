@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -101,7 +100,7 @@ func CloseAllWebSocketSessions() {
 	wsSessions = make(map[*websocket.Conn]*WebSocketSession)
 }
 
-func WriteWebSocketFrame(frame []byte, streamID uint32, captureTime time.Time) {
+func WriteWebSocketFrame(frame []byte, streamID uint32, timestampMs int64) {
 	wsSessionsMutex.RLock()
 	defer wsSessionsMutex.RUnlock()
 
@@ -109,7 +108,7 @@ func WriteWebSocketFrame(frame []byte, streamID uint32, captureTime time.Time) {
 		return
 	}
 
-	timestamp := float64(captureTime.UnixNano()) / float64(time.Millisecond)
+	timestamp := float64(timestampMs)
 	packetLen := uint32(9 + len(frame))
 	header := make([]byte, 13) // 4 (length) + 1 (type) + 8 (timestamp)
 	binary.BigEndian.PutUint32(header[0:], packetLen)

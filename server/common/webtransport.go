@@ -235,12 +235,12 @@ func CloseAllWebTransportSessions() {
 	wtSessions = make(map[*webtransport.Session]*WebTransportSession)
 }
 
-func WriteFrame(frame []byte, streamID uint32, captureTime time.Time) {
-	WriteWebTransportFrame(frame, streamID, captureTime)
-	WriteWebSocketFrame(frame, streamID, captureTime)
+func WriteFrame(frame []byte, streamID uint32, timestampMs int64) {
+	WriteWebTransportFrame(frame, streamID, timestampMs)
+	WriteWebSocketFrame(frame, streamID, timestampMs)
 }
 
-func WriteWebTransportFrame(frame []byte, streamID uint32, captureTime time.Time) {
+func WriteWebTransportFrame(frame []byte, streamID uint32, timestampMs int64) {
 	wtSessionsMutex.RLock()
 	defer wtSessionsMutex.RUnlock()
 
@@ -248,7 +248,7 @@ func WriteWebTransportFrame(frame []byte, streamID uint32, captureTime time.Time
 		return
 	}
 
-	timestamp := float64(captureTime.UnixNano()) / float64(time.Millisecond)
+	timestamp := float64(timestampMs)
 	packetLen := uint32(9 + len(frame))
 	header := make([]byte, 13) // 4 (length) + 1 (type) + 8 (timestamp)
 	binary.BigEndian.PutUint32(header[0:], packetLen)
