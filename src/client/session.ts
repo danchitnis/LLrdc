@@ -28,6 +28,7 @@ export class BrowserClientSession {
     private isBootstrapping = false;
     private lastReceivedKeyFrameTime = 0;
     private lastKeyframeRequestTime = 0;
+    private lastBytesReceived = 0;
 
     constructor() {
         this.webcodecs = new WebCodecsManager();
@@ -108,12 +109,17 @@ export class BrowserClientSession {
         const transportActive = isWT || isWS;
         const transportFps = isWT ? this.webtransport.fps : this.websocket.fps;
 
+        const totalBytes = isWT ? this.webtransport.totalBytesReceived : this.websocket.totalBytesReceived;
+        const deltaBytes = totalBytes - this.lastBytesReceived;
+        this.lastBytesReceived = totalBytes;
+        const bandwidthMbps = (deltaBytes * 8) / (1000 * 1000);
+
         updateStatusText(
             false,
             fps,
             displayLatency,
             0, // networkLatency
-            0, // bandwidth
+            bandwidthMbps,
             width,
             height,
             codec,

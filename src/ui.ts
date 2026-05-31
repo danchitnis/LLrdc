@@ -89,7 +89,7 @@ export function updateStatusText(
     fps: number, 
     latencyMonitor: number, 
     _unused_networkLatency: number, 
-    _unused_bandwidthMbps: number = 0, 
+    bandwidthMbps: number = 0, 
     width: number = 0, 
     height: number = 0, 
     codec: string = 'vp8',
@@ -129,7 +129,7 @@ export function updateStatusText(
     const displayRes = (width > 0 && height > 0) ? `${width}x${height} | ` : '';
     const displayFps = isWebTransportActive ? webtransportFps : fps;
     
-    let statsText = `[${transport} ${displayCodec}${gpuTag}] ${displayRes}FPS: ${displayFps} | Lat: ${Math.round(latencyMonitor)}ms | CPU: ${Math.round(serverFfmpegCpu)}%`;
+    let statsText = `[${transport} ${displayCodec}${gpuTag}] ${displayRes}FPS: ${displayFps} | Lat: ${Math.round(latencyMonitor)}ms | BW: ${bandwidthMbps.toFixed(1)} | CPU: ${Math.round(serverFfmpegCpu)}%`;
     
     if (acceleratorMode === 'intel') {
         statsText += ` | Enc: ${Math.round(serverIntelGpuUtil)}%`;

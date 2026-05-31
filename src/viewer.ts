@@ -236,6 +236,15 @@ session.events.on('serverMessage', (msg: any) => {
     if (msg.type === 'display_effect') {
         handleDisplayEffectMessage(msg, currentHdpi);
     }
+
+    if (msg.type === 'stats') {
+        if (msg.ffmpegCpu !== undefined) {
+            setServerFfmpegCpu(msg.ffmpegCpu);
+        }
+        if (msg.intelGpuUtil !== undefined) {
+            setServerIntelGpuUtil(msg.intelGpuUtil);
+        }
+    }
 });
 
 wireConfigControls({
