@@ -17,6 +17,10 @@ var (
 	currentGeneration uint64
 	generationMu      sync.Mutex
 	displayChangeMu   sync.Mutex
+	resizeTimer       *time.Timer
+	resizeTimerMu     sync.Mutex
+	pendingResizeW    int
+	pendingResizeH    int
 )
 
 func nextGeneration() uint64 {
@@ -252,12 +256,20 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 		widthFloat, wOk := msg["width"].(float64)
 		heightFloat, hOk := msg["height"].(float64)
 		if wOk && hOk {
-			width := int(widthFloat)
-			height := int(heightFloat)
-			if common.SetScreenSize(width, height) {
-				clampedW, clampedH := common.GetScreenSize()
-				log.Printf("Client requested resize to %dx%d (clamped %dx%d)", width, height, clampedW, clampedH)
-				go func() {
+			resizeTimerMu.Lock()
+			pendingResizeW = int(widthFloat)
+			pendingResizeH = int(heightFloat)
+			if resizeTimer != nil {
+				resizeTimer.Stop()
+			}
+			resizeTimer = time.AfterFunc(50*time.Millisecond, func() {
+				resizeTimerMu.Lock()
+				w, h := pendingResizeW, pendingResizeH
+				resizeTimerMu.Unlock()
+
+				if common.SetScreenSize(w, h) {
+					clampedW, clampedH := common.GetScreenSize()
+					log.Printf("Debounced resize triggered: %dx%d (clamped %dx%d)", w, h, clampedW, clampedH)
 					displayChangeMu.Lock()
 					defer displayChangeMu.Unlock()
 					if globalControlClient != nil {
@@ -266,20 +278,23 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 					}
 					// Update clients
 					config := map[string]interface{}{
-						"type":             "config",
-						"videoCodec":       common.VideoCodec,
-						"chroma":           common.Chroma,
-						"captureMode":      common.CaptureMode,
-						"webtransportPort": 8090,
+						"type":                    "config",
+						"videoCodec":              common.VideoCodec,
+						"chroma":                  common.Chroma,
+						"captureMode":             common.CaptureMode,
+						"webtransportPort":        8090,
 						"webtransportFingerprint": common.WebTransportFingerprint,
-						"screenWidth":      clampedW,
-						"screenHeight":     clampedH,
-						"framerate":        common.FPS,
-						"bandwidth":        common.TargetBandwidthMbps,
+						"screenWidth":             clampedW,
+						"screenHeight":            clampedH,
+						"framerate":               common.FPS,
+						"bandwidth":               common.TargetBandwidthMbps,
+						"hdpi":                    common.HDPI,
+						"max_res":                 common.InitialRes,
 					}
 					common.BroadcastJSON(config)
-				}()
-			}
+				}
+			})
+			resizeTimerMu.Unlock()
 		}
 	case "ping":
 		if ts, ok := msg["timestamp"].(float64); ok {
@@ -291,6 +306,6 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 
 func broadcastVideoFrame(data []byte, isKeyframe bool, codec string) {
 	// For WebTransport we don't have stream IDs for individual frames, just use 0
-	common.WriteFrame(data, 0, time.Now())
+	common.WriteFrame(data, 0, common.BenchmarkClockNowMs())
 }
 

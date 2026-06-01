@@ -155,7 +155,7 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 		KillFFmpegWithTimestamp()
 
 		// Brief pause to allow wf-recorder to fully exit and Wayland to settle
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Send ConfigApplied
