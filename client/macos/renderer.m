@@ -10,11 +10,11 @@
 
 void llrdc_window_callback(void* renderer, int eventType, int data1, int data2, char* error);
 void llrdc_input_callback(void* renderer, char* jsonMsg);
-void llrdc_present_callback(void* renderer, int width, int height, uint32_t ts);
+void llrdc_present_callback(void* renderer, int width, int height, int64_t ts);
 
 typedef void (*WindowEventCallback)(void* renderer, int eventType, int data1, int data2, char* error);
 typedef void (*InputEventCallback)(void* renderer, char* jsonMsg);
-typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint32_t ts);
+typedef void (*PresentEventCallback)(void* renderer, int width, int height, int64_t ts);
 typedef struct {
     void* bytes;
     size_t len;
@@ -169,6 +169,7 @@ static struct {
     NSData* spsData;
     NSData* ppsData;
     int lowLatency;
+    int64_t ptsCounter;
 } g_app_state;
 
 static void llrdc_reset_video_state_locked(void) {
@@ -622,6 +623,7 @@ void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallba
     g_app_state.h = h;
     g_app_state.autoStart = autoStart;
     g_app_state.lowLatency = lowLatency;
+    g_app_state.ptsCounter = 0;
     NSLog(@"[ObjC] App initialized with low latency mode: %s", lowLatency ? "enabled" : "disabled");
     g_app_state.formatDesc = NULL;
     g_app_state.vpsData = nil;
@@ -630,7 +632,7 @@ void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallba
     return NULL;
 }
 
-void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize) {
+void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, int64_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize) {
     if (!data || size == 0) {
         return;
     }
@@ -687,7 +689,7 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
 
         CMSampleTimingInfo timingInfo = {
             .duration = kCMTimeInvalid,
-            .presentationTimeStamp = CMTimeMake(ts, 90000),
+            .presentationTimeStamp = CMTimeMake(g_app_state.ptsCounter++, 1000),
             .decodeTimeStamp = kCMTimeInvalid,
         };
         size_t sampleSize = sampleData.length;
@@ -714,9 +716,7 @@ void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32
         CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, YES);
         if (attachments && CFArrayGetCount(attachments) > 0) {
             CFMutableDictionaryRef dict = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0);
-            if (g_app_state.lowLatency) {
-                CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
-            }
+            CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
         }
 
         view.videoLayer.hidden = NO;
@@ -789,7 +789,7 @@ static BOOL llrdc_update_parameter_sets_hevc(NSData *vpsData, NSData *spsData, N
     return status == noErr;
 }
 
-void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* vps, size_t vpsSize, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize) {
+void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, int64_t ts, const uint8_t* vps, size_t vpsSize, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize) {
     if (!data || size == 0) {
         return;
     }
@@ -850,7 +850,7 @@ void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, uint32
 
         CMSampleTimingInfo timingInfo = {
             .duration = kCMTimeInvalid,
-            .presentationTimeStamp = CMTimeMake(ts, 90000),
+            .presentationTimeStamp = CMTimeMake(g_app_state.ptsCounter++, 1000),
             .decodeTimeStamp = kCMTimeInvalid,
         };
         size_t sampleSize = sampleData.length;
@@ -877,9 +877,7 @@ void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, uint32
         CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, YES);
         if (attachments && CFArrayGetCount(attachments) > 0) {
             CFMutableDictionaryRef dict = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0);
-            if (g_app_state.lowLatency) {
-                CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
-            }
+            CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
         }
 
         view.videoLayer.hidden = NO;

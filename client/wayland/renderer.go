@@ -150,14 +150,14 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 	}
 }
 
-func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
+func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp int64) error {
 	return r.HandleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, 0, 0, 0, client.BenchmarkClockNowMs())
 }
 
 func (r *NativeRenderer) HandleVideoFrameWithTiming(
 	codec string,
 	frame []byte,
-	packetTimestamp uint32,
+	packetTimestamp int64,
 	firstPacketSequenceNumber uint16,
 	firstDecryptedPacketQueuedAt int64,
 	firstRemotePacketAt int64,
@@ -230,11 +230,10 @@ func (r *NativeRenderer) Close() error {
 	}
 	return nil
 }
-
 type nativeVideoSample struct {
 	codec                        string
 	data                         []byte
-	packetTimestamp              uint32
+	packetTimestamp              int64
 	firstPacketSequenceNumber    uint16
 	firstDecryptedPacketQueuedAt int64
 	firstRemotePacketAt          int64
@@ -243,8 +242,9 @@ type nativeVideoSample struct {
 }
 
 type nativeDecodedSample struct {
-	frame                        decodedFrame
-	packetTimestamp              uint32
+	frame           *decodedFrame
+	packetTimestamp int64
+}
 	firstPacketSequenceNumber    uint16
 	firstDecryptedPacketQueuedAt int64
 	firstRemotePacketAt          int64

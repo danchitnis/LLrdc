@@ -35,6 +35,18 @@ func (s *Session) readLoop(connectionID uint64, conn *websocket.Conn) {
 
 		msgType, _ := msg["type"].(string)
 		switch msgType {
+		case "pong":
+			if ts, ok := numberToInt64(msg["ts"]); ok {
+				if serverTs, ok2 := numberToInt64(msg["serverTs"]); ok2 {
+					now := BenchmarkClockNowMs()
+					rtt := now - ts
+					s.mu.Lock()
+					s.state.Ping = rtt
+					// Refine offset: server sampled its clock at ts + rtt/2
+					s.state.ServerTimeOffset = (ts + rtt/2) - serverTs
+					s.mu.Unlock()
+				}
+			}
 		case "config":
 			s.mu.Lock()
 			s.state.LastConfig = cloneMap(msg)

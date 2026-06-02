@@ -60,7 +60,7 @@ type NativeWindowLifecycle struct {
 type NativeFramePresented struct {
 	Width                        int
 	Height                       int
-	PacketTimestamp              uint32
+	PacketTimestamp              int64
 	FirstPacketSequenceNumber    uint16
 	Brightness                   int
 	ProbeMarker                  int
@@ -75,7 +75,7 @@ type NativeFramePresented struct {
 }
 
 type LatencyBreakdown struct {
-	PacketTimestamp              uint32 `json:"packetTimestamp"`
+	PacketTimestamp              int64  `json:"packetTimestamp"`
 	FirstPacketSequenceNumber    uint16 `json:"firstPacketSequenceNumber,omitempty"`
 	Brightness                   int    `json:"brightness"`
 	ProbeMarker                  int    `json:"probeMarker,omitempty"`
@@ -120,7 +120,7 @@ type TimedVideoFrameHandler interface {
 	HandleVideoFrameWithTiming(
 		codec string,
 		frame []byte,
-		packetTimestamp uint32,
+		packetTimestamp int64,
 		firstPacketSequenceNumber uint16,
 		firstDecryptedPacketQueuedAt int64,
 		firstRemotePacketAt int64,

@@ -75,6 +75,10 @@ func main() {
 			"webtransportFingerprint": common.WebTransportFingerprint,
 			"screenWidth":             width,
 			"screenHeight":            height,
+			"framerate":               common.FPS,
+			"bandwidth":               common.TargetBandwidthMbps,
+			"hdpi":                    common.HDPI,
+			"max_res":                 common.InitialRes,
 		}
 		common.BroadcastJSON(config)
 	}
@@ -108,6 +112,13 @@ func main() {
 
 	http.HandleFunc("/ws", common.HandleWebSocket)
 
+	http.HandleFunc("/timez", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"serverTimeMs": common.BenchmarkClockNowMs(),
+		})
+	})
+
 	http.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		width, height := common.GetScreenSize()
@@ -120,6 +131,10 @@ func main() {
 			"webtransportFingerprint": common.WebTransportFingerprint,
 			"screenWidth":      width,
 			"screenHeight":     height,
+			"framerate":        common.FPS,
+			"bandwidth":        common.TargetBandwidthMbps,
+			"hdpi":             common.HDPI,
+			"max_res":          common.InitialRes,
 		}
 		json.NewEncoder(w).Encode(config)
 	})
@@ -256,9 +271,16 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 		widthFloat, wOk := msg["width"].(float64)
 		heightFloat, hOk := msg["height"].(float64)
 		if wOk && hOk {
+			w, h := int(widthFloat), int(heightFloat)
+			currentW, currentH := common.GetScreenSize()
+			if w == currentW && h == currentH {
+				log.Printf("Ignoring redundant resize request: %dx%d (already at target size)", w, h)
+				return
+			}
+
 			resizeTimerMu.Lock()
-			pendingResizeW = int(widthFloat)
-			pendingResizeH = int(heightFloat)
+			pendingResizeW = w
+			pendingResizeH = h
 			if resizeTimer != nil {
 				resizeTimer.Stop()
 			}
@@ -297,8 +319,16 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			resizeTimerMu.Unlock()
 		}
 	case "ping":
-		if ts, ok := msg["timestamp"].(float64); ok {
-			resp := map[string]interface{}{"type": "pong", "timestamp": ts}
+		ts, ok := msg["ts"].(float64)
+		if !ok {
+			ts, ok = msg["timestamp"].(float64)
+		}
+		if ok {
+			resp := map[string]interface{}{
+				"type":     "pong",
+				"ts":       ts,
+				"serverTs": common.BenchmarkClockNowMs(),
+			}
 			writeJSON(resp)
 		}
 	}

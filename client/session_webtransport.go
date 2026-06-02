@@ -118,6 +118,18 @@ func (s *Session) readWebTransportControlLoop(connectionID uint64, stream webtra
 
 		msgType, _ := msg["type"].(string)
 		switch msgType {
+		case "pong":
+			if ts, ok := numberToInt64(msg["ts"]); ok {
+				if serverTs, ok2 := numberToInt64(msg["serverTs"]); ok2 {
+					now := BenchmarkClockNowMs()
+					rtt := now - ts
+					s.mu.Lock()
+					s.state.Ping = rtt
+					// Refine offset: server sampled its clock at ts + rtt/2
+					s.state.ServerTimeOffset = (ts + rtt/2) - serverTs
+					s.mu.Unlock()
+				}
+			}
 		case "config":
 			s.mu.Lock()
 			s.state.LastConfig = cloneMap(msg)
@@ -196,7 +208,7 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 		streamType := payloadBuf[0]
 		if streamType == 1 { // Video
 			timestampMs := math.Float64frombits(binary.BigEndian.Uint64(payloadBuf[1:9]))
-			packetTimestamp := uint32(timestampMs * 90)
+			packetTimestamp := int64(timestampMs)
 			chunkData := payloadBuf[9:]
 
 			s.mu.RLock()

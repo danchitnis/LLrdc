@@ -11,6 +11,8 @@ func (a *NativeApp) handleRendererInput(msg map[string]any) error {
 	msgType, _ := msg["type"].(string)
 	switch msgType {
 	case "mousemove", "mousebtn", "keydown", "keyup", "wheel":
+		now := time.Now().UnixMilli()
+		msg["ts"] = float64(now)
 		a.session.RecordLocalInput(LocalInputSample{
 			Type:   msgType,
 			Action: stringFromAny(msg["action"]),
@@ -18,7 +20,7 @@ func (a *NativeApp) handleRendererInput(msg map[string]any) error {
 			Key:    stringFromAny(msg["key"]),
 			X:      floatOrZero(msg["x"]),
 			Y:      floatOrZero(msg["y"]),
-			AtMs:   time.Now().UnixMilli(),
+			AtMs:   now,
 		})
 	}
 	switch msgType {

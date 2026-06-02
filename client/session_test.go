@@ -13,9 +13,9 @@ func TestHTTPToWebsocketURL(t *testing.T) {
 		in   string
 		want string
 	}{
-		{in: "http://localhost:8080", want: "ws://localhost:8080/"},
+		{in: "http://localhost:8080", want: "ws://localhost:8080/ws"},
 		{in: "https://example.com/path", want: "wss://example.com/path"},
-		{in: "ws://127.0.0.1:9000", want: "ws://127.0.0.1:9000/"},
+		{in: "ws://127.0.0.1:9000", want: "ws://127.0.0.1:9000/ws"},
 	}
 
 	for _, tt := range tests {
@@ -53,8 +53,8 @@ func TestParseBinaryVideoPacket(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected packet to parse")
 	}
-	if packet.packetTimestamp != 90000 {
-		t.Fatalf("unexpected packet timestamp: got %d want 90000", packet.packetTimestamp)
+	if packet.packetTimestamp != 1000 {
+		t.Fatalf("unexpected packet timestamp: got %d want 1000", packet.packetTimestamp)
 	}
 	if len(packet.chunkData) != 3 {
 		t.Fatalf("unexpected payload length: %d", len(packet.chunkData))

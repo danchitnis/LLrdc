@@ -43,7 +43,10 @@ func KillFFmpegWithTimestamp() {
 	now := time.Now()
 	lastFFmpegRestartTime.Store(&now)
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
+		log.Printf("Killing wf-recorder (PID %d)...", ffmpegCmd.Process.Pid)
 		_ = ffmpegCmd.Process.Kill()
+	} else {
+		log.Println("KillFFmpegWithTimestamp called but no active process found.")
 	}
 }
 

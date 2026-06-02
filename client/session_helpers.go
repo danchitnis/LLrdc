@@ -1,9 +1,11 @@
 package client
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -93,4 +95,35 @@ func cloneMapString(input map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func minPositiveTime(a, b int64) int64 {
+	if a <= 0 {
+		return b
+	}
+	if b <= 0 {
+		return a
+	}
+	if a < b {
+		return a
+	}
+	return b
+}
+
+type binaryVideoPacket struct {
+	streamType      byte
+	packetTimestamp int64
+	chunkData       []byte
+}
+
+func parseBinaryVideoPacket(raw []byte) (binaryVideoPacket, bool) {
+	if len(raw) < 9 {
+		return binaryVideoPacket{}, false
+	}
+	ts := math.Float64frombits(binary.BigEndian.Uint64(raw[1:9]))
+	return binaryVideoPacket{
+		streamType:      raw[0],
+		packetTimestamp: int64(ts),
+		chunkData:       raw[9:],
+	}, true
 }

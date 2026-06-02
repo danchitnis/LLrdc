@@ -12,7 +12,7 @@ import (
 )
 
 type Renderer interface {
-	HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error
+	HandleVideoFrame(codec string, frame []byte, packetTimestamp int64) error
 	RequestKeyframe()
 	Close() error
 }
@@ -27,9 +27,9 @@ type SupportedVideoCodecsProvider interface {
 
 type NullRenderer struct{}
 
-func (NullRenderer) HandleVideoFrame(_ string, _ []byte, _ uint32) error { return nil }
-func (NullRenderer) RequestKeyframe()                                    {}
-func (NullRenderer) Close() error                                        { return nil }
+func (n NullRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp int64) error { return nil }
+func (n NullRenderer) RequestKeyframe()                                                       {}
+func (n NullRenderer) Close() error                                                           { return nil }
 
 type Event string
 
@@ -118,6 +118,8 @@ type SessionState struct {
 	Presenting              bool               `json:"presenting"`
 	DecoderAwaitingKeyframe bool               `json:"decoderAwaitingKeyframe"`
 	VideoCodec              string             `json:"videoCodec"`
+	ServerTimeOffset        int64              `json:"serverTimeOffset"`
+	Ping                    int64              `json:"ping"`
 	LastConfig              map[string]any     `json:"lastConfig,omitempty"`
 	LastStats               map[string]any     `json:"lastStats,omitempty"`
 	LastError               string             `json:"lastError,omitempty"`

@@ -15,9 +15,9 @@ type testWindowRenderer struct {
 	supported    []string
 }
 
-func (r *testWindowRenderer) HandleVideoFrame(string, []byte, uint32) error { return nil }
-func (r *testWindowRenderer) RequestKeyframe()                              {}
-func (r *testWindowRenderer) Close() error                                  { return nil }
+func (r *testWindowRenderer) HandleVideoFrame(string, []byte, int64) error { return nil }
+func (r *testWindowRenderer) RequestKeyframe()                            {}
+func (r *testWindowRenderer) Close() error                                { return nil }
 func (r *testWindowRenderer) Run() error                                    { return nil }
 func (r *testWindowRenderer) Stop()                                         {}
 func (r *testWindowRenderer) SetInputSink(func(map[string]any) error)       {}
@@ -389,7 +389,7 @@ func TestRollingLatencyMsUsesRecentWindow(t *testing.T) {
 		{ReceiveAt: 9_900, PresentationAt: 9_990},
 	}
 
-	latency := rollingLatencyMs(now, samples)
+	latency := rollingLatencyMs(now, samples, 0)
 	if latency < 69 || latency > 71 {
 		t.Fatalf("expected rolling latency near 70ms, got %.2f", latency)
 	}

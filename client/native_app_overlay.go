@@ -107,7 +107,7 @@ func (a *NativeApp) buildHUDLocked(now time.Time) (string, OverlayColor) {
 		res = fmt.Sprintf("%dx%d ", state.LastPresentedWidth, state.LastPresentedHeight)
 	}
 
-	avgLat := rollingLatencyMs(now, state.RecentLatencySamples)
+	avgLat := rollingLatencyMs(now, state.RecentLatencySamples, state.ServerTimeOffset)
 
 	color := OverlayColor{R: 68, G: 255, B: 68, A: 255}
 	if avgLat > 150 {
@@ -117,7 +117,7 @@ func (a *NativeApp) buildHUDLocked(now time.Time) (string, OverlayColor) {
 		color = OverlayColor{R: 255, G: 68, B: 68, A: 255}
 	}
 
-	text := fmt.Sprintf("[%s] %s%d FPS | LAT %dMS | BW %.1fMb", displayCodec, res, fps, int(avgLat), bwMbps)
+	text := fmt.Sprintf("[%s] %s%d FPS | LAT %dMS | PING %dMS | BW %.1fMb", displayCodec, res, fps, int(avgLat), int(state.Ping), bwMbps)
 	if ffmpegCPU, ok := state.LastStats["ffmpegCpu"].(float64); ok {
 		text += fmt.Sprintf(" | CPU %d%%", int(ffmpegCPU))
 	}
@@ -153,7 +153,7 @@ func rollingVideoMbps(now time.Time, samples []TimedByteSample) float64 {
 	return float64(totalBytes) * 8 / 1000 / 1000 / seconds
 }
 
-func rollingLatencyMs(now time.Time, samples []LatencyBreakdown) float64 {
+func rollingLatencyMs(now time.Time, samples []LatencyBreakdown, serverTimeOffset int64) float64 {
 	window := latencySamplesInWindow(now, samples)
 	if len(window) == 0 {
 		return 0
@@ -162,11 +162,25 @@ func rollingLatencyMs(now time.Time, samples []LatencyBreakdown) float64 {
 	sum := 0.0
 	count := 0
 	for _, sample := range window {
-		if sample.PresentationAt <= 0 || sample.ReceiveAt <= 0 || sample.PresentationAt < sample.ReceiveAt {
+		if sample.PresentationAt <= 0 {
 			continue
 		}
-		sum += float64(sample.PresentationAt - sample.ReceiveAt)
-		count++
+		if serverTimeOffset != 0 {
+			// Glass-to-glass latency using synchronized clocks
+			captureAtLocal := int64(sample.PacketTimestamp) + serverTimeOffset
+			latency := sample.PresentationAt - captureAtLocal
+			if latency >= 0 && latency < 5000 { // Sanity check
+				sum += float64(latency)
+				count++
+				continue
+			}
+		}
+
+		// Fallback to client-side latency if no offset available
+		if sample.ReceiveAt > 0 && sample.PresentationAt >= sample.ReceiveAt {
+			sum += float64(sample.PresentationAt - sample.ReceiveAt)
+			count++
+		}
 	}
 	if count == 0 {
 		return 0

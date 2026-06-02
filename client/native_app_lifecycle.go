@@ -311,9 +311,16 @@ func (a *NativeApp) sendInitialConfig() {
 	}
 	if a.renderer != nil {
 		width, height := a.renderer.Size()
-		width, height = a.targetStreamSize(width, height)
-		if err := a.session.SendResize(width, height); err != nil {
-			log.Printf("initial resize failed: %v", err)
+		targetW, targetH := a.targetStreamSize(width, height)
+		// Only send resize if it differs from current state or renderer size
+		state := a.session.State()
+		if targetW != state.LastResizeWidth || targetH != state.LastResizeHeight {
+			log.Printf("[Lifecycle] Sending initial resize: %dx%d (renderer: %dx%d)", targetW, targetH, width, height)
+			if err := a.session.SendResize(targetW, targetH); err != nil {
+				log.Printf("initial resize failed: %v", err)
+			}
+		} else {
+			log.Printf("[Lifecycle] Skipping redundant initial resize: %dx%d", targetW, targetH)
 		}
 	}
 }

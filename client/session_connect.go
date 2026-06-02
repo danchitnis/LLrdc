@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -36,6 +37,34 @@ func (s *Session) Connect(serverURL string) error {
 	if err != nil {
 		return err
 	}
+
+	// Initial time synchronization
+	go func() {
+		syncStart := BenchmarkClockNowMs()
+		timezURL := strings.Replace(serverURL, "/config", "/timez", 1)
+		if !strings.HasSuffix(timezURL, "/timez") {
+			u, _ := url.Parse(serverURL)
+			u.Path = "/timez"
+			timezURL = u.String()
+		}
+
+		resp, err := http.Get(timezURL)
+		if err == nil && resp.StatusCode == 200 {
+			var data struct {
+				ServerTimeMs int64 `json:"serverTimeMs"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+				syncEnd := BenchmarkClockNowMs()
+				rtt := syncEnd - syncStart
+				s.mu.Lock()
+				s.state.Ping = rtt
+				s.state.ServerTimeOffset = (syncStart + rtt/2) - data.ServerTimeMs
+				s.mu.Unlock()
+				log.Printf("[Bootstrap] Time synchronized. Offset: %dms, RTT: %dms", s.state.ServerTimeOffset, rtt)
+			}
+			resp.Body.Close()
+		}
+	}()
 
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{})
 	if err != nil {
@@ -135,6 +164,26 @@ func (s *Session) Connect(serverURL string) error {
 
 	go s.readLoop(connectionID, conn)
 
+	// Start periodic ping loop
+	go func(cid uint64) {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.mu.RLock()
+				current := s.connectionID == cid && s.state.Connected
+				s.mu.RUnlock()
+				if !current {
+					return
+				}
+				_ = s.SendPing()
+			case <-s.closed:
+				return
+			}
+		}
+	}(connectionID)
+
 	return nil
 }
 
@@ -156,6 +205,29 @@ func numberToInt(v any) (int, bool) {
 			return 0, false
 		}
 		return int(i), true
+	default:
+		return 0, false
+	}
+}
+
+func numberToInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int:
+		return int64(n), true
+	case int32:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float32:
+		return int64(n), true
+	case float64:
+		return int64(n), true
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return i, true
 	default:
 		return 0, false
 	}

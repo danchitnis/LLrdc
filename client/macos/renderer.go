@@ -11,7 +11,7 @@ package macos
 
 typedef void (*WindowEventCallback)(void* renderer, int eventType, int data1, int data2, char* error);
 typedef void (*InputEventCallback)(void* renderer, char* jsonMsg);
-typedef void (*PresentEventCallback)(void* renderer, int width, int height, uint32_t ts);
+typedef void (*PresentEventCallback)(void* renderer, int width, int height, int64_t ts);
 
 typedef struct {
 	void* bytes;
@@ -20,8 +20,8 @@ typedef struct {
 } llrdc_png_result;
 
 void* llrdc_init_app(void* renderer, WindowEventCallback winCb, InputEventCallback inCb, PresentEventCallback presentCb, const char* title, int w, int h, int autoStart, int lowLatency);
-void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
-void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, uint32_t ts, const uint8_t* vps, size_t vpsSize, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
+void llrdc_enqueue_h264(void* renderer, const uint8_t* data, size_t size, int64_t ts, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
+void llrdc_enqueue_hevc(void* renderer, const uint8_t* data, size_t size, int64_t ts, const uint8_t* vps, size_t vpsSize, const uint8_t* sps, size_t spsSize, const uint8_t* pps, size_t ppsSize);
 void llrdc_reset_video();
 void llrdc_set_overlay_state(const char* hudText, int hudR, int hudG, int hudB, int hudA, int menuVisible, const char* menuTitle, const char* menuHint, const char* menuItems);
 void llrdc_set_debug_cursor(int enabled);
@@ -35,7 +35,7 @@ void llrdc_stop_app();
 
 void llrdc_window_callback(void* renderer, int eventType, int data1, int data2, char* error);
 void llrdc_input_callback(void* renderer, char* jsonMsg);
-void llrdc_present_callback(void* renderer, int width, int height, uint32_t ts);
+void llrdc_present_callback(void* renderer, int width, int height, int64_t ts);
 */
 import "C"
 
@@ -100,7 +100,7 @@ type NativeRenderer struct {
 	doneCh chan struct{}
 
 	timingMu  sync.Mutex
-	timingMap map[uint32]client.NativeFramePresented
+	timingMap map[int64]client.NativeFramePresented
 }
 
 func NewNativeRenderer(opts client.NativeRendererOptions) (client.WindowRenderer, error) {
@@ -114,7 +114,7 @@ func NewNativeRenderer(opts client.NativeRendererOptions) (client.WindowRenderer
 		lowLatency:   opts.LowLatency,
 		stopCh:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
-		timingMap:    make(map[uint32]client.NativeFramePresented),
+		timingMap:    make(map[int64]client.NativeFramePresented),
 	}, nil
 }
 
@@ -236,14 +236,14 @@ func (r *NativeRenderer) ResetVideoStream(codec string) {
 	C.llrdc_reset_video()
 }
 
-func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp uint32) error {
+func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp int64) error {
 	return r.HandleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, 0, 0, 0, client.BenchmarkClockNowMs())
 }
 
 func (r *NativeRenderer) HandleVideoFrameWithTiming(
 	codec string,
 	frame []byte,
-	packetTimestamp uint32,
+	packetTimestamp int64,
 	firstPacketSequenceNumber uint16,
 	firstDecryptedPacketQueuedAt int64,
 	firstRemotePacketAt int64,
@@ -262,7 +262,7 @@ func (r *NativeRenderer) HandleVideoFrameWithTiming(
 	// Prune old entries if map gets too large (e.g., > 120 frames / 4 seconds at 30fps)
 	if len(r.timingMap) > 120 {
 		for ts := range r.timingMap {
-			if packetTimestamp > ts && packetTimestamp-ts > 300 { // Very basic pruning
+			if packetTimestamp > ts && packetTimestamp-ts > 4000 { // Very basic pruning, 4 seconds
 				delete(r.timingMap, ts)
 			}
 			if len(r.timingMap) <= 90 {
@@ -281,7 +281,7 @@ func (r *NativeRenderer) HandleVideoFrameWithTiming(
 	return fmt.Errorf("macOS native renderer requires H.264 or HEVC, got %s", codec)
 }
 
-func (r *NativeRenderer) handleH264(frame []byte, packetTimestamp uint32) error {
+func (r *NativeRenderer) handleH264(frame []byte, packetTimestamp int64) error {
 	if len(frame) == 0 {
 		return nil
 	}
@@ -315,7 +315,7 @@ func (r *NativeRenderer) handleH264(frame []byte, packetTimestamp uint32) error 
 		nil,
 		(*C.uint8_t)(unsafe.Pointer(&unit.AVCC[0])),
 		C.size_t(len(unit.AVCC)),
-		C.uint32_t(packetTimestamp),
+		C.int64_t(packetTimestamp),
 		spsPtr,
 		C.size_t(len(currentSPS)),
 		ppsPtr,
@@ -324,7 +324,7 @@ func (r *NativeRenderer) handleH264(frame []byte, packetTimestamp uint32) error 
 	return nil
 }
 
-func (r *NativeRenderer) handleHEVC(frame []byte, packetTimestamp uint32) error {
+func (r *NativeRenderer) handleHEVC(frame []byte, packetTimestamp int64) error {
 	if len(frame) == 0 {
 		return nil
 	}
@@ -366,7 +366,7 @@ func (r *NativeRenderer) handleHEVC(frame []byte, packetTimestamp uint32) error 
 		nil,
 		(*C.uint8_t)(unsafe.Pointer(&unit.HVCC[0])),
 		C.size_t(len(unit.HVCC)),
-		C.uint32_t(packetTimestamp),
+		C.int64_t(packetTimestamp),
 		vpsPtr,
 		C.size_t(len(currentVPS)),
 		spsPtr,
@@ -520,13 +520,13 @@ func llrdc_input_callback(idPtr unsafe.Pointer, jsonMsg *C.char) {
 }
 
 //export llrdc_present_callback
-func llrdc_present_callback(idPtr unsafe.Pointer, width C.int, height C.int, ts C.uint32_t) {
+func llrdc_present_callback(idPtr unsafe.Pointer, width C.int, height C.int, ts C.int64_t) {
 	r := getRenderer(uintptr(idPtr))
 	if r == nil {
 		return
 	}
 
-	packetTimestamp := uint32(ts)
+	packetTimestamp := int64(ts)
 	now := client.BenchmarkClockNowMs()
 
 	r.timingMu.Lock()

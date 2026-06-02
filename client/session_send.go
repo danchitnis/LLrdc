@@ -62,6 +62,13 @@ func (s *Session) SendInput(msg map[string]any) error {
 	return s.sendMessage(msg)
 }
 
+func (s *Session) SendPing() error {
+	return s.sendMessage(map[string]any{
+		"type": "ping",
+		"ts":   BenchmarkClockNowMs(),
+	})
+}
+
 func (s *Session) sendMessage(msg map[string]any) error {
 	body, err := json.Marshal(msg)
 	if err != nil {
