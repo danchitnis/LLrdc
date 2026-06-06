@@ -123,18 +123,18 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		width, height := common.GetScreenSize()
 		config := map[string]interface{}{
-			"type":             "config",
-			"videoCodec":       common.VideoCodec,
-			"chroma":           common.Chroma,
-			"captureMode":      common.CaptureMode,
-			"webtransportPort": 8090,
+			"type":                    "config",
+			"videoCodec":              common.VideoCodec,
+			"chroma":                  common.Chroma,
+			"captureMode":             common.CaptureMode,
+			"webtransportPort":        8090,
 			"webtransportFingerprint": common.WebTransportFingerprint,
-			"screenWidth":      width,
-			"screenHeight":     height,
-			"framerate":        common.FPS,
-			"bandwidth":        common.TargetBandwidthMbps,
-			"hdpi":             common.HDPI,
-			"max_res":          common.InitialRes,
+			"screenWidth":             width,
+			"screenHeight":            height,
+			"framerate":               common.FPS,
+			"bandwidth":               common.TargetBandwidthMbps,
+			"hdpi":                    common.HDPI,
+			"max_res":                 common.InitialRes,
 		}
 		json.NewEncoder(w).Encode(config)
 	})
@@ -253,18 +253,18 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 		// Update all clients with new config (including the requesting one to confirm)
 		width, height := common.GetScreenSize()
 		config := map[string]interface{}{
-			"type":             "config",
-			"videoCodec":       common.VideoCodec,
-			"chroma":           common.Chroma,
-			"captureMode":      common.CaptureMode,
-			"webtransportPort": 8090,
+			"type":                    "config",
+			"videoCodec":              common.VideoCodec,
+			"chroma":                  common.Chroma,
+			"captureMode":             common.CaptureMode,
+			"webtransportPort":        8090,
 			"webtransportFingerprint": common.WebTransportFingerprint,
-			"screenWidth":      width,
-			"screenHeight":     height,
-			"framerate":        common.FPS,
-			"bandwidth":        common.TargetBandwidthMbps,
-			"hdpi":             common.HDPI,
-			"max_res":          common.InitialRes,
+			"screenWidth":             width,
+			"screenHeight":            height,
+			"framerate":               common.FPS,
+			"bandwidth":               common.TargetBandwidthMbps,
+			"hdpi":                    common.HDPI,
+			"max_res":                 common.InitialRes,
 		}
 		common.BroadcastJSON(config)
 	case "resize":
@@ -338,4 +338,3 @@ func broadcastVideoFrame(data []byte, isKeyframe bool, codec string) {
 	// For WebTransport we don't have stream IDs for individual frames, just use 0
 	common.WriteFrame(data, 0, common.BenchmarkClockNowMs())
 }
-

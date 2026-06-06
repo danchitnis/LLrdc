@@ -62,7 +62,7 @@ func startVideoReceiver() {
 			enc, encGen := encMgr.Get()
 			// If the encoder state doesn't match the incoming stream, recreate it (synchronously in encMgr)
 			if enc == nil || enc.Width != width || enc.Height != height || encGen != generation || enc.PixFmt != pixFmt || enc.FPS != common.FPS || enc.BitrateKbps() != common.TargetBandwidthMbps*1000 {
-				log.Printf("Encoder mismatch: stream %dx%d (fmt %d, gen %d), encoder %v (gen %d, fps %d, bw %d). Recreating with target FPS %d, BW %d...", 
+				log.Printf("Encoder mismatch: stream %dx%d (fmt %d, gen %d), encoder %v (gen %d, fps %d, bw %d). Recreating with target FPS %d, BW %d...",
 					width, height, pixFmt, generation, enc, encGen, encMgr.FPS(), encMgr.BitrateKbps(), common.FPS, common.TargetBandwidthMbps*1000)
 				encMgr.Recreate(codecFamily, width, height, common.FPS, common.TargetBandwidthMbps*1000, pixFmt, generation)
 				enc, encGen = encMgr.Get()

@@ -16,3 +16,4 @@ dist/
 test-logs/
 /macos-server
 .antigravitycli
+certs/

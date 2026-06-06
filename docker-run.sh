@@ -360,6 +360,8 @@ if [ -e /dev/uinput ]; then
   UINPUT_ARGS="--device /dev/uinput:/dev/uinput"
 fi
 
+mkdir -p "${SCRIPT_DIR}/certs"
+
 DOCKER_RUN_CMD=(docker run)
 append_words DOCKER_RUN_CMD "$GPU_ARGS"
 append_words DOCKER_RUN_CMD "$DETACHED_ARGS"
@@ -373,6 +375,8 @@ DOCKER_RUN_CMD+=(
   --ulimit rtprio=99
   --cap-add=SYS_NICE
   --cap-add=SYS_ADMIN
+  -v "${SCRIPT_DIR}/certs:/app/certs"
+  --env "CERTS_DIR=/app/certs"
   --env "PORT=${SERVER_PORT}"
   --env "FPS=${SERVER_FPS}"
   --env "BANDWIDTH=${SERVER_BANDWIDTH}"
