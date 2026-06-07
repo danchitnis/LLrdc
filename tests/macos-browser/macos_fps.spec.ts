@@ -12,16 +12,15 @@ test('macOS split architecture supports dynamic FPS switching', async ({ page })
     // 1. Navigate to the local macOS server
     await page.goto('http://localhost:8080/viewer.html');
 
-    // 2. Wait for the video element and ensure it's playing
-    const video = page.locator('#webrtc-video');
-    await expect(video).toBeAttached({ timeout: 15000 });
+    // 2. Wait for the display canvas and ensure it's rendering
+    const display = page.locator('#display');
+    await expect(display).toBeAttached({ timeout: 15000 });
 
-    // Wait for the video to actually have a stream and be playing.
-    // We wait for resolution to settle to ensure initial handshake is complete.
+    // Wait for the display to actually have a stream and be rendering.
     await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        // Reduce the initial wait to avoid test timeouts if the stream is already active and stable from a previous test
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 0.5;
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        const client = (window as any).__llrdcClient;
+        return canvas && canvas.width > 0 && client && client.getState().totalDecoded > 0;
     }, { timeout: 15000 });
 
     console.log("Video playing and stable. Opening config dropdown...");
@@ -69,10 +68,11 @@ test('macOS split architecture supports dynamic FPS switching', async ({ page })
 
     console.log("Wayland refresh rate 15Hz applied!");
 
-    // 7. Ensure video recovers and is playing
+    // 7. Ensure display recovers and is rendering
     await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 0;
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        const client = (window as any).__llrdcClient;
+        return canvas && canvas.width > 0 && client && client.getState().totalDecoded > 0;
     }, { timeout: 15000 });
 
     console.log("Video stream recovered after FPS change!");

@@ -158,7 +158,7 @@ async function collectScenario(
                 fps: 0,
                 latency: 0,
                 totalDecoded: 0,
-                webrtcFps: 0,
+                webtransportFps: 0,
                 bytesReceived: 0,
             };
             const statusText = document.getElementById('status')?.textContent || '';

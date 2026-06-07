@@ -85,7 +85,6 @@ export function setAcceleratorMode(mode: 'cpu' | 'intel' | 'nvidia') {
 }
 
 export function updateStatusText(
-    _unused_isWebRtcActive: boolean, 
     fps: number, 
     latencyMonitor: number, 
     pingMs: number, 

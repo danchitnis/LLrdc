@@ -59,7 +59,7 @@ func main() {
 		}
 	}
 
-	common.OnPeerConnected = func() {
+	common.OnClientConnected = func() {
 		log.Printf("Client connected, forcing VideoToolbox IDR frame and sending config")
 		if enc, _ := encMgr.Get(); enc != nil {
 			enc.ForceKeyframe()

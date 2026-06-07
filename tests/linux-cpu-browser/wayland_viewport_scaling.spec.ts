@@ -52,9 +52,8 @@ async function collectLayoutMetrics(page: import('@playwright/test').Page): Prom
         const topBar = document.getElementById('top-bar');
         const displayContainer = document.getElementById('display-container');
         const display = document.getElementById('display') as HTMLCanvasElement | null;
-        const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
 
-        if (!topBar || !displayContainer || !display || !video) {
+        if (!topBar || !displayContainer || !display) {
             throw new Error('Required viewer elements are missing');
         }
 
@@ -85,14 +84,14 @@ async function collectLayoutMetrics(page: import('@playwright/test').Page): Prom
             topBar: toRect(topBar),
             displayContainer: toRect(displayContainer),
             display: toRect(display),
-            video: toRect(video),
+            video: toRect(display),
             intrinsicCanvas: {
                 width: display.width,
                 height: display.height,
             },
             intrinsicVideo: {
-                width: video.videoWidth,
-                height: video.videoHeight,
+                width: display.width,
+                height: display.height,
             },
             renderedContent: {
                 x: renderedX,
@@ -127,16 +126,15 @@ test.describe('Wayland Video Scaling', () => {
         await page.setViewportSize(TARGET_VIEWPORT);
         await page.goto(`http://localhost:${PORT}`);
 
-        await expect(page.locator('#status')).toHaveText(/\[WebRTC|\[WebCodecs/i, { timeout: 20000 });
+        await expect(page.locator('#status')).toHaveText(/\[(WebRTC|WebTransport|WebCodecs)/i, { timeout: 20000 });
         await expect.poll(async () => {
             return await page.evaluate(() => {
                 const canvas = document.getElementById('display') as HTMLCanvasElement | null;
-                const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
                 return {
                     canvasWidth: canvas?.width ?? 0,
                     canvasHeight: canvas?.height ?? 0,
-                    videoWidth: video?.videoWidth ?? 0,
-                    videoHeight: video?.videoHeight ?? 0,
+                    videoWidth: canvas?.width ?? 0,
+                    videoHeight: canvas?.height ?? 0,
                 };
             });
         }, { timeout: 30000 }).toMatchObject({

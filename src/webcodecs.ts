@@ -20,8 +20,10 @@ export class WebCodecsManager {
     private decoder: VideoDecoder | null = null;
     private isInitializing = false;
     private decoderInitTimeout: ReturnType<typeof setTimeout> | null = null;
+    private onFramePresented?: (meta: any) => void;
 
-    constructor() {
+    constructor(onFramePresented?: (meta: any) => void) {
+        this.onFramePresented = onFramePresented;
         this.initDecoder();
     }
 
@@ -184,6 +186,19 @@ export class WebCodecsManager {
                 applySmoothingSettings();
             }
             ctx.drawImage(frame as CanvasImageSource, 0, 0, displayEl.width, displayEl.height);
+        }
+
+        const now = Date.now();
+        if (this.onFramePresented) {
+            this.onFramePresented({
+                callbackAtMs: now,
+                expectedDisplayAtMs: now,
+                presentationAtMs: now,
+                captureAtMs: Math.round(frame.timestamp / 1000),
+                receiveAtMs: now,
+                processingDurationMs: 0,
+                presentedFrames: this.totalDecoded
+            });
         }
 
         frame.close();

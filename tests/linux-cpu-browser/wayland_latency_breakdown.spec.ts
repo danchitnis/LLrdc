@@ -227,10 +227,10 @@ async function setTargetViewport(page: Page) {
 async function waitForStreamResolution(page: Page, minWidth: number, minHeight: number) {
     await expect.poll(async () => {
         const size = await page.evaluate(() => {
-            const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
+            const canvas = document.getElementById('display') as HTMLCanvasElement | null;
             return {
-                width: video?.videoWidth ?? 0,
-                height: video?.videoHeight ?? 0,
+                width: canvas?.width ?? 0,
+                height: canvas?.height ?? 0,
             };
         });
         return size.width >= minWidth && size.height >= minHeight;
@@ -458,7 +458,7 @@ async function collectModeSummary(
 
     await page.goto(baseUrl);
     await page.click('body');
-    await expect(page.locator('#status')).toContainText(/\[WebRTC|\[WebCodecs/, { timeout: 45000 });
+    await expect(page.locator('#status')).toContainText(/\[(WebRTC|WebTransport|WebCodecs)/, { timeout: 45000 });
     await setTargetViewport(page);
     await configureStreamTarget(page, containerName);
     await initPresentedFrameTracker(page);
@@ -526,11 +526,11 @@ async function collectModeSummary(
     };
 
     const observed = await page.evaluate(() => {
-        const video = document.getElementById('webrtc-video') as HTMLVideoElement | null;
+        const canvas = document.getElementById('display') as HTMLCanvasElement | null;
         const status = document.getElementById('status') as HTMLDivElement | null;
         return {
-            streamWidth: video?.videoWidth ?? 0,
-            streamHeight: video?.videoHeight ?? 0,
+            streamWidth: canvas?.width ?? 0,
+            streamHeight: canvas?.height ?? 0,
             statusText: status?.textContent ?? '',
         };
     });

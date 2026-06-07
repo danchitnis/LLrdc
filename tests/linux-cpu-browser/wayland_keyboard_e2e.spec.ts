@@ -30,7 +30,7 @@ test.describe('Wayland Keyboard Fast Typing E2E', () => {
     await page.goto(`http://localhost:${PORT}`);
     
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 30000 });
+    await expect(statusEl).toHaveText(/WebRTC|WebTransport|WebSocket/i, { timeout: 30000 });
 
     const displayContainer = page.locator('#display-container');
 

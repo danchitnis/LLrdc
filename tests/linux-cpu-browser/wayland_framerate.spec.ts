@@ -31,7 +31,7 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     await page.goto(`http://localhost:${PORT}`);
 
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/WebRTC/i, { timeout: 30000 });
+    await expect(statusEl).toHaveText(/WebRTC|WebTransport|WebSocket/i, { timeout: 30000 });
 
     // Open config menu
     await page.click('#config-btn');
@@ -85,7 +85,7 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
       return deltaDecoded >= 5 && decodedFps > 5 && decodedFps < 25;
     }, { timeout: 30000 }).toBe(true);
 
-    // Verify it still says WebRTC and decoding continues
-    await expect(statusEl).toHaveText(/WebRTC/i);
+    // Verify it still says WebTransport/WebSocket and decoding continues
+    await expect(statusEl).toHaveText(/WebRTC|WebTransport|WebSocket/i);
   });
 });

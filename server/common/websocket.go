@@ -41,8 +41,8 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	wsSessionsMutex.Unlock()
 
 	log.Printf("WebSocket session established: %v", conn.RemoteAddr())
-	if OnPeerConnected != nil {
-		OnPeerConnected()
+	if OnClientConnected != nil {
+		OnClientConnected()
 	}
 
 	defer func() {

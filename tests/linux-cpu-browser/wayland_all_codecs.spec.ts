@@ -32,7 +32,7 @@ test.describe('Wayland All Codecs Verification', () => {
             await waitForServerReady(`http://localhost:${PORT}`);
             
             page.on('console', msg => {
-                if (msg.text().includes('totalDecoded') || msg.text().includes('ICE') || msg.text().includes('Connection')) {
+                if (msg.text().includes('totalDecoded') || msg.text().includes('WebTransport') || msg.text().includes('Connection')) {
                     console.log(`[BROWSER ${codec}]: ${msg.text()}`);
                 }
             });

@@ -13,8 +13,8 @@ import (
 
 var cleanupTasks []func()
 
-func HandlePeerConnected() {
-	log.Println("New peer connected, triggering low-latency stream restart concurrently")
+func HandleClientConnected() {
+	log.Println("New client connected, triggering low-latency stream restart concurrently")
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		KillFFmpegWithTimestamp()
@@ -34,9 +34,9 @@ func Run() error {
 		go startAgentControl()
 	}
 
-	// Register WebRTC callbacks to common package
+	// Register connection callbacks to common package
 	common.OnForceKeyframe = KillFFmpegWithTimestamp
-	common.OnPeerConnected = HandlePeerConnected
+	common.OnClientConnected = HandleClientConnected
 	common.OnTriggerPing = func() {
 		inputStdinMu.Lock()
 		defer inputStdinMu.Unlock()

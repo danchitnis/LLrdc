@@ -204,7 +204,6 @@ body {
 #settle-value,
 #tile-size-value,
 #cpu-effort-value,
-#webrtc-buffer-value,
 #activity-hz-value,
 #activity-timeout-value {
   min-width: 3ch !important;

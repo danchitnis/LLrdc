@@ -83,9 +83,9 @@ echo "▶ Waiting for client window and initial stream (H.264)..."
 for i in {1..20}; do
     STATE=$(curl -s "http://127.0.0.1:${CONTROL_PORT}/readyz" || echo "{}")
     WINDOW_OK=$(echo "$STATE" | jq -r '.windowCreated and .windowShown')
-    WEBRTC_OK=$(echo "$STATE" | jq -r '.webtransportConnected')
+    WEBTRANSPORT_OK=$(echo "$STATE" | jq -r '.webtransportConnected')
     
-    if [ "$WINDOW_OK" == "true" ] && [ "$WEBRTC_OK" == "true" ]; then
+    if [ "$WINDOW_OK" == "true" ] && [ "$WEBTRANSPORT_OK" == "true" ]; then
         STATS=$(curl -s "http://127.0.0.1:${CONTROL_PORT}/statsz" || echo "{}")
         FRAMES=$(echo "$STATS" | jq -r '.presentedFrames // 0')
         if [ "$FRAMES" -gt 5 ]; then

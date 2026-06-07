@@ -137,8 +137,8 @@ func InitWebTransport(addr string) {
 
 func handleWebTransportSession(session *webtransport.Session) {
 	log.Printf("WebTransport session established: %v", session.RemoteAddr())
-	if OnPeerConnected != nil {
-		OnPeerConnected()
+	if OnClientConnected != nil {
+		OnClientConnected()
 	}
 
 	// Create a unidirectional stream for video

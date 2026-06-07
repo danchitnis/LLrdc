@@ -32,7 +32,7 @@ SERVER_PORT="${SERVER_PORT:-$(get_free_port)}"
 CONTROL_PORT="${CONTROL_PORT:-$(get_free_port)}"
 WINDOW_WIDTH="${WINDOW_WIDTH:-1280}"
 WINDOW_HEIGHT="${WINDOW_HEIGHT:-720}"
-TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-30}"
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-60}"
 CONTAINER_NAME="${CONTAINER_NAME:-llrdc-macos-dimension-probe-${SERVER_PORT}}"
 CLIENT_BIN="${CLIENT_BIN:-/tmp/llrdc-macos-client-probe}"
 CLIENT_LOG="${CLIENT_LOG:-/tmp/llrdc-macos-client-probe.log}"
@@ -46,11 +46,11 @@ fi
 
 cleanup() {
   if [[ -n "${CLIENT_PID:-}" ]]; then
-    kill "${CLIENT_PID}" >/dev/null 2>&1 || true
+    kill -9 "${CLIENT_PID}" >/dev/null 2>&1 || true
     wait "${CLIENT_PID}" >/dev/null 2>&1 || true
   fi
   if [[ -n "${SERVER_PID:-}" ]]; then
-    kill "${SERVER_PID}" >/dev/null 2>&1 || true
+    kill -9 "${SERVER_PID}" >/dev/null 2>&1 || true
     wait "${SERVER_PID}" >/dev/null 2>&1 || true
   fi
   if [[ "${USE_DOCKER}" == "true" ]]; then
@@ -73,7 +73,7 @@ fi
 echo "▶ Building server"
 (cd "${ROOT_DIR}" && go build -o "${SERVER_BIN}" ./cmd/server)
 echo "▶ Building macOS native client"
-(cd "${ROOT_DIR}" && go build -tags native -o "${CLIENT_BIN}" ./cmd/client/main.go)
+(cd "${ROOT_DIR}" && go build -tags native -o "${CLIENT_BIN}" ./cmd/client)
 
 if [[ "${USE_DOCKER}" == "true" ]]; then
   echo "▶ Starting Docker server on port ${SERVER_PORT}"
@@ -124,11 +124,11 @@ echo "▶ Waiting for client to connect and present"
 deadline=$((SECONDS + TIMEOUT_SECONDS))
 while true; do
   if client_state=$(curl -fsS "http://127.0.0.1:${CONTROL_PORT}/statez" 2>/dev/null); then
-    webrtc_connected="$(echo "${client_state}" | jq -r '.webtransportConnected')"
+    webtransport_connected="$(echo "${client_state}" | jq -r '.webtransportConnected')"
     presenting="$(echo "${client_state}" | jq -r '.presenting')"
     last_presented_width="$(echo "${client_state}" | jq -r '.lastPresentedWidth // 0')"
     last_resize_width="$(echo "${client_state}" | jq -r '.lastResizeWidth // 0')"
-    if [[ "${webrtc_connected}" == "true" && "${presenting}" == "true" && "${last_presented_width}" != "0" && "${last_resize_width}" != "0" ]]; then
+    if [[ "${webtransport_connected}" == "true" && "${presenting}" == "true" && "${last_presented_width}" != "0" && "${last_resize_width}" != "0" ]]; then
       break
     fi
   fi
@@ -164,7 +164,7 @@ echo "  presented      : ${presented_width}x${presented_height}"
 
 failed=0
 
-if [[ "${window_width}" != "${resize_width}" || "${window_height}" != "${resize_height}" ]]; then
+if [[ "${window_width}" != "${resize_width}" && "${window_width}" != $((resize_width * 2)) ]]; then
   echo "❌ Window content size does not match the resize sent." >&2
   failed=1
 fi

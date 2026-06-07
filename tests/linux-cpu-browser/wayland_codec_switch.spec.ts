@@ -33,7 +33,7 @@ test.describe('Wayland Codec Switch (Single Container)', () => {
 
             page.on('console', msg => {
                 const txt = msg.text();
-                if (txt.includes('totalDecoded') || txt.includes('ICE') || txt.includes('Connection') || txt.includes('Brightness')) {
+                if (txt.includes('totalDecoded') || txt.includes('WebTransport') || txt.includes('Connection') || txt.includes('Brightness')) {
                     console.log(`[BROWSER]: ${txt}`);
                 }
             });
@@ -62,7 +62,6 @@ test.describe('Wayland Codec Switch (Single Container)', () => {
             await expect.poll(async () => {
                 const stats = await page.evaluate(() => {
                     const s = window.getStats();
-                    const video = document.getElementById('webrtc-video') as HTMLVideoElement;
                     const canvas = document.getElementById('display') as HTMLCanvasElement;
                     const ctx = canvas.getContext('2d');
                     
@@ -78,8 +77,8 @@ test.describe('Wayland Codec Switch (Single Container)', () => {
 
                     return {
                         ...s,
-                        videoWidth: video?.videoWidth,
-                        videoHeight: video?.videoHeight,
+                        videoWidth: canvas?.width,
+                        videoHeight: canvas?.height,
                         brightness
                     };
                 });

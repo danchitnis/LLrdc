@@ -52,11 +52,10 @@ export interface PresentedFrameMeta {
 
 export interface BrowserClientState {
     wsConnected: boolean;
-    webrtcActive: boolean;
+    webtransportActive: boolean;
     videoCodec: string;
     totalDecoded: number;
     networkLatency: number;
-    webrtcLatency: number;
     webSocketBytesReceived: number;
     lastPresentedFrame: PresentedFrameMeta | null;
 }

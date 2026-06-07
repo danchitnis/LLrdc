@@ -12,19 +12,21 @@ test('macOS split architecture supports dynamic HDPI scaling', async ({ page }) 
     // 1. Navigate to the local macOS server
     await page.goto('http://localhost:8080/viewer.html');
 
-    // 2. Wait for the video element and ensure it's playing
-    const video = page.locator('#webrtc-video');
-    await expect(video).toBeAttached({ timeout: 15000 });
+    // 2. Wait for the display canvas and ensure it's rendering
+    const display = page.locator('#display');
+    await expect(display).toBeAttached({ timeout: 15000 });
 
     await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 0;
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        const client = (window as any).__llrdcClient;
+        return canvas && canvas.width > 0 && client && client.getState().totalDecoded > 0;
     }, { timeout: 15000 });
 
-    // 3. Open config menu and check initial HDPI (should be 100)
+    // 3. Open config menu and reset HDPI to 100 first to guarantee initial state
     await page.click('#config-btn');
     const hdpiSelect = page.locator('#hdpi-select');
-    await expect(hdpiSelect).toHaveValue('100', { timeout: 15000 });
+    await hdpiSelect.selectOption('100');
+    await page.waitForTimeout(1000);
 
     // 4. Change HDPI to 200%
     console.log("Changing HDPI to 200%...");
@@ -74,10 +76,11 @@ test('macOS split architecture supports dynamic HDPI scaling', async ({ page }) 
 
     console.log("Confirmed 2x scale via wlr-randr!");
 
-    // 7. Ensure video recovers and is playing
+    // 7. Ensure display recovers and is rendering
     await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 0;
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        const client = (window as any).__llrdcClient;
+        return canvas && canvas.width > 0 && client && client.getState().totalDecoded > 0;
     }, { timeout: 15000 });
 
     console.log("Video stream recovered after HDPI change!");

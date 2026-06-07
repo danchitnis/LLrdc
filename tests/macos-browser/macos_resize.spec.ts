@@ -9,48 +9,51 @@ test('macOS split architecture supports robust window resizing', async ({ page }
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto('http://localhost:8080/viewer.html');
 
-    const video = page.locator('#webrtc-video');
-    await expect(video).toBeAttached({ timeout: 15000 });
+    const display = page.locator('#display');
+    await expect(display).toBeAttached({ timeout: 15000 });
 
     await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        // videoHeight 672 is standard content area for 720p viewport in headless chromium
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 1 && vid.videoWidth % 8 === 0 && vid.videoHeight % 8 === 0;
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        const client = (window as any).__llrdcClient;
+        // canvas height/width should be non-zero and aligned to 8 pixels, with at least some decoded frames
+        return canvas && canvas.width > 0 && canvas.height > 0 && canvas.width % 8 === 0 && canvas.height % 8 === 0 && client && client.getState().totalDecoded > 0;
     }, { timeout: 15000 });
 
-    const initialW = await page.evaluate(() => (document.getElementById('webrtc-video') as HTMLVideoElement).videoWidth);
-    const initialH = await page.evaluate(() => (document.getElementById('webrtc-video') as HTMLVideoElement).videoHeight);
+    const initialW = await page.evaluate(() => (document.getElementById('display') as HTMLCanvasElement).width);
+    const initialH = await page.evaluate(() => (document.getElementById('display') as HTMLCanvasElement).height);
     console.log(`Initial stream stable at ${initialW}x${initialH}.`);
 
     // 2. Resize to custom resolution 1
     console.log("Resizing window to 1366x768...");
     await page.setViewportSize({ width: 1366, height: 768 });
 
-    // Wait for the video to recover and have new dimensions (different from initial)
+    // Wait for the display to recover and have new dimensions (different from initial)
     await expect.poll(async () => {
         return await page.evaluate(() => {
-            const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
+            const canvas = document.getElementById('display') as HTMLCanvasElement;
+            const client = (window as any).__llrdcClient;
             return {
-                w: vid.videoWidth,
-                h: vid.videoHeight,
-                ready: vid.readyState >= 3,
-                time: vid.currentTime
+                w: canvas.width,
+                h: canvas.height,
+                ready: canvas.width > 0 && canvas.height > 0,
+                decoded: client ? client.getState().totalDecoded : 0
             };
         });
     }, {
-        message: 'Stream should recover with 32-pixel aligned dimensions after resize to 1366x768',
+        message: 'Stream should recover with 8-pixel aligned dimensions after resize to 1366x768',
         timeout: 15000,
     }).toMatchObject({
         w: expect.any(Number),
         h: expect.any(Number),
         ready: true,
+        decoded: expect.any(Number),
     });
 
     const dims1 = await page.evaluate(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return { w: vid.videoWidth, h: vid.videoHeight };
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        return { w: canvas.width, h: canvas.height };
     });
-    console.log(`Stream recovered at ${dims1.w}x${dims1.h}. (Aligned from 1366x720?)`);
+    console.log(`Stream recovered at ${dims1.w}x${dims1.h}.`);
     expect(dims1.w % 8).toBe(0);
     expect(dims1.h % 8).toBe(0);
 
@@ -60,15 +63,17 @@ test('macOS split architecture supports robust window resizing', async ({ page }
 
     await expect.poll(async () => {
         const dims = await page.evaluate(() => {
-            const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
+            const canvas = document.getElementById('display') as HTMLCanvasElement;
+            const client = (window as any).__llrdcClient;
             return {
-                w: vid.videoWidth,
-                h: vid.videoHeight,
-                ready: vid.readyState >= 3,
+                w: canvas.width,
+                h: canvas.height,
+                ready: canvas.width > 0 && canvas.height > 0,
+                decoded: client ? client.getState().totalDecoded : 0
             };
         });
         // Check dimensions are different and aligned
-        if (dims.w !== dims1.w && dims.w % 8 === 0 && dims.h % 8 === 0 && dims.ready) {
+        if (dims.w !== dims1.w && dims.w % 8 === 0 && dims.h % 8 === 0 && dims.ready && dims.decoded > 0) {
             return true;
         }
         return false;
@@ -78,8 +83,8 @@ test('macOS split architecture supports robust window resizing', async ({ page }
     }).toBe(true);
 
     const dims2 = await page.evaluate(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return { w: vid.videoWidth, h: vid.videoHeight };
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        return { w: canvas.width, h: canvas.height };
     });
     console.log(`Stream recovered at ${dims2.w}x${dims2.h}.`);
     expect(dims2.w % 8).toBe(0);
@@ -88,8 +93,8 @@ test('macOS split architecture supports robust window resizing', async ({ page }
     // 4. Final verification of stability
     await page.waitForTimeout(2000);
     const isPlaying = await page.evaluate(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return !vid.paused && vid.currentTime > 0;
+        const client = (window as any).__llrdcClient;
+        return client && client.getState().totalDecoded > 0;
     });
     expect(isPlaying).toBe(true);
     console.log("Stability verified after multiple resizes.");

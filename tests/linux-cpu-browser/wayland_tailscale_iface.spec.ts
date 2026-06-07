@@ -14,7 +14,7 @@ function cleanupContainer() {
   }
 }
 
-test.describe('Wayland WebRTC with Tailscale Interface Selection', () => {
+test.describe('Wayland WebTransport with Tailscale Interface Selection', () => {
   test.beforeAll(async () => {
     cleanupContainer();
 
@@ -32,21 +32,21 @@ test.describe('Wayland WebRTC with Tailscale Interface Selection', () => {
     cleanupContainer();
   });
 
-  test('establishes WebRTC streaming when started with -i tailscale0', async ({ page }) => {
+  test('establishes WebTransport streaming when started with -i tailscale0', async ({ page }) => {
     page.on('console', (msg) => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
 
     await page.goto(SERVER_URL);
 
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebRTC/i, { timeout: 30000 });
+    await expect(statusEl).toHaveText(/\[WebTransport|WebSocket/i, { timeout: 30000 });
 
     await expect.poll(async () => {
       return await page.evaluate(() => {
-        const video = document.querySelector('video');
-        return !!(video && video.currentTime > 0 && !video.paused && video.readyState > 2);
+        const client = (window as any).__llrdcClient;
+        return client && client.getState().totalDecoded > 0;
       });
     }, {
-      message: 'Video should be actively playing over WebRTC when using -i tailscale0',
+      message: 'Video should be actively playing over WebTransport when using -i tailscale0',
       timeout: 15000,
     }).toBeTruthy();
   });

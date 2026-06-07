@@ -8,8 +8,8 @@ var (
 	// OnForceKeyframe is triggered when a keyframe is requested (e.g., via signaling or RTCP PLI).
 	OnForceKeyframe func()
 
-	// OnPeerConnected is triggered when a new peer is fully connected.
-	OnPeerConnected func()
+	// OnClientConnected is triggered when a new client is fully connected.
+	OnClientConnected func()
 
 	// OnTriggerPing is triggered to inject a damage-tracking ping into the compositor.
 	OnTriggerPing func()
@@ -33,10 +33,10 @@ func SafeForceKeyframe() {
 	}
 }
 
-// SafePeerConnected runs OnPeerConnected safely.
-func SafePeerConnected() {
-	if OnPeerConnected != nil {
-		OnPeerConnected()
+// SafeClientConnected runs OnClientConnected safely.
+func SafeClientConnected() {
+	if OnClientConnected != nil {
+		OnClientConnected()
 	}
 }
 

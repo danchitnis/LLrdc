@@ -33,7 +33,7 @@ test.describe('Wayland Client GPU Decoding', () => {
     
     await page.goto(`http://localhost:${PORT}`);
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebRTC|WebCodecs/i, { timeout: 45000 });
+    await expect(statusEl).toHaveText(/\[(WebRTC|WebTransport|WebCodecs)/i, { timeout: 45000 });
 
     // Wait for at least one frame to be decoded
     await expect.poll(async () => {

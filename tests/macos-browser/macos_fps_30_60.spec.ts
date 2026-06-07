@@ -12,13 +12,14 @@ test('macOS split architecture FPS switch 30 to 60 and monitor PLI', async ({ pa
     // 1. Navigate to the local macOS server
     await page.goto('http://localhost:8080/viewer.html');
 
-    // 2. Wait for the video element and ensure it's playing
-    const video = page.locator('#webrtc-video');
-    await expect(video).toBeAttached({ timeout: 15000 });
+    // 2. Wait for the display canvas and ensure it's rendering
+    const display = page.locator('#display');
+    await expect(display).toBeAttached({ timeout: 15000 });
 
     await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 2;
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        const client = (window as any).__llrdcClient;
+        return canvas && canvas.width > 0 && client && client.getState().totalDecoded > 0;
     }, { timeout: 15000 });
 
     console.log("Video playing and stable. Opening config dropdown...");
@@ -27,12 +28,9 @@ test('macOS split architecture FPS switch 30 to 60 and monitor PLI', async ({ pa
     const configBtn = page.locator('#config-btn');
     await configBtn.click();
 
-    // 4. Ensure the framerate select is present and has initial value 30
+    // 4. Ensure the framerate select is present
     const framerateSelect = page.locator('#framerate-select');
     await expect(framerateSelect).toBeVisible({ timeout: 15000 });
-    // It might not be exactly '30' if the server started with something else, 
-    // but macos-server init sets it to 30.
-    // await expect(framerateSelect).toHaveValue('30');
 
     // 5. Change FPS to 60
     console.log("Changing FPS to 60...");
@@ -69,10 +67,11 @@ test('macOS split architecture FPS switch 30 to 60 and monitor PLI', async ({ pa
 
     console.log("Wayland refresh rate 60Hz applied!");
 
-    // 7. Ensure video recovers and is playing
+    // 7. Ensure display recovers and is rendering
     await page.waitForFunction(() => {
-        const vid = document.getElementById('webrtc-video') as HTMLVideoElement;
-        return vid && vid.readyState >= 3 && !vid.paused && vid.currentTime > 0;
+        const canvas = document.getElementById('display') as HTMLCanvasElement;
+        const client = (window as any).__llrdcClient;
+        return canvas && canvas.width > 0 && client && client.getState().totalDecoded > 0;
     }, { timeout: 15000 });
 
     console.log("Video stream recovered after FPS change! Waiting 30s to monitor PLI...");

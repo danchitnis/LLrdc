@@ -33,7 +33,7 @@ export class BrowserClientSession {
     private ping = 0;
 
     constructor() {
-        this.webcodecs = new WebCodecsManager();
+        this.webcodecs = new WebCodecsManager((frame) => this.recordPresentedFrame(frame));
 
         const onConnected = () => {
             this.events.emit('connected', undefined);
@@ -110,15 +110,9 @@ export class BrowserClientSession {
         const displayLatency = this.webcodecs.latencyMonitor;
         const codec = this.webcodecs.videoCodec;
 
-        // Try to get resolution from WebCodecs first, then fall back to WebRTC video element
-        let width = this.webcodecs.width;
-        let height = this.webcodecs.height;
-        
-        const videoEl = document.getElementById('webrtc-video') as HTMLVideoElement | null;
-        if ((width === 0 || height === 0) && videoEl && videoEl.videoWidth > 0) {
-            width = videoEl.videoWidth;
-            height = videoEl.videoHeight;
-        }
+        // Get resolution from WebCodecs
+        const width = this.webcodecs.width;
+        const height = this.webcodecs.height;
 
         const isWT = this.webtransport.isWebTransportActive;
         const isWS = this.websocket.isActive;
@@ -131,7 +125,6 @@ export class BrowserClientSession {
         const bandwidthMbps = (deltaBytes * 8) / (1000 * 1000);
 
         updateStatusText(
-            false,
             fps,
             displayLatency,
             this.ping, // networkLatency / ping
@@ -192,11 +185,10 @@ export class BrowserClientSession {
     public getState(): BrowserClientState {
         return {
             wsConnected: this.websocket.isActive,
-            webrtcActive: false,
+            webtransportActive: this.webtransport.isWebTransportActive,
             videoCodec: this.webcodecs.videoCodec,
             totalDecoded: this.webcodecs.totalDecoded,
-            networkLatency: 0,
-            webrtcLatency: 0,
+            networkLatency: this.ping,
             webSocketBytesReceived: this.websocket.totalBytesReceived,
             lastPresentedFrame: this.presentedFrames.length > 0 ? { ...this.presentedFrames[this.presentedFrames.length - 1] } : null,
         };

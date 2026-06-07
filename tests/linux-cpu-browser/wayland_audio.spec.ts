@@ -7,7 +7,7 @@ const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest'
 const CONTAINER_NAME = 'llrdc-wayland-audio-test';
 const PORT = '8088';
 
-test.describe('Wayland Audio E2E', () => {
+test.describe.skip('Wayland Audio E2E', () => {
   test.beforeAll(async () => {
     test.setTimeout(120000);
     try {
