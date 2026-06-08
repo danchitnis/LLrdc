@@ -20,7 +20,7 @@ export function updateDirectBufferUi(msg: Record<string, unknown>) {
         directBufferStatusEl.title = directReason || 'Read-only startup status for DMA-BUF direct capture';
     }
 
-    if (videoCodecSelect) {
+    if (videoCodecSelect && !msg.capabilities) {
         Array.from(videoCodecSelect.options).forEach(option => {
             if (captureMode === 'direct') {
                 const isHardware = option.value.includes('_nvenc') || option.value.includes('_qsv') || option.value.includes('_vaapi');

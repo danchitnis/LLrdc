@@ -106,6 +106,55 @@ function sendConfigSync() {
 
 session.events.on('serverMessage', (msg: any) => {
     if (msg.type === 'config') {
+        if (msg.capabilities && msg.capabilities.valid_combinations && videoCodecSelect) {
+            const browserCombos = msg.capabilities.valid_combinations.filter((combo: any) =>
+                combo.supported_clients.includes('browser')
+            );
+
+            // Rebuild select options dynamically to only show those supported by server and browser client
+            videoCodecSelect.innerHTML = '';
+            browserCombos.forEach((combo: any) => {
+                let encoderSuffix = combo.encoder;
+                if (combo.encoder === 'intel') {
+                    encoderSuffix = 'qsv';
+                }
+
+                let val = combo.codec;
+                if (encoderSuffix !== 'cpu' && encoderSuffix !== 'macos') {
+                    val += `_${encoderSuffix}`;
+                }
+                if (combo.chroma === '444') {
+                    val += '-444';
+                }
+
+                let codecLabel = combo.codec.toUpperCase();
+                if (combo.codec === 'h265') {
+                    codecLabel = 'HEVC/H.265';
+                } else if (combo.codec === 'h264') {
+                    codecLabel = 'H.264';
+                }
+
+                let encoderLabel = 'CPU';
+                if (combo.encoder === 'nvenc') {
+                    encoderLabel = 'NVIDIA NVENC';
+                } else if (combo.encoder === 'intel') {
+                    encoderLabel = 'Intel VAAPI';
+                } else if (combo.encoder === 'macos') {
+                    encoderLabel = 'macOS VT';
+                }
+
+                let chromaLabel = '';
+                if (combo.chroma === '444') {
+                    chromaLabel = ' (4:4:4)';
+                }
+
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = `${codecLabel} (${encoderLabel})${chromaLabel}`;
+                videoCodecSelect.appendChild(opt);
+            });
+        }
+
         if (msg.videoCodec && videoCodecSelect) {
             const serverCodec = msg.videoCodec as string;
             const chroma = msg.chroma as string;

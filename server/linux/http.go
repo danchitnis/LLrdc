@@ -63,6 +63,9 @@ func configPayload(restarted bool) map[string]interface{} {
 		"screenWidth":             screenWidth,
 		"screenHeight":            screenHeight,
 		"restarted":               restarted,
+		"capabilities": map[string]interface{}{
+			"valid_combinations": common.GetValidCombinations(),
+		},
 	}
 }
 
