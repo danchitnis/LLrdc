@@ -2,7 +2,10 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -166,6 +169,96 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 	lastConfig := a.session.state.LastConfig
 	a.session.mu.RUnlock()
 
+	if lastConfig != nil {
+		if caps, ok := lastConfig["capabilities"].(map[string]any); ok {
+			if combos, ok := caps["valid_combinations"].([]any); ok {
+				clientOS := "wayland"
+				if runtime.GOOS == "darwin" {
+					clientOS = "macos"
+				}
+
+				var dynamicOptions []codecOption
+				for _, c := range combos {
+					comboMap, ok := c.(map[string]any)
+					if !ok {
+						continue
+					}
+					codec, _ := comboMap["codec"].(string)
+					encoder, _ := comboMap["encoder"].(string)
+					chroma, _ := comboMap["chroma"].(string)
+
+					var supportedClients []string
+					if scs, ok := comboMap["supported_clients"].([]any); ok {
+						for _, sc := range scs {
+							if sStr, ok := sc.(string); ok {
+								supportedClients = append(supportedClients, sStr)
+							}
+						}
+					}
+
+					if !slices.Contains(supportedClients, clientOS) {
+						continue
+					}
+
+					// Check renderer support by stripping hardware suffixes from codec family
+					if !slices.ContainsFunc(supported, func(s string) bool {
+						return strings.EqualFold(codec, s)
+					}) {
+						continue
+					}
+
+					encoderSuffix := encoder
+					if encoder == "intel" {
+						encoderSuffix = "qsv"
+					}
+
+					val := codec
+					if encoderSuffix != "cpu" && encoderSuffix != "macos" {
+						val += "_" + encoderSuffix
+					}
+					if chroma == "444" {
+						val += "-444"
+					}
+
+					codecLabel := strings.ToUpper(codec)
+					switch codec {
+					case "h265":
+						codecLabel = "HEVC/H.265"
+					case "h264":
+						codecLabel = "H.264"
+					}
+
+					encoderLabel := "CPU"
+					switch encoder {
+					case "nvenc":
+						encoderLabel = "NVIDIA NVENC"
+					case "intel":
+						encoderLabel = "Intel VAAPI"
+					case "macos":
+						encoderLabel = "macOS VT"
+					}
+
+					chromaLabel := ""
+					if chroma == "444" {
+						chromaLabel = " (4:4:4)"
+					}
+
+					label := fmt.Sprintf("%s (%s)%s", codecLabel, encoderLabel, chromaLabel)
+
+					dynamicOptions = append(dynamicOptions, codecOption{
+						Label:  label,
+						Value:  val,
+						Chroma: chroma,
+					})
+				}
+
+				if len(dynamicOptions) > 0 {
+					return dynamicOptions
+				}
+			}
+		}
+	}
+
 	var qsv, nvenc bool
 	if lastConfig != nil {
 		qsv, _ = lastConfig["qsvAvailable"].(bool)
@@ -182,14 +275,11 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 		val := strings.ToLower(opt.Value)
 
 		// Check renderer support by stripping hardware suffixes
-		baseCodec := val
-		if idx := strings.Index(baseCodec, "_"); idx > 0 {
-			baseCodec = baseCodec[:idx]
-		}
+		baseCodec, _, _ := strings.Cut(val, "_")
 
 		rendererSupports := false
 		for _, s := range supported {
-			if baseCodec == strings.ToLower(s) {
+			if strings.EqualFold(baseCodec, s) {
 				rendererSupports = true
 				break
 			}

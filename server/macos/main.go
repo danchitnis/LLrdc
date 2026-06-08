@@ -36,6 +36,27 @@ func getGeneration() uint64 {
 	return currentGeneration
 }
 
+func configPayload() map[string]interface{} {
+	width, height := common.GetScreenSize()
+	return map[string]interface{}{
+		"type":                    "config",
+		"videoCodec":              common.VideoCodec,
+		"chroma":                  common.Chroma,
+		"captureMode":             common.CaptureMode,
+		"webtransportPort":        8090,
+		"webtransportFingerprint": common.WebTransportFingerprint,
+		"screenWidth":             width,
+		"screenHeight":            height,
+		"framerate":               common.FPS,
+		"bandwidth":               common.TargetBandwidthMbps,
+		"hdpi":                    common.HDPI,
+		"max_res":                 common.InitialRes,
+		"capabilities": map[string]interface{}{
+			"valid_combinations": common.GetValidCombinations(),
+		},
+	}
+}
+
 func main() {
 	log.SetOutput(os.Stdout)
 
@@ -65,22 +86,7 @@ func main() {
 			enc.ForceKeyframe()
 		}
 		// Send initial config to the new client
-		width, height := common.GetScreenSize()
-		config := map[string]interface{}{
-			"type":                    "config",
-			"videoCodec":              common.VideoCodec,
-			"chroma":                  common.Chroma,
-			"captureMode":             common.CaptureMode,
-			"webtransportPort":        8090,
-			"webtransportFingerprint": common.WebTransportFingerprint,
-			"screenWidth":             width,
-			"screenHeight":            height,
-			"framerate":               common.FPS,
-			"bandwidth":               common.TargetBandwidthMbps,
-			"hdpi":                    common.HDPI,
-			"max_res":                 common.InitialRes,
-		}
-		common.BroadcastJSON(config)
+		common.BroadcastJSON(configPayload())
 	}
 	defer encMgr.Close()
 
@@ -121,22 +127,7 @@ func main() {
 
 	http.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		width, height := common.GetScreenSize()
-		config := map[string]interface{}{
-			"type":                    "config",
-			"videoCodec":              common.VideoCodec,
-			"chroma":                  common.Chroma,
-			"captureMode":             common.CaptureMode,
-			"webtransportPort":        8090,
-			"webtransportFingerprint": common.WebTransportFingerprint,
-			"screenWidth":             width,
-			"screenHeight":            height,
-			"framerate":               common.FPS,
-			"bandwidth":               common.TargetBandwidthMbps,
-			"hdpi":                    common.HDPI,
-			"max_res":                 common.InitialRes,
-		}
-		json.NewEncoder(w).Encode(config)
+		json.NewEncoder(w).Encode(configPayload())
 	})
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -251,22 +242,7 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 		}
 
 		// Update all clients with new config (including the requesting one to confirm)
-		width, height := common.GetScreenSize()
-		config := map[string]interface{}{
-			"type":                    "config",
-			"videoCodec":              common.VideoCodec,
-			"chroma":                  common.Chroma,
-			"captureMode":             common.CaptureMode,
-			"webtransportPort":        8090,
-			"webtransportFingerprint": common.WebTransportFingerprint,
-			"screenWidth":             width,
-			"screenHeight":            height,
-			"framerate":               common.FPS,
-			"bandwidth":               common.TargetBandwidthMbps,
-			"hdpi":                    common.HDPI,
-			"max_res":                 common.InitialRes,
-		}
-		common.BroadcastJSON(config)
+		common.BroadcastJSON(configPayload())
 	case "resize":
 		widthFloat, wOk := msg["width"].(float64)
 		heightFloat, hOk := msg["height"].(float64)
@@ -299,21 +275,7 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 						globalControlClient.ApplyConfig(clampedW, clampedH, common.FPS, common.HDPI, common.TargetBandwidthMbps, gen, common.Chroma)
 					}
 					// Update clients
-					config := map[string]interface{}{
-						"type":                    "config",
-						"videoCodec":              common.VideoCodec,
-						"chroma":                  common.Chroma,
-						"captureMode":             common.CaptureMode,
-						"webtransportPort":        8090,
-						"webtransportFingerprint": common.WebTransportFingerprint,
-						"screenWidth":             clampedW,
-						"screenHeight":            clampedH,
-						"framerate":               common.FPS,
-						"bandwidth":               common.TargetBandwidthMbps,
-						"hdpi":                    common.HDPI,
-						"max_res":                 common.InitialRes,
-					}
-					common.BroadcastJSON(config)
+					common.BroadcastJSON(configPayload())
 				}
 			})
 			resizeTimerMu.Unlock()
