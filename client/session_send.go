@@ -36,7 +36,23 @@ func (s *Session) SendConfig(config map[string]any) error {
 				msg["videoCodec"] = "h264_nvenc"
 			}
 		} else if vCodec == "h265" {
-			if vt, _ := lastConfig["vtAvailable"].(bool); vt {
+			hasMacOSEncoder := false
+			if caps, ok := lastConfig["capabilities"].(map[string]any); ok {
+				if combos, ok := caps["valid_combinations"].([]any); ok {
+					for _, combo := range combos {
+						if comboMap, ok := combo.(map[string]any); ok {
+							encoder, _ := comboMap["encoder"].(string)
+							codec, _ := comboMap["codec"].(string)
+							if (codec == "h265" || codec == "hevc") && encoder == "macos" {
+								hasMacOSEncoder = true
+								break
+							}
+						}
+					}
+				}
+			}
+
+			if vt, _ := lastConfig["vtAvailable"].(bool); vt || hasMacOSEncoder {
 				msg["videoCodec"] = "h265"
 			} else if qsv, _ := lastConfig["h265QsvAvailable"].(bool); qsv {
 				msg["videoCodec"] = "h265_qsv"

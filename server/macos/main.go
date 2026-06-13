@@ -51,6 +51,7 @@ func configPayload() map[string]interface{} {
 		"bandwidth":               common.TargetBandwidthMbps,
 		"hdpi":                    common.HDPI,
 		"max_res":                 common.InitialRes,
+		"vtAvailable":             true,
 		"capabilities": map[string]interface{}{
 			"valid_combinations": common.GetValidCombinations(),
 		},

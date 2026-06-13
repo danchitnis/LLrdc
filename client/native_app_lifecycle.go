@@ -108,6 +108,9 @@ func (a *NativeApp) attachSessionHooks() {
 		a.mu.Lock()
 		a.codecOptions = a.buildCodecOptions()
 		currentCodec := strings.TrimPrefix(strings.ToLower(a.session.State().VideoCodec), "video/")
+		if currentCodec == "hevc" {
+			currentCodec = "h265"
+		}
 		chroma := "420"
 		if lc := a.session.State().LastConfig; lc != nil {
 			if c, ok := lc["chroma"].(string); ok && c != "" {
@@ -116,10 +119,8 @@ func (a *NativeApp) attachSessionHooks() {
 		}
 
 		targetValue := currentCodec
-		if currentCodec == "h265_qsv" && chroma == "444" {
-			targetValue = "h265_qsv-444"
-		} else if (currentCodec == "h264" || currentCodec == "h265") && chroma == "444" {
-			targetValue = currentCodec + "-444"
+		if chroma == "444" && !strings.HasSuffix(targetValue, "-444") {
+			targetValue = targetValue + "-444"
 		}
 
 		isSameCodec := false

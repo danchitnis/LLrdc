@@ -268,6 +268,10 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 		// to allow initial configuration from YAML to be respected.
 		qsv = true
 		nvenc = true
+		if runtime.GOOS == "darwin" {
+			qsv = false
+			nvenc = false
+		}
 	}
 
 	filtered := make([]codecOption, 0, len(baseOptions))
@@ -456,6 +460,9 @@ func (a *NativeApp) codecIndexForConfig() int {
 
 	if provider, ok := a.session.renderer.(PreferredVideoCodecProvider); ok {
 		preferred := strings.TrimSpace(strings.ToLower(provider.PreferredVideoCodec()))
+		if preferred == "hevc" {
+			preferred = "h265"
+		}
 		if preferred != "" {
 			for idx, option := range a.codecOptions {
 				if option.Value == preferred {

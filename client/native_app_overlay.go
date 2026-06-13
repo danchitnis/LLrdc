@@ -94,13 +94,27 @@ func (a *NativeApp) buildHUDLocked(now time.Time) (string, OverlayColor) {
 	fps := rollingPresentedFPS(now, state.RecentLatencySamples)
 	bwMbps := rollingVideoMbps(now, state.RecentVideoByteSamples)
 	displayCodec := strings.TrimPrefix(strings.ToUpper(state.VideoCodec), "VIDEO/")
-	if displayCodec == "HEVC_VAAPI" {
+	if strings.Contains(displayCodec, "H265") || strings.Contains(displayCodec, "HEVC") {
 		displayCodec = "H.265"
-	} else if displayCodec == "H264_VAAPI" {
+	} else if strings.Contains(displayCodec, "H264") {
 		displayCodec = "H.264"
+	} else if strings.Contains(displayCodec, "VP8") {
+		displayCodec = "VP8"
+	} else if strings.Contains(displayCodec, "AV1") {
+		displayCodec = "AV1"
 	}
 	if displayCodec == "" {
 		displayCodec = "AUTO"
+	} else {
+		chroma := "420"
+		if lc := state.LastConfig; lc != nil {
+			if c, ok := lc["chroma"].(string); ok && c != "" {
+				chroma = c
+			}
+		}
+		if chroma == "444" {
+			displayCodec += " 4:4:4"
+		}
 	}
 	res := ""
 	if state.LastPresentedWidth > 0 && state.LastPresentedHeight > 0 {
