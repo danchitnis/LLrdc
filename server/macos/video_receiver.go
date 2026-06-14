@@ -100,7 +100,7 @@ func startVideoReceiver() {
 					// Always use the latest encoder, but GUARD against mismatched frames or formats.
 					// This prevents mangling during transitions when an old stream is still closing.
 					currentEnc, _ := encMgr.Get()
-					if currentEnc != nil && currentEnc.Width == width && currentEnc.Height == height && currentEnc.PixFmt == pixFmt && currentEnc.Encode(frame) == 0 {
+					if !isMacOSStreamingPaused() && currentEnc != nil && currentEnc.Width == width && currentEnc.Height == height && currentEnc.PixFmt == pixFmt && currentEnc.Encode(frame) == 0 {
 						frameCount++
 						if frameCount%fpsCheckInterval == 0 {
 							now := time.Now()

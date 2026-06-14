@@ -37,6 +37,8 @@ func Run() error {
 	// Register connection callbacks to common package
 	common.OnForceKeyframe = KillFFmpegWithTimestamp
 	common.OnClientConnected = HandleClientConnected
+	common.OnPauseStreaming = PauseStreamingTimeout
+	common.OnResumeStreaming = ResumeStreamingTimeout
 	common.OnTriggerPing = func() {
 		inputStdinMu.Lock()
 		defer inputStdinMu.Unlock()
@@ -71,6 +73,9 @@ func Run() error {
 	startStreaming(broadcastVideoFrame)
 	if CaptureMode != CaptureModeAgent {
 		startAudioStreaming()
+	}
+	if CaptureMode != CaptureModeAgent {
+		common.StartClientTimeoutTracker()
 	}
 	startHTTPServer()
 	return nil

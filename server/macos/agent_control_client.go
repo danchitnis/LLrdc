@@ -139,6 +139,7 @@ func (c *AgentControlClient) ApplyConfig(width, height, fps, hdpi, bandwidth int
 			"bandwidth":  bandwidth,
 			"generation": generation,
 			"pixfmt":     pixfmt,
+			"paused":     isMacOSStreamingPaused(),
 		},
 	}
 

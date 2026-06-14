@@ -137,21 +137,9 @@ func InitWebTransport(addr string) {
 
 func handleWebTransportSession(session *webtransport.Session) {
 	log.Printf("WebTransport session established: %v", session.RemoteAddr())
-	if OnClientConnected != nil {
-		OnClientConnected()
-	}
-
-	// Create a unidirectional stream for video
-	videoStream, err := session.OpenUniStream()
-	if err != nil {
-		log.Printf("Failed to open WebTransport video stream: %v", err)
-		session.CloseWithError(0, "failed to open video stream")
-		return
-	}
 
 	wtSession := &WebTransportSession{
-		session:     session,
-		videoStream: videoStream,
+		session: session,
 	}
 
 	wtSessionsMutex.Lock()
@@ -163,7 +151,26 @@ func handleWebTransportSession(session *webtransport.Session) {
 		delete(wtSessions, session)
 		wtSessionsMutex.Unlock()
 		log.Printf("WebTransport session closed: %v", session.RemoteAddr())
+		SafeClientDisconnected()
+		HandleClientConnectionChange()
 	}()
+
+	if OnClientConnected != nil {
+		OnClientConnected()
+	}
+	HandleClientConnectionChange()
+
+	// Create a unidirectional stream for video
+	videoStream, err := session.OpenUniStream()
+	if err != nil {
+		log.Printf("Failed to open WebTransport video stream: %v", err)
+		session.CloseWithError(0, "failed to open video stream")
+		return
+	}
+
+	wtSession.mu.Lock()
+	wtSession.videoStream = videoStream
+	wtSession.mu.Unlock()
 
 	// Accept bidirectional streams for control
 	for {

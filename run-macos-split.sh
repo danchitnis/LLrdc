@@ -50,6 +50,7 @@ docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:latest"
 
 echo "🖥️  Starting macOS Host Server..."
 # We run this in the background so we can monitor it and handle cleanup
+export CLIENT_TIMEOUT="${CLIENT_TIMEOUT:-10}"
 ./macos-server &
 MACOS_SERVER_PID=$!
 

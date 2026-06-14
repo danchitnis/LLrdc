@@ -13,14 +13,16 @@ import (
 )
 
 var (
-	encMgr            *EncoderManager
-	currentGeneration uint64
-	generationMu      sync.Mutex
-	displayChangeMu   sync.Mutex
-	resizeTimer       *time.Timer
-	resizeTimerMu     sync.Mutex
-	pendingResizeW    int
-	pendingResizeH    int
+	encMgr                 *EncoderManager
+	currentGeneration      uint64
+	generationMu           sync.Mutex
+	displayChangeMu        sync.Mutex
+	resizeTimer            *time.Timer
+	resizeTimerMu          sync.Mutex
+	pendingResizeW         int
+	pendingResizeH         int
+	macosStreamingPaused   bool
+	macosStreamingPausedMu sync.Mutex
 )
 
 func nextGeneration() uint64 {
@@ -34,6 +36,12 @@ func getGeneration() uint64 {
 	generationMu.Lock()
 	defer generationMu.Unlock()
 	return currentGeneration
+}
+
+func isMacOSStreamingPaused() bool {
+	macosStreamingPausedMu.Lock()
+	defer macosStreamingPausedMu.Unlock()
+	return macosStreamingPaused
 }
 
 func configPayload() map[string]interface{} {
@@ -88,6 +96,29 @@ func main() {
 		}
 		// Send initial config to the new client
 		common.BroadcastJSON(configPayload())
+	}
+
+	common.OnPauseStreaming = func() {
+		log.Println("macOS Server: Pausing streaming encoding...")
+		macosStreamingPausedMu.Lock()
+		macosStreamingPaused = true
+		macosStreamingPausedMu.Unlock()
+		if globalControlClient != nil {
+			globalControlClient.ApplyCurrentConfig()
+		}
+	}
+
+	common.OnResumeStreaming = func() {
+		log.Println("macOS Server: Resuming streaming encoding...")
+		macosStreamingPausedMu.Lock()
+		macosStreamingPaused = false
+		macosStreamingPausedMu.Unlock()
+		if globalControlClient != nil {
+			globalControlClient.ApplyCurrentConfig()
+		}
+		if enc, _ := encMgr.Get(); enc != nil {
+			enc.ForceKeyframe()
+		}
 	}
 	defer encMgr.Close()
 
@@ -166,6 +197,7 @@ func main() {
 		})
 	})
 
+	common.StartClientTimeoutTracker()
 	log.Printf("macOS Native Server listening on :%d", common.Port)
 	ln, err := net.Listen("tcp4", "0.0.0.0:8080")
 	if err != nil {

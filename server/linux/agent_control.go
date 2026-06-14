@@ -158,6 +158,14 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	if paused, ok := config["paused"].(bool); ok {
+		if paused {
+			PauseStreamingTimeout()
+		} else {
+			ResumeStreamingTimeout()
+		}
+	}
+
 	// Send ConfigApplied
 	resp := splitproto.Message{
 		Type: splitproto.MsgConfigApplied,

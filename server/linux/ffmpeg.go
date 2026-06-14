@@ -29,6 +29,7 @@ var (
 	ffmpegStreamID         uint32
 	lastFFmpegRestartTime  atomic.Pointer[time.Time]
 	isResizing             = false
+	streamingPaused        = false
 )
 
 func getLastFFmpegRestartTime() time.Time {
@@ -66,6 +67,25 @@ func ResumeStreaming() {
 	ffmpegMutex.Lock()
 	defer ffmpegMutex.Unlock()
 	isResizing = false
+}
+
+func PauseStreamingTimeout() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+	streamingPaused = true
+	log.Println("Pausing streaming due to client inactivity timeout...")
+	KillFFmpegWithTimestamp()
+	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
+		log.Println("Pausing audio streaming due to client inactivity timeout...")
+		_ = ffmpegAudioCmd.Process.Kill()
+	}
+}
+
+func ResumeStreamingTimeout() {
+	ffmpegMutex.Lock()
+	defer ffmpegMutex.Unlock()
+	streamingPaused = false
+	log.Println("Resuming streaming as client connected...")
 }
 
 func isQSVCodec(codec string) bool {
@@ -347,9 +367,10 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				break
 			}
 			resizing := isResizing
+			paused := streamingPaused
 			ffmpegMutex.Unlock()
 
-			if resizing {
+			if resizing || paused {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}

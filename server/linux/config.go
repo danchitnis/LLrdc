@@ -49,6 +49,7 @@ var (
 	TileSize              int
 	InitialRes            int
 	AgentAddress          string
+	ClientTimeout         int
 
 	displayChangeMu sync.Mutex
 
@@ -169,6 +170,11 @@ func InitConfig() {
 
 	defaultAgentAddress := os.Getenv("AGENT_ADDRESS")
 
+	defaultClientTimeout := 0
+	if ct, err := strconv.Atoi(os.Getenv("CLIENT_TIMEOUT")); err == nil {
+		defaultClientTimeout = ct
+	}
+
 	// Custom Usage format
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of llrdc:\n")
@@ -192,6 +198,7 @@ func InitConfig() {
 		printFlag(os.Stderr, "audio-bitrate", "Audio bitrate (e.g. 64k, 128k)", AudioBitrate)
 		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
 		printFlag(os.Stderr, "res", "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.", InitialRes)
+		printFlag(os.Stderr, "client-timeout", "Timeout in seconds to pause streaming when no clients are connected (0 to disable)", ClientTimeout)
 
 		fmt.Fprintf(os.Stderr, "\nLatency & Smoothness Flags:\n")
 		printFlag(os.Stderr, "activity-hz", "Input heartbeat frequency in Hz (default 30)", ActivityPulseHz)
@@ -227,6 +234,7 @@ func InitConfig() {
 	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
 	flag.IntVar(&InitialRes, "res", defaultInitialRes, "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.")
+	flag.IntVar(&ClientTimeout, "client-timeout", defaultClientTimeout, "Timeout in seconds to pause streaming when no clients are connected (0 to disable)")
 	flag.IntVar(&ActivityPulseHz, "activity-hz", defaultActivityPulseHz, "Input heartbeat frequency in Hz (default 30)")
 	flag.IntVar(&ActivityTimeout, "activity-timeout", defaultActivityTimeout, "Inactivity timeout in ms before stopping heartbeat (default 1500)")
 	flag.BoolVar(&NVENCLatencyMode, "nvenc-latency", defaultNVENCLatencyMode, "Enable ultra-low latency NVENC optimizations (default true)")
@@ -337,6 +345,7 @@ func SyncConfigToCommon() {
 	common.TileSize = TileSize
 	common.InitialRes = InitialRes
 	common.AgentAddress = AgentAddress
+	common.ClientTimeout = ClientTimeout
 	common.TargetBandwidthMbps = TargetBandwidthMbps
 	common.TargetVBR = TargetVBR
 	common.TargetVBRThreshold = TargetVBRThreshold

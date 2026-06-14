@@ -44,6 +44,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if OnClientConnected != nil {
 		OnClientConnected()
 	}
+	HandleClientConnectionChange()
 
 	defer func() {
 		wsSessionsMutex.Lock()
@@ -51,6 +52,8 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		wsSessionsMutex.Unlock()
 		conn.Close()
 		log.Printf("WebSocket session closed: %v", conn.RemoteAddr())
+		SafeClientDisconnected()
+		HandleClientConnectionChange()
 	}()
 
 	writeJSON := func(v interface{}) error {
