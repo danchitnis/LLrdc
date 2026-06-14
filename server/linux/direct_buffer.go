@@ -167,6 +167,22 @@ func detectRenderNode() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	if currentAcceleratorMode() == acceleratorNVIDIA {
+		// Look for the node that uses the nvidia driver
+		for _, node := range nodes {
+			base := filepath.Base(node)
+			ueventPath := filepath.Join("/sys/class/drm", base, "device/uevent")
+			if content, err := os.ReadFile(ueventPath); err == nil {
+				if strings.Contains(string(content), "DRIVER=nvidia") {
+					log.Printf("Detected NVIDIA render node: %s", node)
+					return node, nil
+				}
+			}
+		}
+		log.Println("Warning: no render node using the 'nvidia' driver was found in /sys/class/drm. Falling back to default selection.")
+	}
+
 	// Sort nodes to prefer higher indices which are usually discrete GPUs
 	for i := len(nodes) - 1; i >= 0; i-- {
 		node := nodes[i]

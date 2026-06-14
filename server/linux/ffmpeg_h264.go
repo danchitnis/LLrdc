@@ -99,10 +99,18 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	marker4 := []byte{0x00, 0x00, 0x00, 0x01, 0x09}
 	marker3 := []byte{0x00, 0x00, 0x01, 0x09}
 
+	searchStart := 4
 	for {
 		n, err := reader.Read(temp)
 		if n > 0 {
+			oldLen := len(buffer)
 			buffer = append(buffer, temp[:n]...)
+			if oldLen > 4 {
+				searchStart = oldLen - 4
+			} else {
+				searchStart = 4
+			}
+
 			for {
 				if len(buffer) < 5 {
 					break
@@ -110,13 +118,22 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 
 				// Find next AUD marker, skipping the first 4 bytes (the current frame's start)
 				nextIdx := -1
-				m4Idx := bytes.Index(buffer[4:], marker4)
-				m3Idx := bytes.Index(buffer[4:], marker3)
+				m4Idx := bytes.Index(buffer[searchStart:], marker4)
+				m3Idx := bytes.Index(buffer[searchStart:], marker3)
 
-				if m4Idx != -1 && (m3Idx == -1 || m4Idx <= m3Idx) {
-					nextIdx = m4Idx + 4
-				} else if m3Idx != -1 {
-					nextIdx = m3Idx + 4
+				actualM4 := -1
+				if m4Idx != -1 {
+					actualM4 = m4Idx + searchStart
+				}
+				actualM3 := -1
+				if m3Idx != -1 {
+					actualM3 = m3Idx + searchStart
+				}
+
+				if actualM4 != -1 && (actualM3 == -1 || actualM4 <= actualM3) {
+					nextIdx = actualM4
+				} else if actualM3 != -1 {
+					nextIdx = actualM3
 				}
 
 				if nextIdx != -1 {
@@ -129,6 +146,7 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 						LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
 					})
 					buffer = buffer[nextIdx:]
+					searchStart = 4
 				} else {
 					break
 				}

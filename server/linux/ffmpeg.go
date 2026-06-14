@@ -326,6 +326,10 @@ func SetAudioBitrate(bitrate string) {
 }
 
 func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
+	targetVBR = TargetVBR
+	targetVBRThreshold = TargetVBRThreshold
+	targetDamageTracking = TargetDamageTracking
+
 	var lastStreamID uint32
 
 	cleanupTasks = append(cleanupTasks, func() {
@@ -501,10 +505,11 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						args = append(args, "-D")
 					}
 				} else if codec == "h264_nvenc" || codec == "hevc_nvenc" || codec == "av1_nvenc" {
-					// Always use packed RGB/BGR and let NVENC convert to YUV on-GPU.
-					// Forcing yuv420p here pushes the conversion into wf-recorder/FFmpeg's
-					// CPU path and is very expensive at 4K60.
-					args = append(args, "-x", "bgr0")
+					if Chroma == "444" {
+						args = append(args, "-x", "bgr0")
+					} else {
+						args = append(args, "-x", "nv12")
+					}
 
 					rgbMode := "yuv420"
 					tune := "ull"
@@ -518,7 +523,8 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						"-p", "preset=p1",
 						"-p", "tune="+tune,
 						"-p", "delay=0",
-						"-p", "surfaces=64",
+						"-p", "surfaces=8",
+						"-p", "threads=1",
 						"-p", "rgb_mode="+rgbMode,
 						"-p", "bf=0",
 						"-p", "spatial-aq=0",

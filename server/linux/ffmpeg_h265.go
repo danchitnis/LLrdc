@@ -207,29 +207,56 @@ func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 		}
 	}
 
+	nextSearchStart := 0
 	for {
 		n, err := reader.Read(temp)
 		if n > 0 {
+			oldLen := len(buffer)
 			buffer = append(buffer, temp[:n]...)
+
 			for {
 				startIdx, prefixLen, ok := findAnnexBStartCode(buffer, 0)
 				if !ok {
 					if len(buffer) > 4 {
 						buffer = append([]byte(nil), buffer[len(buffer)-4:]...)
 					}
+					nextSearchStart = 0
 					break
 				}
 				if startIdx > 0 {
 					buffer = buffer[startIdx:]
+					nextSearchStart = 0
+					continue
 				}
 
-				nextIdx, _, hasNext := findAnnexBStartCode(buffer, prefixLen)
+				// The next start code search should start from where we left off (oldLen - 4)
+				// if we just appended new data, to avoid O(N^2) quadratic scanning.
+				searchStart := prefixLen
+				if oldLen > 0 {
+					if oldLen-4 > prefixLen {
+						searchStart = oldLen - 4
+					}
+					// Only use the optimized search start for the first iteration after reading new data.
+					// Once a start code is processed and buffer is trimmed, subsequent searches in this loop
+					// should start from prefixLen.
+					oldLen = 0
+				}
+				if nextSearchStart > searchStart {
+					searchStart = nextSearchStart
+				}
+
+				nextIdx, nextPrefixLen, hasNext := findAnnexBStartCode(buffer, searchStart)
 				if !hasNext {
+					nextSearchStart = len(buffer) - 4
+					if nextSearchStart < prefixLen {
+						nextSearchStart = prefixLen
+					}
 					break
 				}
 
 				processNAL(buffer[:nextIdx])
 				buffer = buffer[nextIdx:]
+				nextSearchStart = nextPrefixLen
 			}
 		}
 		if err != nil {

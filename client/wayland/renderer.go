@@ -230,6 +230,7 @@ func (r *NativeRenderer) Close() error {
 	}
 	return nil
 }
+
 type nativeVideoSample struct {
 	codec                        string
 	data                         []byte
@@ -242,9 +243,8 @@ type nativeVideoSample struct {
 }
 
 type nativeDecodedSample struct {
-	frame           *decodedFrame
-	packetTimestamp int64
-}
+	frame                        *decodedFrame
+	packetTimestamp              int64
 	firstPacketSequenceNumber    uint16
 	firstDecryptedPacketQueuedAt int64
 	firstRemotePacketAt          int64
