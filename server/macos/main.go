@@ -145,6 +145,9 @@ func main() {
 	// 6. Start HTTP Server
 	fs := http.FileServer(http.Dir("public"))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			r.URL.Path = "/viewer.html"
+		}
 		fs.ServeHTTP(w, r)
 	})
 
