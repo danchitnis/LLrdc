@@ -4,7 +4,7 @@ set -euo pipefail
 
 IMAGE_TAG_EXPLICIT="false"
 
-if [[ -v IMAGE_TAG ]]; then
+if [ -n "${IMAGE_TAG+x}" ]; then
   IMAGE_TAG_EXPLICIT="true"
 fi
 
