@@ -68,6 +68,10 @@ body {
   height: 100% !important;
   object-fit: contain !important;
   pointer-events: none !important;
+  image-rendering: auto !important;
+}
+
+#display.crisp, #sharpness-layer.crisp {
   image-rendering: -webkit-optimize-contrast !important;
   image-rendering: crisp-edges !important;
 }

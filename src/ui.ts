@@ -53,11 +53,48 @@ if (ctx) {
 export const sharpnessCtx = sharpnessLayerEl ? sharpnessLayerEl.getContext('2d') : null;
 
 export function applySmoothingSettings() {
-    if (ctx) {
-        ctx.imageSmoothingEnabled = false;
+    if (!displayEl || !displayContainerEl) return;
+
+    const dpr = globalThis.devicePixelRatio || 1;
+    const containerWidth = displayContainerEl.clientWidth * dpr;
+    const containerHeight = displayContainerEl.clientHeight * dpr;
+
+    const canvasWidth = displayEl.width;
+    const canvasHeight = displayEl.height;
+
+    let is1to1 = false;
+    if (canvasWidth > 0 && canvasHeight > 0 && containerWidth > 0 && containerHeight > 0) {
+        const scaleX = containerWidth / canvasWidth;
+        const scaleY = containerHeight / canvasHeight;
+        const scale = Math.min(scaleX, scaleY);
+        // If scale is extremely close to 1.0 (e.g. 1% tolerance), it is effectively 1:1
+        if (Math.abs(scale - 1.0) < 0.01) {
+            is1to1 = true;
+        }
     }
-    if (sharpnessCtx) {
-        sharpnessCtx.imageSmoothingEnabled = false;
+
+    if (is1to1) {
+        displayEl.classList.add('crisp');
+        if (sharpnessLayerEl) {
+            sharpnessLayerEl.classList.add('crisp');
+        }
+        if (ctx) {
+            ctx.imageSmoothingEnabled = false;
+        }
+        if (sharpnessCtx) {
+            sharpnessCtx.imageSmoothingEnabled = false;
+        }
+    } else {
+        displayEl.classList.remove('crisp');
+        if (sharpnessLayerEl) {
+            sharpnessLayerEl.classList.remove('crisp');
+        }
+        if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+        }
+        if (sharpnessCtx) {
+            sharpnessCtx.imageSmoothingEnabled = true;
+        }
     }
 }
 

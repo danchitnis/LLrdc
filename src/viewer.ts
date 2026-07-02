@@ -7,7 +7,7 @@ import {
     desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, 
     activityTimeoutValue, videoCodecSelect, clipboardCheckbox, 
     enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, 
-    setServerIntelGpuUtil, setAcceleratorMode 
+    setServerIntelGpuUtil, setAcceleratorMode, applySmoothingSettings 
 } from './ui';
 import { WebCodecsManager } from './webcodecs';
 import { setupInput, setPendingClipboard } from './input';
@@ -318,6 +318,7 @@ wireConfigControls({
 let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 triggerResizeUpdate = () => {
     if (!displayContainerEl) return;
+    applySmoothingSettings();
     if (resizeDebounceTimer !== null) clearTimeout(resizeDebounceTimer);
     
     resizeDebounceTimer = setTimeout(() => {
