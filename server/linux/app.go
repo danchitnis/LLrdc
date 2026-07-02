@@ -61,6 +61,7 @@ func Run() error {
 		if err := startWayland(); err != nil {
 			return fmt.Errorf("failed to initialize Wayland: %w", err)
 		}
+		StartClipboardPoller()
 	} else {
 		log.Println("TEST_PATTERN mode: skipping display server setup.")
 	}

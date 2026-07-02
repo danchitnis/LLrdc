@@ -52,6 +52,7 @@ func configPayload(restarted bool) map[string]interface{} {
 		"settle_time":             SettleTime,
 		"tile_size":               TileSize,
 		"enable_audio":            EnableAudio,
+		"enableClipboard":         EnableClipboard,
 		"audio_bitrate":           AudioBitrate,
 		"hdpi":                    HDPI,
 		"max_res":                 InitialRes,
@@ -344,6 +345,8 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 		})
 	case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 		HandleInputMessage(msg)
+	case "clipboard_set":
+		handleClipboardSet(msg)
 	case "config":
 		// Synchronously update all configuration state to prevent race conditions
 		prevInitialRes := InitialRes

@@ -1,4 +1,4 @@
-//go:build (darwin && native && cgo)
+//go:build darwin && native && cgo
 
 package macos
 
@@ -555,51 +555,51 @@ func llrdc_present_callback(idPtr unsafe.Pointer, width C.int, height C.int, ts 
 }
 
 func (r *NativeRenderer) MenuItemIndexAt(x, y float64, itemCount int) int {
-        if itemCount == 0 {
-                return -1
-        }
-        r.mu.RLock()
-        width, height := r.width, r.height
-        r.mu.RUnlock()
+	if itemCount == 0 {
+		return -1
+	}
+	r.mu.RLock()
+	width, height := r.width, r.height
+	r.mu.RUnlock()
 
-        panelW := width - 40
-        if panelW > 640 {
-                panelW = 640
-        }
-        if panelW < 280 {
-                panelW = width
-        }
-        panelH := 108 + itemCount*22
-        if panelH > height-40 {
-                panelH = height - 40
-        }
-        if panelH < 160 {
-                panelH = 160
-        }
-        if panelH > height-40 {
-                panelH = height - 40
-        }
-        if panelH < 120 {
-                panelH = height
-        }
+	panelW := width - 40
+	if panelW > 640 {
+		panelW = 640
+	}
+	if panelW < 280 {
+		panelW = width
+	}
+	panelH := 108 + itemCount*22
+	if panelH > height-40 {
+		panelH = height - 40
+	}
+	if panelH < 160 {
+		panelH = 160
+	}
+	if panelH > height-40 {
+		panelH = height - 40
+	}
+	if panelH < 120 {
+		panelH = height
+	}
 
-        panelX := (width - panelW) / 2
-        panelY := (height - panelH) / 2
-        itemsStart := 86
-        itemHeight := 22
+	panelX := (width - panelW) / 2
+	panelY := (height - panelH) / 2
+	itemsStart := 86
+	itemHeight := 22
 
-        rawX := int(x * float64(width))
-        rawY := int(y * float64(height))
+	rawX := int(x * float64(width))
+	rawY := int(y * float64(height))
 
-        if rawX < panelX || rawX > panelX+panelW {
-                return -1
-        }
-        if rawY < panelY+itemsStart {
-                return -1
-        }
-        idx := (rawY - (panelY + itemsStart)) / itemHeight
-        if idx < 0 || idx >= itemCount {
-                return -1
-        }
-        return idx
+	if rawX < panelX || rawX > panelX+panelW {
+		return -1
+	}
+	if rawY < panelY+itemsStart {
+		return -1
+	}
+	idx := (rawY - (panelY + itemsStart)) / itemHeight
+	if idx < 0 || idx >= itemCount {
+		return -1
+	}
+	return idx
 }

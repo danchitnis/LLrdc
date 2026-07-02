@@ -233,9 +233,9 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 					codec,
 					chunkData,
 					packetTimestamp,
-					0, // sequence number not used in WT uni-streams yet
-					0, // queue time not used
-					0, // remote packet time not used
+					0,         // sequence number not used in WT uni-streams yet
+					0,         // queue time not used
+					0,         // remote packet time not used
 					receiveAt, // read at
 					receiveAt, // receive at
 				)

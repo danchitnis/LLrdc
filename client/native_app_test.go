@@ -16,17 +16,17 @@ type testWindowRenderer struct {
 }
 
 func (r *testWindowRenderer) HandleVideoFrame(string, []byte, int64) error { return nil }
-func (r *testWindowRenderer) RequestKeyframe()                            {}
-func (r *testWindowRenderer) Close() error                                { return nil }
-func (r *testWindowRenderer) Run() error                                    { return nil }
-func (r *testWindowRenderer) Stop()                                         {}
-func (r *testWindowRenderer) SetInputSink(func(map[string]any) error)       {}
-func (r *testWindowRenderer) SetLifecycleSink(func(NativeWindowLifecycle))  {}
-func (r *testWindowRenderer) UpdateMouse(float64, float64)                  {}
-func (r *testWindowRenderer) SetPresentSink(func(NativeFramePresented))     {}
-func (r *testWindowRenderer) SetOverlayState(state OverlayState)            { r.overlay = state }
-func (r *testWindowRenderer) SetLatencyProbe(enabled bool)                  { r.latencyProbe = enabled }
-func (r *testWindowRenderer) SetDebugCursor(enabled bool)                   { r.debugCursor = enabled }
+func (r *testWindowRenderer) RequestKeyframe()                             {}
+func (r *testWindowRenderer) Close() error                                 { return nil }
+func (r *testWindowRenderer) Run() error                                   { return nil }
+func (r *testWindowRenderer) Stop()                                        {}
+func (r *testWindowRenderer) SetInputSink(func(map[string]any) error)      {}
+func (r *testWindowRenderer) SetLifecycleSink(func(NativeWindowLifecycle)) {}
+func (r *testWindowRenderer) UpdateMouse(float64, float64)                 {}
+func (r *testWindowRenderer) SetPresentSink(func(NativeFramePresented))    {}
+func (r *testWindowRenderer) SetOverlayState(state OverlayState)           { r.overlay = state }
+func (r *testWindowRenderer) SetLatencyProbe(enabled bool)                 { r.latencyProbe = enabled }
+func (r *testWindowRenderer) SetDebugCursor(enabled bool)                  { r.debugCursor = enabled }
 func (r *testWindowRenderer) SetWindowSize(width, height int) error {
 	r.width = width
 	r.height = height

@@ -1,4 +1,4 @@
-//go:build (darwin && native && cgo)
+//go:build darwin && native && cgo
 
 package macos
 

@@ -110,6 +110,13 @@ func (c *AgentControlClient) handleMessage(msg splitproto.Message) {
 		if enc, _ := encMgr.Get(); enc != nil {
 			enc.ForceKeyframe()
 		}
+	case splitproto.MsgClipboardGet:
+		if text, ok := msg.Config["text"].(string); ok {
+			common.BroadcastJSON(map[string]interface{}{
+				"type": "clipboard_get",
+				"text": text,
+			})
+		}
 	}
 }
 

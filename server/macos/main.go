@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -59,6 +61,7 @@ func configPayload() map[string]interface{} {
 		"bandwidth":               common.TargetBandwidthMbps,
 		"hdpi":                    common.HDPI,
 		"max_res":                 common.InitialRes,
+		"enableClipboard":         common.EnableClipboard,
 		"vtAvailable":             true,
 		"capabilities": map[string]interface{}{
 			"valid_combinations": common.GetValidCombinations(),
@@ -217,6 +220,16 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 	switch msgType {
 	case "keydown", "keyup", "key", "mousemove", "mousebtn", "wheel", "spawn":
 		common.HandleInputMessage(msg)
+	case "clipboard_set":
+		text, _ := msg["text"].(string)
+		paste, _ := msg["paste"].(bool)
+		b64 := base64.StdEncoding.EncodeToString([]byte(text))
+		pasteVal := "0"
+		if paste {
+			pasteVal = "1"
+		}
+		line := fmt.Sprintf("clipboard %s %s\n", b64, pasteVal)
+		_, _ = globalInputWriter.Write([]byte(line))
 	case "config":
 		fps, okF := common.NumberToInt(msg["framerate"])
 		if !okF || fps <= 0 {

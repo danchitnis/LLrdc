@@ -10,7 +10,7 @@ import {
     setServerIntelGpuUtil, setAcceleratorMode 
 } from './ui';
 import { WebCodecsManager } from './webcodecs';
-import { setupInput } from './input';
+import { setupInput, setPendingClipboard } from './input';
 import { BrowserClientSession } from './client/session';
 import type { ConfigMessage } from './client/types';
 import { normalizeCodecFamily } from './client/protocol';
@@ -249,6 +249,10 @@ session.events.on('serverMessage', (msg: any) => {
             enableAudioCheckbox.checked = msg.enable_audio;
         }
 
+        if (msg.enableClipboard !== undefined && clipboardCheckbox) {
+            clipboardCheckbox.checked = msg.enableClipboard as boolean;
+        }
+
         if (msg.audio_bitrate && audioBitrateSelect) {
             audioBitrateSelect.value = msg.audio_bitrate;
         }
@@ -284,6 +288,12 @@ session.events.on('serverMessage', (msg: any) => {
 
     if (msg.type === 'display_effect') {
         handleDisplayEffectMessage(msg, currentHdpi);
+    }
+
+    if (msg.type === 'clipboard_get') {
+        if (typeof msg.text === 'string') {
+            setPendingClipboard(msg.text);
+        }
     }
 
     if (msg.type === 'stats') {
@@ -332,7 +342,7 @@ if (clipboardCheckbox) {
         try {
             const text = await navigator.clipboard.readText();
             if (text) {
-                session.sendInput(JSON.stringify({ type: 'clipboard', text }));
+                session.sendInput(JSON.stringify({ type: 'clipboard_set', text }));
             }
         } catch (e) {
             // Ignore clipboard errors

@@ -46,6 +46,7 @@ var (
 	InitialRes            int
 	AgentAddress          string
 	ClientTimeout         int
+	EnableClipboard       bool
 
 	// Globally shared settings (historically in ffmpeg.go or others)
 	TargetBandwidthMbps  int  = 5
@@ -96,6 +97,7 @@ func InitConfig() {
 	defaultUseDebugInput := os.Getenv("USE_DEBUG_INPUT") == "true"
 	defaultTestPattern := os.Getenv("TEST_PATTERN") != ""
 	defaultEnableAudio := os.Getenv("ENABLE_AUDIO") != "false"
+	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
 	defaultAudioBitrate := os.Getenv("AUDIO_BITRATE")
 	if defaultAudioBitrate == "" {
 		defaultAudioBitrate = "128k"
@@ -225,6 +227,7 @@ func InitConfig() {
 	flag.StringVar(&Wallpaper, "wallpaper", defaultWallpaper, "Path to wallpaper image")
 	EnableAudio = true
 	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
+	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
 	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
 	flag.IntVar(&InitialRes, "res", defaultInitialRes, "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.")

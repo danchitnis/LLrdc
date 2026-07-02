@@ -27,9 +27,11 @@ type SupportedVideoCodecsProvider interface {
 
 type NullRenderer struct{}
 
-func (n NullRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp int64) error { return nil }
-func (n NullRenderer) RequestKeyframe()                                                       {}
-func (n NullRenderer) Close() error                                                           { return nil }
+func (n NullRenderer) HandleVideoFrame(codec string, frame []byte, packetTimestamp int64) error {
+	return nil
+}
+func (n NullRenderer) RequestKeyframe() {}
+func (n NullRenderer) Close() error     { return nil }
 
 type Event string
 

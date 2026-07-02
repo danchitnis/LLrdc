@@ -70,4 +70,5 @@ const (
 	MsgFirstFrame    = "first_frame"
 	MsgForceKeyframe = "force_keyframe"
 	MsgError         = "error"
+	MsgClipboardGet  = "clipboard_get"
 )

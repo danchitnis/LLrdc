@@ -1,4 +1,44 @@
-import { overlayEl, displayContainerEl, displayEl } from './ui';
+import { overlayEl, displayContainerEl, displayEl, clipboardCheckbox } from './ui';
+
+export let pendingClipboard: string | null = null;
+export function setPendingClipboard(text: string) {
+    pendingClipboard = text;
+}
+
+function processPendingClipboard() {
+    if (!clipboardCheckbox || !clipboardCheckbox.checked) return;
+    if (pendingClipboard !== null) {
+        const text = pendingClipboard;
+        pendingClipboard = null;
+        
+        // Try Async Clipboard API first (requires secure context)
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text)
+                .then(() => console.log('>>> [Client] Clipboard written via navigator.clipboard'))
+                .catch(() => fallbackCopy(text));
+        } else {
+            fallbackCopy(text);
+        }
+    }
+}
+
+function fallbackCopy(text: string) {
+    const clipboardArea = document.getElementById('clipboard-area') as HTMLTextAreaElement;
+    if (clipboardArea) {
+        clipboardArea.value = text;
+        clipboardArea.select();
+        try {
+            const success = document.execCommand('copy');
+            if (success) {
+                console.log('>>> [Client] Clipboard written via document.execCommand fallback');
+            } else {
+                console.warn('>>> [Client] document.execCommand fallback failed');
+            }
+        } catch (err) {
+            console.error('>>> [Client] Error in fallback copy:', err);
+        }
+    }
+}
 
 export function setupInput(sendMsg: (data: string) => void) {
     if (!overlayEl) return;
@@ -109,6 +149,7 @@ export function setupInput(sendMsg: (data: string) => void) {
     overlayEl.setAttribute('aria-label', 'Remote desktop input overlay');
 
     overlayEl.addEventListener('mousedown', (e: MouseEvent) => {
+        processPendingClipboard();
         pressedButton = e.button;
         focusOverlay();
         const pos = getNormalizedPos(e);
@@ -120,6 +161,7 @@ export function setupInput(sendMsg: (data: string) => void) {
     });
 
     window.addEventListener('mouseup', (e: MouseEvent) => {
+        processPendingClipboard();
         if (pressedButton === null && !isWithinDisplayContainer(e)) {
             return;
         }
@@ -135,11 +177,13 @@ export function setupInput(sendMsg: (data: string) => void) {
     }, true);
 
     overlayEl.addEventListener('keydown', (e: KeyboardEvent) => {
+        processPendingClipboard();
         sendMsg(JSON.stringify({ type: 'keydown', key: e.code, ts: Date.now() }));
         e.preventDefault();
     });
 
     overlayEl.addEventListener('keyup', (e: KeyboardEvent) => {
+        processPendingClipboard();
         sendMsg(JSON.stringify({ type: 'keyup', key: e.code, ts: Date.now() }));
         e.preventDefault();
     });
@@ -155,8 +199,21 @@ export function setupInput(sendMsg: (data: string) => void) {
     });
 
     window.addEventListener('mousedown', (e: MouseEvent) => {
+        processPendingClipboard();
         if (displayContainerEl?.contains(e.target as Node)) {
             focusOverlay();
+        }
+    });
+
+    window.addEventListener('paste', (e: ClipboardEvent) => {
+        if (!clipboardCheckbox || !clipboardCheckbox.checked) return;
+        // Only handle paste if the overlay is focused
+        if (document.activeElement !== overlayEl) {
+            return;
+        }
+        const text = e.clipboardData?.getData('text');
+        if (text) {
+            sendMsg(JSON.stringify({ type: 'clipboard_set', text, paste: true }));
         }
     });
 }

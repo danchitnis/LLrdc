@@ -6,9 +6,7 @@ playwright-report/
 test-results/
 public/
 /llrdc
-/client_bin
 plan/
-tmp_broken_wayland/
 dist/
 /macos/LLrdc.app/
 /macos/.DS_Store
@@ -17,3 +15,5 @@ test-logs/
 /macos-server
 .antigravitycli
 certs/
+.stignore
+.stfolder
