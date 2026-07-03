@@ -363,6 +363,11 @@ fi
 
 mkdir -p "${SCRIPT_DIR}/certs"
 
+LIBVA_DRIVER_NAME_ENV="iHD"
+if [ "${USE_NVIDIA}" = "true" ]; then
+  LIBVA_DRIVER_NAME_ENV="nvidia"
+fi
+
 DOCKER_RUN_CMD=(docker run)
 append_words DOCKER_RUN_CMD "$GPU_ARGS"
 append_words DOCKER_RUN_CMD "$DETACHED_ARGS"
@@ -389,8 +394,9 @@ DOCKER_RUN_CMD+=(
   --env "USE_INTEL=${USE_INTEL}"
   --env "__GL_YIELD=USLEEP"
   --env "__GL_THREADED_OPTIMIZATIONS=1"
+  --env "__GL_SYNC_TO_VBLANK=0"
   --env "INTEL_RENDER_NODE=${INTEL_RENDER_NODE}"
-  --env "LIBVA_DRIVER_NAME=iHD"
+  --env "LIBVA_DRIVER_NAME=${LIBVA_DRIVER_NAME_ENV}"
   --env "CAPTURE_MODE=${SERVER_CAPTURE_MODE}"
   --env "TEST_PATTERN=${TEST_PATTERN:-}"
   --env "ACTIVITY_PULSE_HZ=${ACTIVITY_PULSE_HZ:-}"

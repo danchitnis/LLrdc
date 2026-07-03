@@ -6,7 +6,8 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY server/ ./server/
-RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server
+RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server \
+    && CGO_ENABLED=0 go build -buildvcs=false -o nvidia_direct_capture -ldflags="-w -s" ./cmd/nvidia_direct_capture
 
 FROM node:22-alpine AS node-builder
 WORKDIR /app
@@ -32,6 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   x11-utils \
   dbus-x11 \
   wf-recorder \
+  nvidia-vaapi-driver \
   swaybg \
   ffmpeg \
   xfce4 \
@@ -110,6 +112,7 @@ RUN printf '%s\n' "${BUILD_VARIANT}" > /etc/llrdc-build-variant
 WORKDIR /app
 COPY --from=node-builder /app/public/ ./public/
 COPY --from=builder /app/llrdc /app/llrdc
+COPY --from=builder /app/nvidia_direct_capture /usr/local/bin/nvidia_direct_capture
 COPY tools/wayland/wayland_input_client.c ./
 COPY tools/direct_buffer_probe.c ./
 COPY tools/latency_probe.c ./tools/

@@ -10,12 +10,16 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	var outputArgs []string
 
 	if VideoCodec == "h265_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-delay", "0", "-surfaces", "8", "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1", "-level", "6.2")
+		surfaces := "8"
+		if Chroma == "444" {
+			surfaces = "16"
+		}
+		outputArgs = append(outputArgs, "-c:v", "hevc_nvenc", "-preset", "p1", "-delay", "0", "-surfaces", surfaces, "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1", "-level", "6.2", "-repeat_headers", "1", "-aud", "1")
 		if NVENCLatencyMode {
 			outputArgs = append(outputArgs, "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0")
 		}
 		if Chroma == "444" {
-			outputArgs = append(outputArgs, "-profile:v", "rext", "-tune", "ull", "-pix_fmt", "bgr0")
+			outputArgs = append(outputArgs, "-profile:v", "rext", "-tune", "ull", "-pix_fmt", "bgr0", "-rgb_mode", "yuv444", "-dpb_size", "1")
 		} else {
 			outputArgs = append(outputArgs, "-tune", "ull")
 		}
@@ -28,7 +32,11 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	}
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
-		bufSizeStr := fmt.Sprintf("%dk", bw*2000)
+		multiplier := 2000
+		if Chroma == "444" {
+			multiplier = 4000
+		}
+		bufSizeStr := fmt.Sprintf("%dk", bw*multiplier)
 
 		if vbr {
 			if VideoCodec == "h265_nvenc" {
@@ -50,13 +58,14 @@ func buildH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 				)
 			}
 		} else {
-			outputArgs = append(outputArgs,
-				"-b:v", bitrateStr,
-				"-maxrate", bitrateStr,
-				"-bufsize", bufSizeStr,
-			)
 			if VideoCodec == "h265_nvenc" {
-				outputArgs = append(outputArgs, "-rc", "cbr")
+				outputArgs = append(outputArgs, "-b:v", bitrateStr, "-rc", "cbr")
+			} else {
+				outputArgs = append(outputArgs,
+					"-b:v", bitrateStr,
+					"-maxrate", bitrateStr,
+					"-bufsize", bufSizeStr,
+				)
 			}
 		}
 	} else {
@@ -185,22 +194,31 @@ func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 		}
 
 		nalCopy := append([]byte(nil), nal...)
-		nalType, prefixLen, ok := h265NALType(nalCopy)
-		if !ok {
+		start, prefixLen, ok := findAnnexBStartCode(nalCopy, 0)
+		if !ok || start+prefixLen >= len(nalCopy) {
 			currentAU = append(currentAU, nalCopy)
 			return
 		}
 
-		if isH265VCLNAL(nalType) {
-			if isH265FirstSliceSegment(nalCopy, prefixLen) && currentHasVCL {
+		headerByte := nalCopy[start+prefixLen]
+		nalType := int((headerByte & 0x7e) >> 1)
+
+		isVCL := nalType >= 0 && nalType <= 31
+
+		if isVCL {
+			payloadIdx := start + prefixLen + 2
+			isFirstSlice := true
+			if payloadIdx < len(nalCopy) {
+				isFirstSlice = (nalCopy[payloadIdx] & 0x80) != 0
+			}
+
+			if isFirstSlice && currentHasVCL {
 				emitCurrent()
 			}
 			currentAU = append(currentAU, nalCopy)
 			currentHasVCL = true
 		} else {
-			// Prefix/Suffix NALs
 			if currentHasVCL && (nalType == 35 || nalType == 32 || nalType == 33 || nalType == 34) {
-				// New headers or AUD usually means start of a new AU
 				emitCurrent()
 			}
 			currentAU = append(currentAU, nalCopy)
@@ -229,16 +247,11 @@ func splitH265AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 					continue
 				}
 
-				// The next start code search should start from where we left off (oldLen - 4)
-				// if we just appended new data, to avoid O(N^2) quadratic scanning.
 				searchStart := prefixLen
 				if oldLen > 0 {
 					if oldLen-4 > prefixLen {
 						searchStart = oldLen - 4
 					}
-					// Only use the optimized search start for the first iteration after reading new data.
-					// Once a start code is processed and buffer is trimmed, subsequent searches in this loop
-					// should start from prefixLen.
 					oldLen = 0
 				}
 				if nextSearchStart > searchStart {

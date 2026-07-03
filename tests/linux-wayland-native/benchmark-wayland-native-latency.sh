@@ -17,6 +17,7 @@ ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-${ROOT_DIR}/artifacts}"
 WESTON_BACKEND="${LLRDC_WESTON_BACKEND:-wayland}"
 WESTON_SOCKET="${LLRDC_WESTON_SOCKET:-llrdc-bench-$$}"
 VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-libvpx}"
+BANDWIDTH="${LLRDC_TARGET_BANDWIDTH_MBPS:-50}"
 
 MEASURED_MARKERS=()
 
@@ -124,6 +125,7 @@ start_server() {
     "${gpu_args[@]}" \
     --network host \
     -e VIDEO_CODEC="${VIDEO_CODEC}" \
+    -e BANDWIDTH="${BANDWIDTH}" \
     -e VBR=false \
     -e PORT="${SERVER_PORT}" \
     -e FPS="${FPS}" \

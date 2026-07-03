@@ -40,12 +40,12 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
     });
 
     test('should activate direct-buffer mode and stream frames end to end', async ({ page }) => {
-        test.setTimeout(120000);
+        test.setTimeout(15000);
 
         await expect.poll(async () => {
             return await fetchReadyz(SERVER_URL);
         }, {
-            timeout: 30000,
+            timeout: 5000,
             message: 'Wait for direct-buffer mode to be reported as active in /readyz',
         }).toMatchObject({
             ready: true,
@@ -57,6 +57,8 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
                 captureMode: 'direct',
                 screencopyAvailable: true,
                 linuxDmabufAvailable: true,
+                backend: 'nvidia-native',
+                zeroCopyValidated: true,
             },
         });
 

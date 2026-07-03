@@ -426,7 +426,27 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 			}
 
 			var cmd *exec.Cmd
-			if TestPattern {
+			if CaptureMode == CaptureModeDirect && UseNVIDIA {
+				renderNode, err := detectRenderNode()
+				if err != nil {
+					renderNode = "/dev/dri/renderD129"
+				}
+				w, h := GetScreenSize()
+				args := []string{
+					"nvidia_direct_capture",
+					"--width", fmt.Sprintf("%d", w),
+					"--height", fmt.Sprintf("%d", h),
+					"--fps", fmt.Sprintf("%d", FPS),
+					"--codec", VideoCodec,
+					"--bitrate", fmt.Sprintf("%d", TargetBandwidthMbps),
+					"--chroma", Chroma,
+					"--render-node", renderNode,
+					"--damage-tracking", fmt.Sprintf("%v", targetDamageTracking),
+				}
+				log.Printf("Starting NVIDIA native direct capture: %v", args)
+				cmd = exec.Command(args[0], args[1:]...)
+				cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0", "XDG_RUNTIME_DIR=/tmp/llrdc-run")
+			} else if TestPattern {
 				setDirectBufferActive(false, "Direct buffer is unavailable in test-pattern mode")
 				log.Printf("TEST_PATTERN mode: starting ffmpeg with testsrc")
 				w, h := GetScreenSize()
@@ -560,8 +580,6 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						"-p", "temporal-aq=0",
 						"-p", "strict_gop=1",
 						"-p", fmt.Sprintf("b=%dM", TargetBandwidthMbps),
-						"-p", fmt.Sprintf("maxrate=%dM", TargetBandwidthMbps),
-						"-p", fmt.Sprintf("bufsize=%dM", TargetBandwidthMbps*2),
 						"-p", fmt.Sprintf("g=%d", targetKeyframeInterval*FPS),
 					)
 

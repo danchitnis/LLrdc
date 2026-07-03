@@ -11,12 +11,16 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	var outputArgs []string
 
 	if VideoCodec == "h264_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-delay", "0", "-surfaces", "8", "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1", "-level", "6.0")
+		surfaces := "8"
+		if Chroma == "444" {
+			surfaces = "16"
+		}
+		outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-delay", "0", "-surfaces", surfaces, "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1", "-level", "6.0", "-repeat_headers", "1", "-aud", "1")
 		if NVENCLatencyMode {
 			outputArgs = append(outputArgs, "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0")
 		}
 		if Chroma == "444" {
-			outputArgs = append(outputArgs, "-profile:v", "high444p", "-tune", "ull", "-coder", "ac", "-pix_fmt", "bgr0")
+			outputArgs = append(outputArgs, "-profile:v", "high444p", "-tune", "ull", "-coder", "ac", "-pix_fmt", "bgr0", "-rgb_mode", "yuv444", "-dpb_size", "1")
 		} else {
 			outputArgs = append(outputArgs, "-tune", "ull")
 		}
@@ -29,8 +33,12 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	}
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
+		multiplier := 2000
+		if Chroma == "444" {
+			multiplier = 4000
+		}
 		// Use a 2 second buffer (bw*2000) to prevent VBV underflows at high framerates with large I-frames
-		bufSizeStr := fmt.Sprintf("%dk", bw*2000)
+		bufSizeStr := fmt.Sprintf("%dk", bw*multiplier)
 
 		if vbr {
 			if VideoCodec == "h264_nvenc" {
@@ -52,13 +60,14 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 				)
 			}
 		} else {
-			outputArgs = append(outputArgs,
-				"-b:v", bitrateStr,
-				"-maxrate", bitrateStr,
-				"-bufsize", bufSizeStr,
-			)
 			if VideoCodec == "h264_nvenc" {
-				outputArgs = append(outputArgs, "-rc", "cbr")
+				outputArgs = append(outputArgs, "-b:v", bitrateStr, "-rc", "cbr")
+			} else {
+				outputArgs = append(outputArgs,
+					"-b:v", bitrateStr,
+					"-maxrate", bitrateStr,
+					"-bufsize", bufSizeStr,
+				)
 			}
 		}
 	} else {
@@ -99,24 +108,29 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	marker4 := []byte{0x00, 0x00, 0x00, 0x01, 0x09}
 	marker3 := []byte{0x00, 0x00, 0x01, 0x09}
 
-	searchStart := 4
+	nextSearchStart := 0
 	for {
 		n, err := reader.Read(temp)
 		if n > 0 {
 			oldLen := len(buffer)
 			buffer = append(buffer, temp[:n]...)
-			if oldLen > 4 {
-				searchStart = oldLen - 4
-			} else {
-				searchStart = 4
-			}
 
 			for {
-				if len(buffer) < 5 {
+				searchStart := 4
+				if oldLen > 0 {
+					if oldLen-4 > 4 {
+						searchStart = oldLen - 4
+					}
+					oldLen = 0
+				}
+				if nextSearchStart > searchStart {
+					searchStart = nextSearchStart
+				}
+
+				if len(buffer) < searchStart+5 {
 					break
 				}
 
-				// Find next AUD marker, skipping the first 4 bytes (the current frame's start)
 				nextIdx := -1
 				m4Idx := bytes.Index(buffer[searchStart:], marker4)
 				m3Idx := bytes.Index(buffer[searchStart:], marker3)
@@ -146,8 +160,12 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 						LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
 					})
 					buffer = buffer[nextIdx:]
-					searchStart = 4
+					nextSearchStart = 4
 				} else {
+					nextSearchStart = len(buffer) - 4
+					if nextSearchStart < 4 {
+						nextSearchStart = 4
+					}
 					break
 				}
 			}

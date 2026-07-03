@@ -21,6 +21,8 @@ type directBufferStatus struct {
 	Renderer             string `json:"renderer"`
 	ScreencopyAvailable  bool   `json:"screencopyAvailable"`
 	LinuxDMABUFAvailable bool   `json:"linuxDmabufAvailable"`
+	Backend              string `json:"backend"`
+	ZeroCopyValidated    bool   `json:"zeroCopyValidated"`
 }
 
 type directBufferProbeResult struct {
@@ -77,6 +79,13 @@ func markDirectBufferProbeResult(renderNode string, supported bool, reason strin
 		state.Reason = reason
 		state.ScreencopyAvailable = probe.ScreencopyAvailable
 		state.LinuxDMABUFAvailable = probe.LinuxDMABUFAvailable
+		if UseNVIDIA {
+			state.Backend = "nvidia-native"
+		} else if UseIntel {
+			state.Backend = "intel-vaapi"
+		} else {
+			state.Backend = "generic"
+		}
 	})
 }
 
@@ -84,6 +93,7 @@ func setDirectBufferActive(active bool, reason string) {
 	updateDirectBufferState(func(state *directBufferStatus) {
 		if state.CaptureMode != CaptureModeDirect {
 			state.Active = false
+			state.ZeroCopyValidated = false
 			if reason != "" {
 				state.Reason = reason
 			}
@@ -95,6 +105,7 @@ func setDirectBufferActive(active bool, reason string) {
 		}
 
 		state.Active = active && state.Supported
+		state.ZeroCopyValidated = state.Active
 		if reason != "" {
 			state.Reason = reason
 		}
@@ -125,9 +136,6 @@ func validateCaptureModeConfig() error {
 	}
 	if !usingHardwareAcceleration() {
 		return errors.New("direct capture mode requires --use-nvidia or --use-intel")
-	}
-	if UseNVIDIA {
-		return errors.New("direct capture mode is not supported on NVIDIA GPUs with wf-recorder (causes severe EGL/GBM lock contention and input lag); please use optimized compat mode (--capture-mode compat)")
 	}
 	if !isHardwareCodec(VideoCodec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, VideoCodec)

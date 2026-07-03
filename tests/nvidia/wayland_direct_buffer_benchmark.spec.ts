@@ -51,7 +51,7 @@ function dockerCpuPercent(containerName: string): number {
 
 function recorderCpuPercent(containerName: string): number {
     try {
-        const raw = run(`docker exec ${containerName} bash -lc "ps -C wf-recorder -o %cpu= | awk '{sum += \\$1} END {print sum+0}'"`);
+        const raw = run(`docker exec ${containerName} bash -lc "ps -C wf-recorder,nvidia_direct_capture -o %cpu= | awk '{sum += \\$1} END {print sum+0}'"`);
         return parseFloat(raw) || 0;
     } catch (e) {
         return 0;
