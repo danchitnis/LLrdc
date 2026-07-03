@@ -45,7 +45,7 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 		"presentationSource":           sample.PresentationSource,
 	}
 	s.state.RecentLatencySamples = append(s.state.RecentLatencySamples, sample)
-	if len(s.state.RecentLatencySamples) > 300 {
+	if len(s.state.RecentLatencySamples) > 3000 {
 		s.state.RecentLatencySamples = s.state.RecentLatencySamples[1:]
 	}
 

@@ -483,7 +483,9 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					"wf-recorder",
 				}
 
-				bufferSize := fmt.Sprintf("%d", FPS)
+				// Limit buffer size to 2 to prevent buffer bloat and cumulative delay
+				// under high load (e.g. 4K60) where encoding can fall slightly behind.
+				bufferSize := "2"
 
 				if !targetDamageTracking {
 					args = append(args, "-D") // Disable damage tracking
@@ -536,13 +538,19 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					tune := "ull"
 					if Chroma == "444" {
 						rgbMode = "yuv444"
-						tune = "lossless"
+						tune = "ull"
+					}
+
+					rcMode := "cbr"
+					if targetVBR {
+						rcMode = "vbr"
 					}
 
 					// NVENC hardware encoding
 					args = append(args,
 						"-p", "preset=p1",
 						"-p", "tune="+tune,
+						"-p", "rc="+rcMode,
 						"-p", "delay=0",
 						"-p", "surfaces=8",
 						"-p", "threads=1",
@@ -562,8 +570,8 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						if codec == "hevc_nvenc" {
 							profile = "rext"
 						}
-						// Optimized for screen content: lossless tune + fullres multipass
-						args = append(args, "-p", "profile="+profile, "-p", "multipass=fullres")
+						// Optimized for low-latency screen content at 4:4:4
+						args = append(args, "-p", "profile="+profile)
 						if codec == "h264_nvenc" {
 							args = append(args, "-p", "coder=ac")
 						}

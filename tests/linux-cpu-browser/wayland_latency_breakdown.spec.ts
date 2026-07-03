@@ -142,7 +142,18 @@ async function stopContainer(containerName: string, port: number) {
 }
 
 function readProbeState(containerName: string): ProbeState {
-    return JSON.parse(run(`docker exec ${containerName} cat /tmp/llrdc-latency-probe.json`)) as ProbeState;
+    for (let i = 0; i < 5; i++) {
+        try {
+            const out = run(`docker exec ${containerName} cat /tmp/llrdc-latency-probe.json`);
+            if (out.trim()) {
+                return JSON.parse(out) as ProbeState;
+            }
+        } catch (_e) {
+            // ignore and retry
+        }
+        execSync('sleep 0.05');
+    }
+    return { marker: -1, color: 'black', requestedAtMs: 0, drawnAtMs: 0, pid: 0 };
 }
 
 async function waitForProbeState(containerName: string): Promise<ProbeState> {
@@ -309,10 +320,13 @@ async function clickUntilProbeToggles(
     let lastState = readProbeState(containerName);
 
     for (let attempt = 1; attempt <= 3; attempt++) {
-        await overlay.hover();
-        await overlay.focus();
+        // Move mouse to the corner (out of the center region) to reset trigger state
+        await overlay.hover({ position: { x: 10, y: 10 } });
+        await overlay.page().waitForTimeout(100);
+
+        // Hover back to center to trigger pointer_handle_motion center transition
         const inputSentAtMs = Date.now();
-        await overlay.page().keyboard.press('Space');
+        await overlay.hover();
 
         try {
             await expect.poll(() => readProbeState(containerName), {
@@ -328,7 +342,7 @@ async function clickUntilProbeToggles(
             };
         } catch (_error) {
             lastState = readProbeState(containerName);
-            await overlay.hover();
+            await overlay.hover({ position: { x: 10, y: 10 } });
             await overlay.page().waitForTimeout(100);
         }
     }

@@ -34,6 +34,19 @@ func configureWaylandRuntime(runDir string) (string, error) {
 		os.Setenv("WLR_RENDER_DRM_DEVICE", renderNode)
 		markDirectBufferProbeResult("", false, "Direct buffer disabled in compat mode", directBufferProbeResult{})
 		log.Printf("Intel compat mode requested; using render node %s", renderNode)
+	} else if currentAcceleratorMode() == acceleratorNVIDIA {
+		var err error
+		renderNode, err = detectRenderNode()
+		if err == nil {
+			os.Unsetenv("WLR_RENDERER")
+			os.Setenv("WLR_RENDER_DRM_DEVICE", renderNode)
+			log.Printf("NVIDIA compat mode; using render node %s for hardware-accelerated rendering", renderNode)
+		} else {
+			log.Printf("NVIDIA compat mode; fallback to software rendering (pixman): %v", err)
+			os.Setenv("WLR_RENDERER", "pixman")
+			os.Unsetenv("WLR_RENDER_DRM_DEVICE")
+		}
+		markDirectBufferProbeResult("", false, "Direct buffer disabled in compat mode", directBufferProbeResult{})
 	} else {
 		os.Setenv("WLR_RENDERER", "pixman")
 		os.Unsetenv("WLR_RENDER_DRM_DEVICE")

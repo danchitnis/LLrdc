@@ -150,7 +150,18 @@ async function stopContainer(containerName: string, port: number) {
 }
 
 function readProbeState(containerName: string): ProbeState {
-    return JSON.parse(run(`docker exec ${containerName} cat /tmp/llrdc-latency-probe.json`)) as ProbeState;
+    for (let i = 0; i < 5; i++) {
+        try {
+            const out = run(`docker exec ${containerName} cat /tmp/llrdc-latency-probe.json`);
+            if (out.trim()) {
+                return JSON.parse(out) as ProbeState;
+            }
+        } catch (_e) {
+            // ignore and retry
+        }
+        execSync('sleep 0.05');
+    }
+    return { marker: -1, color: 'black', requestedAtMs: 0, drawnAtMs: 0, firstMoveAtMs: 0, isMoving: false, pid: 0 };
 }
 
 async function waitForProbeState(containerName: string): Promise<ProbeState> {
@@ -311,8 +322,8 @@ async function sweepUntilProbeToggles(
         await page.waitForTimeout(200);
 
         const inputSentAtMs = Date.now();
-        // Instantaneous sweep across the middle to eliminate Playwright's event loop stepping delays
-        await page.mouse.move(endX, midY, { steps: 5 });
+        // Sweep across the middle with enough steps to ensure we land inside the center target box (100x100)
+        await page.mouse.move(endX, midY, { steps: 50 });
 
         try {
             await expect.poll(() => readProbeState(containerName).marker, {

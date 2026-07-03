@@ -126,6 +126,9 @@ func validateCaptureModeConfig() error {
 	if !usingHardwareAcceleration() {
 		return errors.New("direct capture mode requires --use-nvidia or --use-intel")
 	}
+	if UseNVIDIA {
+		return errors.New("direct capture mode is not supported on NVIDIA GPUs with wf-recorder (causes severe EGL/GBM lock contention and input lag); please use optimized compat mode (--capture-mode compat)")
+	}
 	if !isHardwareCodec(VideoCodec) {
 		return fmt.Errorf("%w: got %s", errDirectModeCodec, VideoCodec)
 	}

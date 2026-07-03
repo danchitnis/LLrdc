@@ -249,7 +249,9 @@ func (r *NativeRenderer) Run() error {
 				}
 				frame, err := av.Decode(sample.data)
 				if err != nil {
-					log.Printf("FFmpeg decode error: %v", err)
+					log.Printf("FFmpeg decode error: %v, resetting decoder", err)
+					av.Close()
+					av = nil
 					// Only reset to awaiting keyframe if we were already past the initial one
 					r.mu.Lock()
 					pastInitial := !r.decoderAwaitingKeyframe
@@ -267,7 +269,7 @@ func (r *NativeRenderer) Run() error {
 					lowLatency := r.lowLatency
 					r.mu.RUnlock()
 					enqueueDecodedFrame(decodedFrames, nativeDecodedSample{
-						frame:                        frame,
+						frame:                        &frame,
 						packetTimestamp:              sample.packetTimestamp,
 						firstPacketSequenceNumber:    sample.firstPacketSequenceNumber,
 						firstDecryptedPacketQueuedAt: sample.firstDecryptedPacketQueuedAt,
@@ -553,7 +555,7 @@ func (r *NativeRenderer) Run() error {
 						brightness = int(decoded.frame.yPlane[offset])
 					}
 					if brightness >= 0 {
-						probeMarker = decodeProbeMarker(decoded.frame)
+						probeMarker = decodeProbeMarker(*decoded.frame)
 					}
 				}
 

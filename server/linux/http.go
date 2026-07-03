@@ -240,6 +240,7 @@ func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string)
 	timestampMs := benchmarkClockNowMs()
 	if frame.LatencyTrace != nil {
 		noteLatencyProbeFrameDispatch(frame.LatencyTrace, timestampMs)
+		common.NoteLatencyProbeFirstPacket(frame.LatencyTrace, timestampMs)
 	}
 	// Copy frame for delivery so we don't share memory with IVF reader
 	copyFrame := make([]byte, len(frame.Data))

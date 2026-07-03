@@ -11,12 +11,12 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 	var outputArgs []string
 
 	if VideoCodec == "h264_nvenc" {
-		outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-delay", "0", "-surfaces", "64", "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1", "-level", "6.0")
+		outputArgs = append(outputArgs, "-c:v", "h264_nvenc", "-preset", "p1", "-delay", "0", "-surfaces", "8", "-bf", "0", "-spatial-aq", "0", "-temporal-aq", "0", "-strict_gop", "1", "-level", "6.0")
 		if NVENCLatencyMode {
 			outputArgs = append(outputArgs, "-rc-lookahead", "0", "-no-scenecut", "1", "-b_ref_mode", "0")
 		}
 		if Chroma == "444" {
-			outputArgs = append(outputArgs, "-profile:v", "high444p", "-tune", "lossless", "-multipass", "fullres", "-coder", "ac", "-pix_fmt", "yuv444p")
+			outputArgs = append(outputArgs, "-profile:v", "high444p", "-tune", "ull", "-coder", "ac", "-pix_fmt", "bgr0")
 		} else {
 			outputArgs = append(outputArgs, "-tune", "ull")
 		}
@@ -94,8 +94,8 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 }
 
 func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
-	buffer := make([]byte, 0, 1024*1024)
-	temp := make([]byte, 16384)
+	buffer := make([]byte, 0, 4*1024*1024)
+	temp := make([]byte, 524288)
 	marker4 := []byte{0x00, 0x00, 0x00, 0x01, 0x09}
 	marker3 := []byte{0x00, 0x00, 0x01, 0x09}
 

@@ -48,12 +48,12 @@ test.describe('NVIDIA 4:4:4 Chroma Codec Selection', () => {
         await page.selectOption('#video-codec-select', 'h264_nvenc-444');
 
         // Step 4: Verify server-side logs using 2>&1 to capture stderr (where ffmpeg logs)
-        console.log('Polling server logs for rgb_mode=yuv444 and lossless tune...');
+        console.log('Polling server logs for rgb_mode=yuv444 and low-latency (ull) tune...');
         await expect.poll(() => {
             try {
                 const logs = execSync(`docker logs ${CONTAINER_NAME} 2>&1`).toString();
                 const hasRgbMode = logs.includes('rgb_mode=yuv444');
-                const hasTune = logs.includes('tune=lossless');
+                const hasTune = logs.includes('tune=ull');
                 const hasProfile = logs.includes('High 4:4:4 Predictive') || logs.includes('profile=high444p');
                 return hasRgbMode && hasTune && hasProfile;
             } catch (e) {
@@ -62,7 +62,7 @@ test.describe('NVIDIA 4:4:4 Chroma Codec Selection', () => {
         }, {
             timeout: 30000,
             intervals: [2000],
-            message: 'Encoder logs should eventually contain rgb_mode=yuv444, tune=lossless and 4:4:4 profile'
+            message: 'Encoder logs should eventually contain rgb_mode=yuv444, tune=ull and 4:4:4 profile'
         }).toBe(true);
 
         // Step 5: Verify the 4:4:4 stream actually renders frames

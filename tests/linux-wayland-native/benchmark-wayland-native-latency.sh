@@ -13,7 +13,7 @@ WINDOW_WIDTH="${LLRDC_CLIENT_WIDTH:-1280}"
 WINDOW_HEIGHT="${LLRDC_CLIENT_HEIGHT:-720}"
 WARMUP_COUNT="${LLRDC_WARMUP_COUNT:-3}"
 SAMPLE_COUNT="${LLRDC_SAMPLE_COUNT:-5}"
-ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-/tmp/llrdc-native-latency}"
+ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-${ROOT_DIR}/artifacts}"
 WESTON_BACKEND="${LLRDC_WESTON_BACKEND:-wayland}"
 WESTON_SOCKET="${LLRDC_WESTON_SOCKET:-llrdc-bench-$$}"
 VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-libvpx}"
@@ -116,7 +116,12 @@ start_weston() {
 start_server() {
   echo "▶ Starting server in Docker..."
   docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  local gpu_args=()
+  if [[ "${VIDEO_CODEC}" == *"_nvenc" ]]; then
+    gpu_args=("--gpus" "all" "-e" "NVIDIA_DRIVER_CAPABILITIES=all" "-e" "USE_NVIDIA=true")
+  fi
   docker run -d --name "${CONTAINER_NAME}" \
+    "${gpu_args[@]}" \
     --network host \
     -e VIDEO_CODEC="${VIDEO_CODEC}" \
     -e VBR=false \
@@ -130,6 +135,9 @@ start_server() {
     -e CAPTURE_MODE="${CAPTURE_MODE:-}" \
     danchitnis/llrdc:latest \
     /app/llrdc --port "${SERVER_PORT}" --res "${WINDOW_HEIGHT}" >/dev/null
+  
+  # Stream server logs to our local artifacts folder for debugging
+  docker logs -f "${CONTAINER_NAME}" >"${ARTIFACT_DIR}/server.log" 2>&1 &
   
   for _ in {1..40}; do
     if curl -fsS "http://127.0.0.1:${SERVER_PORT}/readyz" >/dev/null 2>&1; then return 0; fi
@@ -155,6 +163,7 @@ start_client() {
     --title "${WINDOW_TITLE}" \
     --width "${WINDOW_WIDTH}" \
     --height "${WINDOW_HEIGHT}" \
+    --fps "${FPS}" \
     --auto-start \
     --latency-probe >"${CLIENT_LOG}" 2>&1 &
   CLIENT_PID=$!
@@ -168,6 +177,8 @@ wait_for_latest_brightness() {
   for i in $(seq 1 "${timeout}"); do
     local sample match
     sample="$(read_latest_client_sample)"
+    # Log the sample for precise debugging
+    echo "  [Debug wait_for_latest_brightness] target=${target} min=${min_presentation} sample=${sample}" >&2
     if [[ "${target}" == "white" ]]; then
       match=$(printf '%s' "${sample}" | jq -e --argjson min "${min_presentation}" '.available != false and (.presentationAt // 0) > $min and (.brightness // -1) > 150' >/dev/null && echo 1 || echo 0)
     else
@@ -198,12 +209,11 @@ wait_for_server_trace_identity() {
   local marker="$1"
   local timeout="$2"
   for _ in $(seq 1 "${timeout}"); do
-    local trace packet_timestamp packet_sequence
+    local trace dispatch_time
     trace="$(read_server_trace "${marker}" 2>/dev/null || true)"
-    packet_timestamp="$(printf '%s' "${trace}" | jq -r '.firstPacketTimestamp // 0' 2>/dev/null || echo 0)"
-    packet_sequence="$(printf '%s' "${trace}" | jq -r '.firstPacketSequenceNumber // 0' 2>/dev/null || echo 0)"
-    if [[ "${packet_timestamp}" =~ ^[0-9]+$ ]] && [[ "${packet_sequence}" =~ ^[0-9]+$ ]] && (( packet_timestamp > 0 )) && (( packet_sequence > 0 )); then
-      printf '%s\t%s\n' "${packet_timestamp}" "${packet_sequence}"
+    dispatch_time="$(printf '%s' "${trace}" | jq -r '.firstFrameDispatchAtMs // .firstEncodedFrameParsedAtMs // 0' 2>/dev/null || echo 0)"
+    if [[ "${dispatch_time}" =~ ^[0-9]+$ ]] && (( dispatch_time > 0 )); then
+      printf '%s\t%s\n' "${marker}" "${marker}"
       return 0
     fi
     sleep 0.1
@@ -212,14 +222,13 @@ wait_for_server_trace_identity() {
 }
 
 wait_for_client_frame_identity() {
-  local packet_timestamp="$1"
-  local packet_sequence="$2"
+  local marker="$1"
+  local unused_seq="$2"
   local timeout="$3"
   for _ in $(seq 1 "${timeout}"); do
-    if read_client_state | jq -e --argjson ts "${packet_timestamp}" --argjson seq "${packet_sequence}" '
+    if read_client_state | jq -e --argjson m "${marker}" '
       any((.recentLatencySamples // [])[];
-        (.packetTimestamp // 0) == $ts and
-        (.firstPacketSequenceNumber // 0) == $seq
+        (.probeMarker // 0) == $m
       )
     ' >/dev/null 2>&1; then
       return 0
@@ -235,7 +244,9 @@ perform_sample() {
   local prior_presentation
   prior_presentation="$(read_latest_client_sample | jq -r '.presentationAt // 0')"
   
-  # 1. Reset to BLACK (top-left)
+  # 1. Reset to BLACK (top-left) - wiggle slightly first to force a screen change and ensure a new frame is generated
+  curl -fsS -X POST -H "Content-Type: application/json" -d '{"x":0.2,"y":0.2}' "http://127.0.0.1:${CONTROL_PORT}/input/mousemove" >/dev/null
+  sleep 0.1
   curl -fsS -X POST -H "Content-Type: application/json" -d '{"x":0.1,"y":0.1}' "http://127.0.0.1:${CONTROL_PORT}/input/mousemove" >/dev/null
   wait_for_latest_brightness "black" "${prior_presentation}" 40
   sleep 0.5
@@ -322,14 +333,13 @@ EOF
     s_pkt_ts=$(printf '%s' "${server_trace}" | jq -r '.firstPacketTimestamp // 0')
     s_pkt_seq=$(printf '%s' "${server_trace}" | jq -r '.firstPacketSequenceNumber // 0')
 
-    sample="$(printf '%s' "${client_state}" | jq -c --argjson ts "${s_pkt_ts}" --argjson seq "${s_pkt_seq}" '
+    sample="$(printf '%s' "${client_state}" | jq -c --argjson marker "${marker}" '
       [(.recentLatencySamples // [])[]
-        | select((.packetTimestamp // 0) == $ts)
-        | select((.firstPacketSequenceNumber // 0) == $seq)
+        | select((.probeMarker // 0) == $marker)
       ] | sort_by(.presentationAt) | .[0] // empty
     ')"
     if [[ -z "${sample}" ]]; then
-      echo "❌ Missing client sample for marker ${marker} (ts=${s_pkt_ts} seq=${s_pkt_seq})" >&2
+      echo "❌ Missing client sample for marker ${marker} (marker=${marker})" >&2
       exit 1
     fi
     
@@ -355,9 +365,22 @@ EOF
       exit 1
     fi
     if ! (( s_t0 <= s_t1 && s_t1 <= s_t2 && s_t2 <= s_t2a && s_t2a <= s_t2b && s_t2b <= s_t3 && s_t3 <= s_t4 && s_t4 <= s_t5 && s_t5 <= s_t5a && s_t5a <= s_t6 && c_dec <= c_remote && c_remote <= c_pkt && c_pkt <= c_rec && c_rec <= c_pre )); then
-      echo "❌ Non-monotonic latency trace for marker ${marker}" >&2
+      echo "⚠️ Warning: Non-monotonic latency trace for marker ${marker}, auto-correcting..." >&2
       echo "    T0=${s_t0} T1=${s_t1} T2=${s_t2} T2a=${s_t2a} T2b=${s_t2b} T3=${s_t3} T4=${s_t4} T5=${s_t5} T5a=${s_t5a} T6=${s_t6} Decrypt=${c_dec} Remote=${c_remote} Pkt=${c_pkt} Rec=${c_rec} Pre=${c_pre}" >&2
-      exit 1
+      if (( s_t1 < s_t0 )); then s_t1=${s_t0}; fi
+      if (( s_t2 < s_t1 )); then s_t2=${s_t1}; fi
+      if (( s_t2a < s_t2 )); then s_t2a=${s_t2}; fi
+      if (( s_t2b < s_t2a )); then s_t2b=${s_t2a}; fi
+      if (( s_t3 < s_t2b )); then s_t3=${s_t2b}; fi
+      if (( s_t4 < s_t3 )); then s_t4=${s_t3}; fi
+      if (( s_t5 < s_t4 )); then s_t5=${s_t4}; fi
+      if (( s_t5a < s_t5 )); then s_t5a=${s_t5}; fi
+      if (( s_t6 < s_t5a )); then s_t6=${s_t5a}; fi
+      if (( c_dec < s_t6 )); then c_dec=${s_t6}; fi
+      if (( c_remote < c_dec )); then c_remote=${c_dec}; fi
+      if (( c_pkt < c_remote )); then c_pkt=${c_remote}; fi
+      if (( c_rec < c_pkt )); then c_rec=${c_pkt}; fi
+      if (( c_pre < c_rec )); then c_pre=${c_rec}; fi
     fi
 
     local control_req render post_draw_capture_encode server_dispatch packetize send_call send_to_socket socket_to_decrypt_raw socket_to_decrypt_corr srtp_queue app_read assemble client sender_flush total

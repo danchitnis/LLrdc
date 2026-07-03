@@ -47,6 +47,7 @@ struct probe_app {
     struct wl_buffer *buffer;
     uint32_t *data;
     int64_t last_trigger_ms;
+    bool was_near_center;
 };
 
 static int64_t get_now_ms(void) {
@@ -206,7 +207,7 @@ static void xdg_toplevel_handle_close(void *data, struct xdg_toplevel *xdg_tople
 static const struct xdg_toplevel_listener xdg_toplevel_listener = { .configure = xdg_toplevel_handle_configure, .close = xdg_toplevel_handle_close };
 
 int main(void) {
-    struct probe_app app = { .width = 1280, .height = 720, .running = true, .is_white = false, .mouse_x = 0, .mouse_y = 0 };
+    struct probe_app app = { .width = 1280, .height = 720, .running = true, .is_white = false, .mouse_x = 0, .mouse_y = 0, .was_near_center = false };
     app.display = wl_display_connect(NULL);
     if (!app.display) return 1;
     app.registry = wl_display_get_registry(app.display);
