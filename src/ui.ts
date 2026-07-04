@@ -108,6 +108,7 @@ export function log(msg: string) {
 export let serverFfmpegCpu = 0;
 export let serverIntelGpuUtil = 0;
 export let acceleratorMode: 'cpu' | 'intel' | 'nvidia' = 'cpu';
+export let directBufferActive = false;
 
 export function setServerFfmpegCpu(cpu: number) {
     serverFfmpegCpu = cpu;
@@ -119,6 +120,10 @@ export function setServerIntelGpuUtil(util: number) {
 
 export function setAcceleratorMode(mode: 'cpu' | 'intel' | 'nvidia') {
     acceleratorMode = mode;
+}
+
+export function setDirectBufferActive(active: boolean) {
+    directBufferActive = active;
 }
 
 export function updateStatusText(
@@ -165,7 +170,8 @@ export function updateStatusText(
     const displayRes = (width > 0 && height > 0) ? `${width}x${height} | ` : '';
     const displayFps = isWebTransportActive ? webtransportFps : fps;
     
-    let statsText = `[${transport} ${displayCodec}${gpuTag}] ${displayRes}FPS: ${displayFps} | Lat: ${Math.round(latencyMonitor)}ms | Ping: ${Math.round(pingMs)}ms | BW: ${bandwidthMbps.toFixed(1)} | CPU: ${Math.round(serverFfmpegCpu)}%`;
+    const directTag = directBufferActive ? ' ⚡ DIRECT' : '';
+    let statsText = `[${transport} ${displayCodec}${gpuTag}${directTag}] ${displayRes}FPS: ${displayFps} | Lat: ${Math.round(latencyMonitor)}ms | Ping: ${Math.round(pingMs)}ms | BW: ${bandwidthMbps.toFixed(1)} | CPU: ${Math.round(serverFfmpegCpu)}%`;
     
     if (acceleratorMode === 'intel') {
         statsText += ` | Enc: ${Math.round(serverIntelGpuUtil)}%`;

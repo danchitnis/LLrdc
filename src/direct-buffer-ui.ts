@@ -1,4 +1,4 @@
-import { directBufferStatusEl, videoCodecSelect } from './ui';
+import { directBufferStatusEl, videoCodecSelect, setDirectBufferActive } from './ui';
 
 export function updateDirectBufferUi(msg: Record<string, unknown>) {
     const captureMode = typeof msg.captureMode === 'string' ? msg.captureMode : 'compat';
@@ -6,6 +6,8 @@ export function updateDirectBufferUi(msg: Record<string, unknown>) {
     const directSupported = msg.directBufferSupported === true;
     const directActive = msg.directBufferActive === true;
     const directReason = typeof msg.directBufferReason === 'string' ? msg.directBufferReason : '';
+
+    setDirectBufferActive(directActive);
 
     if (directBufferStatusEl) {
         if (!directRequested || captureMode !== 'direct') {

@@ -130,6 +130,8 @@ func marshalReadinessStatus() ([]byte, error) {
 		"ready":           readiness.IsReady(),
 		"conditions":      readiness.Snapshot(),
 		"directBuffer":    directState,
+		"directModeActive": directState.Active,
+		"directActive":     directState.Active,
 		"acceleratorMode": currentAcceleratorMode(),
 		"useIntel":        UseIntel,
 		"useNvidia":       UseNVIDIA,

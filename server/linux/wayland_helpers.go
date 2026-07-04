@@ -77,15 +77,15 @@ func resizeDisplay(width, height int) error {
 	log.Printf("Resizing Wayland display (HEADLESS-1) to %dx%d @ %d FPS with scale %s", width, height, FPS, scaleStr)
 	env := append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run", "WAYLAND_DISPLAY=wayland-0")
 
-	// Try standard --mode first.
-	args := []string{"--output", "HEADLESS-1", "--mode", modeStr, "--scale", scaleStr}
+	// Try custom-mode first to ensure the exact refresh rate (FPS) is enforced.
+	args := []string{"--output", "HEADLESS-1", "--custom-mode", customModeStr, "--scale", scaleStr}
 	if err := runWithEnv("wlr-randr", args, env); err != nil {
-		log.Printf("Warning: wlr-randr --mode %s failed: %v. Trying --custom-mode %s.", modeStr, err, customModeStr)
+		log.Printf("Warning: wlr-randr --custom-mode %s failed: %v. Trying standard --mode %s.", customModeStr, err, modeStr)
 
-		// Fallback to --custom-mode
-		args = []string{"--output", "HEADLESS-1", "--custom-mode", customModeStr, "--scale", scaleStr}
+		// Fallback to standard --mode
+		args = []string{"--output", "HEADLESS-1", "--mode", modeStr, "--scale", scaleStr}
 		if err := runWithEnv("wlr-randr", args, env); err != nil {
-			log.Printf("Error: wlr-randr --custom-mode also failed: %v. Output might be unstable.", err)
+			log.Printf("Error: wlr-randr --mode also failed: %v. Output might be unstable.", err)
 			return err
 		}
 	}

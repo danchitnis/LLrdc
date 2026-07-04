@@ -514,9 +514,11 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			fps := int(fpsFloat)
 			if FPS != fps {
 				restartRequested = true
-				displayResizeRequested = true
-				if displayChangeReason == "config update" {
-					displayChangeReason = "framerate update"
+				if CaptureMode == CaptureModeDirect {
+					displayResizeRequested = true
+					if displayChangeReason == "config update" {
+						displayChangeReason = "framerate update"
+					}
 				}
 			}
 			SetFramerate(fps)
