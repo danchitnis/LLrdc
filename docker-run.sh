@@ -307,6 +307,10 @@ if [ "$USE_NVIDIA" = "true" ]; then
       HOST_VIDEO_GID=$(stat -c '%g' /dev/dri/card0)
     fi
   fi
+  # Enable privileged mode for direct capture to bypass driver-level unprivileged memory export/import blocks
+  if [ "$SERVER_CAPTURE_MODE" = "direct" ]; then
+    GPU_ARGS="$GPU_ARGS --privileged"
+  fi
 fi
 
 # Detect number of CPUs for maximum throughput
@@ -376,11 +380,13 @@ append_words DOCKER_RUN_CMD "$UINPUT_ARGS"
 DOCKER_RUN_CMD+=(
   --rm
   --name "${CONTAINER_NAME}"
+  --ipc=host
   --shm-size 256m
   --cpuset-cpus "${CPU_LIST}"
   --ulimit rtprio=99
   --cap-add=SYS_NICE
   --cap-add=SYS_ADMIN
+  --cap-add=IPC_LOCK
   -v "${SCRIPT_DIR}/certs:/app/certs"
   --env "CERTS_DIR=/app/certs"
   --env "PORT=${SERVER_PORT}"

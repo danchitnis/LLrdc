@@ -14,6 +14,11 @@ import (
 var cleanupTasks []func()
 
 func HandleClientConnected() {
+	if CaptureMode == CaptureModeDirect {
+		log.Println("New client connected; keeping direct-buffer capture warm instead of forcing a restart")
+		return
+	}
+
 	log.Println("New client connected, triggering low-latency stream restart concurrently")
 	go func() {
 		time.Sleep(50 * time.Millisecond)

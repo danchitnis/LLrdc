@@ -25,7 +25,15 @@ func configureWaylandRuntime(runDir string) (string, error) {
 			markDirectBufferProbeResult("", false, err.Error(), directBufferProbeResult{})
 			return "", err
 		}
-		os.Unsetenv("WLR_RENDERER")
+		if UseNVIDIA {
+			os.Setenv("__EGL_VENDOR_LIBRARY_FILENAMES", "/usr/share/glvnd/egl_vendor.d/10_nvidia.json")
+			os.Setenv("GBM_BACKEND", "nvidia-drm")
+			os.Setenv("__GL_GBM_ALWAYS_USE_MODIFIERS", "1")
+			os.Setenv("WLR_RENDERER", "gles2")
+			os.Setenv("WLR_DRM_DEVICES", renderNode)
+		} else {
+			os.Unsetenv("WLR_RENDERER")
+		}
 		os.Setenv("WLR_RENDER_DRM_DEVICE", renderNode)
 		log.Printf("Direct capture mode requested; using render node %s", renderNode)
 	} else if currentAcceleratorMode() == acceleratorIntel {
@@ -38,8 +46,12 @@ func configureWaylandRuntime(runDir string) (string, error) {
 		var err error
 		renderNode, err = detectRenderNode()
 		if err == nil {
-			os.Unsetenv("WLR_RENDERER")
+			os.Setenv("__EGL_VENDOR_LIBRARY_FILENAMES", "/usr/share/glvnd/egl_vendor.d/10_nvidia.json")
+			os.Setenv("GBM_BACKEND", "nvidia-drm")
+			os.Setenv("__GL_GBM_ALWAYS_USE_MODIFIERS", "1")
+			os.Setenv("WLR_RENDERER", "gles2")
 			os.Setenv("WLR_RENDER_DRM_DEVICE", renderNode)
+			os.Setenv("WLR_DRM_DEVICES", renderNode)
 			log.Printf("NVIDIA compat mode; using render node %s for hardware-accelerated rendering", renderNode)
 		} else {
 			log.Printf("NVIDIA compat mode; fallback to software rendering (pixman): %v", err)
@@ -295,12 +307,19 @@ touch "$READY_FILE"
 
 	// Start labwc standalone (it will use the global DBUS session)
 	cmd := exec.Command("labwc")
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"XDG_RUNTIME_DIR="+runDir,
 		"WLR_BACKENDS=headless",
 		"WLR_HEADLESS_OUTPUTS=1",
 		"DISPLAY=:99",
 	)
+	if !UseNVIDIA {
+		env = append(env,
+			"WLR_DRM_NO_MODIFIERS=1",
+			"WLR_NO_MODIFIERS=1",
+		)
+	}
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

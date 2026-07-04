@@ -351,6 +351,7 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 	targetDamageTracking = TargetDamageTracking
 
 	var lastStreamID uint32
+	consecutiveDirectNoFrameExits := 0
 
 	cleanupTasks = append(cleanupTasks, func() {
 		ffmpegMutex.Lock()
@@ -445,7 +446,11 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				}
 				log.Printf("Starting NVIDIA native direct capture: %v", args)
 				cmd = exec.Command(args[0], args[1:]...)
-				cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-0", "XDG_RUNTIME_DIR=/tmp/llrdc-run")
+				cmd.Env = append(os.Environ(),
+					"WAYLAND_DISPLAY=wayland-0",
+					"XDG_RUNTIME_DIR=/tmp/llrdc-run",
+					"__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json",
+				)
 			} else if TestPattern {
 				setDirectBufferActive(false, "Direct buffer is unavailable in test-pattern mode")
 				log.Printf("TEST_PATTERN mode: starting ffmpeg with testsrc")
@@ -791,12 +796,38 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 			streamProducedFrame := <-doneCh
 			_ = cmd.Wait()
 
+			if CaptureMode == CaptureModeDirect && !streamProducedFrame {
+				setDirectBufferActive(false, "Direct-buffer capture process exited without producing frames")
+			}
+
 			ffmpegMutex.Lock()
 			shouldRun := ffmpegShouldRun
+			resizingNow := isResizing
+			pausedNow := streamingPaused
 			ffmpegMutex.Unlock()
 
 			if !shouldRun {
 				break
+			}
+			if CaptureMode == CaptureModeDirect && !streamProducedFrame {
+				if resizingNow || pausedNow {
+					continue
+				}
+
+				consecutiveDirectNoFrameExits++
+				if consecutiveDirectNoFrameExits >= 3 {
+					updateDirectBufferState(func(state *directBufferStatus) {
+						state.Supported = false
+					})
+					break
+				}
+
+				log.Printf("Direct-buffer capture exited without frames (attempt %d/3); retrying", consecutiveDirectNoFrameExits)
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			if streamProducedFrame {
+				consecutiveDirectNoFrameExits = 0
 			}
 			if !streamProducedFrame {
 				time.Sleep(500 * time.Millisecond)
