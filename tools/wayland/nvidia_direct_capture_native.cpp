@@ -902,16 +902,16 @@ void process_frame_zero_copy(NativeCaptureState *state) {
         std::cerr << "[NativeCapture] nvEncGetEncodeGUIDCount returned status: " << guid_status << ", count: " << guidCount << std::endl;
 
         uint32_t formatCount = 0;
-        state->nvenc_api.nvEncGetInputFormats(state->nvenc_encoder, NV_ENC_CODEC_H264_GUID, nullptr, 0, &formatCount);
+        state->nvenc_api.nvEncGetInputFormats(state->nvenc_encoder, initParams.encodeGUID, nullptr, 0, &formatCount);
         std::vector<NV_ENC_BUFFER_FORMAT> inputFormats(formatCount);
-        state->nvenc_api.nvEncGetInputFormats(state->nvenc_encoder, NV_ENC_CODEC_H264_GUID, inputFormats.data(), formatCount, &formatCount);
-        std::cerr << "[NativeCapture] Supported H.264 input formats count: " << formatCount << std::endl;
+        state->nvenc_api.nvEncGetInputFormats(state->nvenc_encoder, initParams.encodeGUID, inputFormats.data(), formatCount, &formatCount);
+        std::cerr << "[NativeCapture] Supported input formats count: " << formatCount << std::endl;
         for (uint32_t i = 0; i < formatCount; i++) {
             std::cerr << "  Format " << i << ": 0x" << std::hex << inputFormats[i] << std::dec << std::endl;
         }
 
         uint32_t presetCount = 0;
-        NVENCSTATUS preset_count_status = state->nvenc_api.nvEncGetEncodePresetCount(state->nvenc_encoder, NV_ENC_CODEC_H264_GUID, &presetCount);
+        NVENCSTATUS preset_count_status = state->nvenc_api.nvEncGetEncodePresetCount(state->nvenc_encoder, initParams.encodeGUID, &presetCount);
         std::cerr << "[NativeCapture] nvEncGetEncodePresetCount returned status: " << preset_count_status << ", count: " << presetCount << std::endl;
 
         std::cerr << "[NativeCapture] Initializing NVENC with explicit preset config and tuning info." << std::endl;

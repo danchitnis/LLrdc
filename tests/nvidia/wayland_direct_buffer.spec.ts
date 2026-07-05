@@ -175,4 +175,83 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
             console.log(`[Test] Direct capture mode is unsupported headlessly on this context. Skipping 4:4:4 chroma validation.`);
         }
     });
+
+    test('should support H.265 (HEVC) 4:2:0 and 4:4:4 switching under direct-buffer and stream successfully via indirect checks', async ({ page }) => {
+        test.setTimeout(90000);
+
+        // Load the page first to trigger capture start on the server
+        await page.goto(SERVER_URL);
+        await page.click('body');
+
+        // Wait for the initial connection
+        await expect(page.locator('#status')).toContainText(/\[WebTransport|\[WebSocket/i, { timeout: 30000 });
+
+        let readyz: any = null;
+        try {
+            readyz = await fetchReadyz(SERVER_URL);
+        } catch (e) {}
+        expect(readyz).not.toBeNull();
+
+        if (readyz.directBuffer && readyz.directBuffer.supported && readyz.directBuffer.zeroCopyValidated) {
+            // Open configuration panel, switch to H.265 (NVIDIA NVENC)
+            await page.click('#config-btn');
+            await expect(page.locator('#config-dropdown')).toBeVisible();
+            await page.locator('.config-tab-btn[data-tab="tab-stream"]').click();
+            await page.selectOption('#video-codec-select', 'h265_nvenc');
+
+            // Verify server transitions to h265_nvenc and directBuffer is active
+            await expect.poll(async () => {
+                const r = await fetchReadyz(SERVER_URL);
+                return r.videoCodec === 'h265_nvenc' && r.chroma === '420' && r.directBuffer?.active === true;
+            }, {
+                timeout: 25000,
+                message: 'Wait for server to transition to h265_nvenc 420 direct-buffer path'
+            }).toBe(true);
+
+            // Verify that the video is actively streaming by checking webtransportFps/websocketFps (received frame rate) >= 20
+            await expect.poll(async () => {
+                const stats = await page.evaluate(() => window.getStats ? window.getStats() : null);
+                if (!stats) return 0;
+                return stats.webtransportFps;
+            }, {
+                timeout: 25000,
+                message: 'Wait for H.265 4:2:0 stream frame rate to reach ~30 FPS on client'
+            }).toBeGreaterThanOrEqual(20);
+
+            // Switch to HEVC 4:4:4
+            await page.selectOption('#video-codec-select', 'h265_nvenc-444');
+
+            // Verify server transitions to h265_nvenc-444 and directBuffer is active
+            await expect.poll(async () => {
+                const r = await fetchReadyz(SERVER_URL);
+                return r.videoCodec === 'h265_nvenc' && r.chroma === '444' && r.directBuffer?.active === true;
+            }, {
+                timeout: 25000,
+                message: 'Wait for server to transition to h265_nvenc 444 direct-buffer path'
+            }).toBe(true);
+
+            // Verify that the video is actively streaming in HEVC 4:4:4 with webtransportFps/websocketFps >= 20
+            await expect.poll(async () => {
+                const stats = await page.evaluate(() => window.getStats ? window.getStats() : null);
+                if (!stats) return 0;
+                return stats.webtransportFps;
+            }, {
+                timeout: 25000,
+                message: 'Wait for H.265 4:4:4 stream frame rate to reach ~30 FPS on client'
+            }).toBeGreaterThanOrEqual(20);
+
+            // Send some mouse movements to keep stream active
+            await page.mouse.move(180, 180);
+            await page.waitForTimeout(1500);
+            await page.mouse.move(120, 120);
+
+            // Verify via readyz that directBuffer is active, and codec and chroma are correct
+            const finalReadyz: any = await fetchReadyz(SERVER_URL);
+            expect(finalReadyz.directBuffer.active).toBe(true);
+            expect(finalReadyz.videoCodec).toBe('h265_nvenc');
+            expect(finalReadyz.chroma).toBe('444');
+        } else {
+            console.log(`[Test] Direct capture mode is unsupported headlessly on this context. Skipping H.265 / HEVC direct-buffer validation.`);
+        }
+    });
 });

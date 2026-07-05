@@ -323,3 +323,18 @@ H.264 Chroma 4:4:4 has been successfully implemented and integrated natively ins
 
 3. **Synchronized Client/Server Co-ordination:**
    Improved the server-side configuration engine to gracefully consolidate dual-resets (simultaneous display resize and codec/chroma updates), preventing redundant and incorrect stream-readiness timeouts.
+
+---
+
+### G. Resolution of the H.265 (HEVC) and H.265 Chroma 4:4:4 Zero-Copy Pipeline
+
+HEVC (H.265) 4:2:0 and HEVC Chroma 4:4:4 zero-copy capture have been successfully implemented and integrated natively into the direct-buffer path.
+
+1. **Hardware-Accelerated HEVC Encoding:**
+   The custom C++ helper registers its Vulkan-mapped BGRX frame buffer with NVENC as `NV_ENC_BUFFER_FORMAT_ARGB`. It dynamically configures the H.265 Main profile (`NV_ENC_HEVC_PROFILE_MAIN_GUID`) for 4:2:0, and the HEVC Format Range Extension profile (`NV_ENC_HEVC_PROFILE_FREXT_GUID`) with `chromaFormatIDC = 3` for 4:4:4, leveraging NVENC's on-GPU hardware converter in VRAM for real-time zero-copy HEVC encoding.
+
+2. **Stream Splitting & Parsing Integration:**
+   Both HEVC 4:2:0 and 4:4:4 formats utilize the Go server's robust `splitH265AnnexB` hybrid parser, which tracks slices, AUD (`35`), VPS (`32`), SPS (`33`), and PPS (`34`) headers to reconstruct and emit complete frames instantly, preventing any latency buildup or cursor freezing.
+
+3. **Indirect Verification Testing:**
+   Since Chromium cannot decode H.265 natively because of license issues, we verify the HEVC direct buffer paths indirectly. By querying `window.getStats().webtransportFps` on the client page, we assert that the server is actively capturing Wayland frames, encoding them to HEVC (4:2:0 and 4:4:4) using NVENC, and successfully transmitting them over the active network connection to the client at ~30 FPS.
