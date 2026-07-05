@@ -16,10 +16,12 @@ var cleanupTasks []func()
 func HandleClientConnected() {
 	if CaptureMode == CaptureModeDirect {
 		log.Println("New client connected; keeping direct-buffer capture warm instead of forcing a restart")
+		broadcastConfig(false)
 		return
 	}
 
 	log.Println("New client connected, triggering low-latency stream restart concurrently")
+	broadcastConfig(false)
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		KillFFmpegWithTimestamp()

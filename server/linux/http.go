@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danchitnis/llrdc/server/common"
@@ -253,6 +254,11 @@ func broadcastConfig(restarted bool) {
 	broadcastJSON(configPayload(restarted))
 }
 
+var (
+	displayResizeTimer   *time.Timer
+	displayResizeTimerMu sync.Mutex
+)
+
 func applyDisplayChange(previousStreamID uint32, width, height int, reason string) {
 	displayChangeMu.Lock()
 	defer displayChangeMu.Unlock()
@@ -281,6 +287,13 @@ func applyDisplayChange(previousStreamID uint32, width, height int, reason strin
 		log.Printf("Display-changed stream did not become ready in time for %s: %v", reason, err)
 		PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 	}
+
+	// Signal client that it must reconnect to see the new stream resolution
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		log.Printf("Sending reconnect hint to clients after resize and codec restart...")
+		CloseAllClients()
+	}()
 }
 
 func HandleInputMessage(msg map[string]interface{}) {
@@ -569,18 +582,26 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			width := int(widthFloat)
 			height := int(heightFloat)
 			log.Printf("Received resize request: %dx%d (DPR: %.2f, Current InitialRes: %d)", width, height, dpr, InitialRes)
-			if SetScreenSize(width, height) {
-				// Get the actual clamped size
-				clampedW, clampedH := GetScreenSize()
-				log.Printf("Accepted resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
-				previousStreamID := getCurrentFFmpegStreamID()
-				go func() {
-					applyDisplayChange(previousStreamID, clampedW, clampedH, "client resize")
-					broadcastConfig(true)
-				}()
-			} else {
-				log.Printf("Ignored resize request: %dx%d (InitialRes active or size unchanged)", width, height)
+			
+			displayResizeTimerMu.Lock()
+			if displayResizeTimer != nil {
+				displayResizeTimer.Stop()
 			}
+			displayResizeTimer = time.AfterFunc(200*time.Millisecond, func() {
+				if SetScreenSize(width, height) {
+					// Get the actual clamped size
+					clampedW, clampedH := GetScreenSize()
+					log.Printf("Accepted debounced resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
+					previousStreamID := getCurrentFFmpegStreamID()
+					go func() {
+						applyDisplayChange(previousStreamID, clampedW, clampedH, "client resize")
+						broadcastConfig(true)
+					}()
+				} else {
+					log.Printf("Ignored debounced resize request: %dx%d (InitialRes active or size unchanged)", width, height)
+				}
+			})
+			displayResizeTimerMu.Unlock()
 		}
 	case "force_keyframe":
 		log.Printf("Received force_keyframe request from client")

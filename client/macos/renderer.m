@@ -56,17 +56,17 @@ int llrdc_test_mouse_payload(double contentW, double contentH, double videoW, do
 static NSSize llrdc_aligned_size(NSSize size) {
     NSInteger width = (NSInteger)llround(size.width);
     NSInteger height = (NSInteger)llround(size.height);
-    if (width >= 8) {
-        width = (width / 8) * 8;
+    if (width >= 16) {
+        width = (width / 16) * 16;
     }
-    if (height >= 8) {
-        height = (height / 8) * 8;
+    if (height >= 16) {
+        height = (height / 16) * 16;
     }
     return NSMakeSize(width, height);
 }
 
 static NSSize llrdc_target_size_for_content(NSSize contentSize, NSSize aspectSize) {
-    // Simply align the contentSize to 8 pixels to match the server's requirements,
+    // Simply align the contentSize to 16 pixels to match the server's requirements,
     // allowing the remote desktop to adopt the window's aspect ratio.
     return llrdc_aligned_size(contentSize);
 }
@@ -201,6 +201,13 @@ static BOOL llrdc_update_parameter_sets(NSData *spsData, NSData *ppsData) {
 
     if (!changed && g_app_state.formatDesc != NULL) {
         return YES;
+    }
+
+    if (changed) {
+        if (g_app_state.view && g_app_state.view.videoLayer) {
+            AVSampleBufferVideoRenderer *renderer = g_app_state.view.videoLayer.sampleBufferRenderer;
+            [renderer flushWithRemovalOfDisplayedImage:YES completionHandler:nil];
+        }
     }
 
     if (g_app_state.formatDesc) {
@@ -756,6 +763,13 @@ static BOOL llrdc_update_parameter_sets_hevc(NSData *vpsData, NSData *spsData, N
 
     if (!changed && g_app_state.formatDesc != NULL) {
         return YES;
+    }
+
+    if (changed) {
+        if (g_app_state.view && g_app_state.view.videoLayer) {
+            AVSampleBufferVideoRenderer *renderer = g_app_state.view.videoLayer.sampleBufferRenderer;
+            [renderer flushWithRemovalOfDisplayedImage:YES completionHandler:nil];
+        }
     }
 
     if (g_app_state.formatDesc) {

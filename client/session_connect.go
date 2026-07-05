@@ -22,7 +22,8 @@ func (s *Session) Connect(serverURL string) error {
 	s.connectMu.Lock()
 	defer s.connectMu.Unlock()
 
-	if strings.TrimSpace(serverURL) == "" {
+	serverURL = strings.TrimSpace(serverURL)
+	if serverURL == "" {
 		return errors.New("server URL is required")
 	}
 
@@ -104,11 +105,13 @@ func (s *Session) Connect(serverURL string) error {
 	s.connectionID++
 	connectionID = s.connectionID
 	s.conn = conn
-	s.state.ServerURL = serverURL
 	s.state.Connected = true
 
-	s.state.VideoCodec = ""
-	s.state.LastConfig = nil
+	if s.state.ServerURL != serverURL {
+		s.state.VideoCodec = ""
+		s.state.LastConfig = nil
+	}
+	s.state.ServerURL = serverURL
 	if msgType, _ := initMsg["type"].(string); msgType == "config" {
 		s.state.LastConfig = cloneMap(initMsg)
 		if codec, ok := initMsg["videoCodec"].(string); ok {

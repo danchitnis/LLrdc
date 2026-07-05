@@ -490,6 +490,12 @@ struct NativeCaptureState {
     // Chroma & Codec flags
     bool chroma_444;
     bool is_hevc;
+    uint32_t target_width;
+    uint32_t target_height;
+    
+    char target_codec[64];
+    char target_chroma[16];
+    GUID selected_encode_guid;
     
 
     
@@ -603,7 +609,17 @@ static bool build_nvenc_init_params(NativeCaptureState *state, NV_ENC_INITIALIZE
     memset(encodeConfig, 0, sizeof(*encodeConfig));
 
     initParams->version = NV_ENC_INITIALIZE_PARAMS_VER;
-    initParams->encodeGUID = state->is_hevc ? NV_ENC_CODEC_HEVC_GUID : NV_ENC_CODEC_H264_GUID;
+    if (strstr(state->target_codec, "h265") || strstr(state->target_codec, "hevc")) {
+        initParams->encodeGUID = NV_ENC_CODEC_HEVC_GUID;
+        state->is_hevc = true;
+    } else if (strstr(state->target_codec, "av1")) {
+        initParams->encodeGUID = NV_ENC_CODEC_AV1_GUID;
+        state->is_hevc = false;
+    } else {
+        initParams->encodeGUID = NV_ENC_CODEC_H264_GUID;
+        state->is_hevc = false;
+    }
+    state->selected_encode_guid = initParams->encodeGUID;
     initParams->presetGUID = NV_ENC_PRESET_P1_GUID;
     initParams->tuningInfo = NV_ENC_TUNING_INFO_LOW_LATENCY;
     initParams->encodeWidth = state->width;
@@ -647,7 +663,8 @@ static bool build_nvenc_init_params(NativeCaptureState *state, NV_ENC_INITIALIZE
 
     memcpy(encodeConfig, &presetConfig.presetCfg, sizeof(*encodeConfig));
     encodeConfig->version = NV_ENC_CONFIG_VER;
-    encodeConfig->gopLength = NVENC_INFINITE_GOPLENGTH;
+    uint32_t fps = state->target_fps ? state->target_fps : 30;
+    encodeConfig->gopLength = fps * 2; // Periodic keyframe every 2 seconds
     encodeConfig->frameIntervalP = 1;
     encodeConfig->rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR_LOWDELAY_HQ;
     uint32_t targetBitrate = (state->target_bitrate_mbps ? state->target_bitrate_mbps : 5) * 1000 * 1000;
@@ -656,28 +673,32 @@ static bool build_nvenc_init_params(NativeCaptureState *state, NV_ENC_INITIALIZE
     encodeConfig->rcParams.vbvBufferSize = targetBitrate;
     encodeConfig->rcParams.vbvInitialDelay = targetBitrate;
 
+    uint32_t chromaFormat = 1; // Default to YUV 4:2:0
+    if (strcmp(state->target_chroma, "444") == 0) {
+        chromaFormat = 3; // YUV 4:4:4
+    }
+    state->chroma_444 = (chromaFormat == 3);
+
     if (guid_equals(initParams->encodeGUID, NV_ENC_CODEC_H264_GUID)) {
+        if (chromaFormat == 3) {
+            encodeConfig->profileGUID = NV_ENC_H264_PROFILE_HIGH_444_GUID;
+        } else {
+            encodeConfig->profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
+        }
         encodeConfig->encodeCodecConfig.h264Config.idrPeriod = encodeConfig->gopLength;
         encodeConfig->encodeCodecConfig.h264Config.repeatSPSPPS = 1;
         encodeConfig->encodeCodecConfig.h264Config.outputAUD = 1;
-        if (state->chroma_444) {
-            encodeConfig->profileGUID = NV_ENC_H264_PROFILE_HIGH_444_GUID;
-            encodeConfig->encodeCodecConfig.h264Config.chromaFormatIDC = 3;
-        } else {
-            encodeConfig->profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
-            encodeConfig->encodeCodecConfig.h264Config.chromaFormatIDC = 1;
-        }
+        encodeConfig->encodeCodecConfig.h264Config.chromaFormatIDC = chromaFormat;
     } else if (guid_equals(initParams->encodeGUID, NV_ENC_CODEC_HEVC_GUID)) {
+        if (chromaFormat == 3) {
+            encodeConfig->profileGUID = NV_ENC_HEVC_PROFILE_FREXT_GUID;
+        } else {
+            encodeConfig->profileGUID = NV_ENC_HEVC_PROFILE_MAIN_GUID;
+        }
         encodeConfig->encodeCodecConfig.hevcConfig.idrPeriod = encodeConfig->gopLength;
         encodeConfig->encodeCodecConfig.hevcConfig.repeatSPSPPS = 1;
         encodeConfig->encodeCodecConfig.hevcConfig.outputAUD = 1;
-        if (state->chroma_444) {
-            encodeConfig->profileGUID = NV_ENC_HEVC_PROFILE_FREXT_GUID;
-            encodeConfig->encodeCodecConfig.hevcConfig.chromaFormatIDC = 3;
-        } else {
-            encodeConfig->profileGUID = NV_ENC_HEVC_PROFILE_MAIN_GUID;
-            encodeConfig->encodeCodecConfig.hevcConfig.chromaFormatIDC = 1;
-        }
+        encodeConfig->encodeCodecConfig.hevcConfig.chromaFormatIDC = chromaFormat;
     }
 
     return true;
@@ -911,7 +932,7 @@ void process_frame_zero_copy(NativeCaptureState *state) {
         }
 
         uint32_t presetCount = 0;
-        NVENCSTATUS preset_count_status = state->nvenc_api.nvEncGetEncodePresetCount(state->nvenc_encoder, initParams.encodeGUID, &presetCount);
+        NVENCSTATUS preset_count_status = state->nvenc_api.nvEncGetEncodePresetCount(state->nvenc_encoder, state->selected_encode_guid, &presetCount);
         std::cerr << "[NativeCapture] nvEncGetEncodePresetCount returned status: " << preset_count_status << ", count: " << presetCount << std::endl;
 
         std::cerr << "[NativeCapture] Initializing NVENC with explicit preset config and tuning info." << std::endl;
@@ -1038,6 +1059,10 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 4; i++) state.planes[i].fd = -1;
     state.target_fps = 30;
     state.target_bitrate_mbps = 5;
+    state.target_width = 0;
+    state.target_height = 0;
+    strcpy(state.target_codec, "h264");
+    strcpy(state.target_chroma, "420");
 
     bool probe_only = false;
     for (int i = 1; i < argc; i++) {
@@ -1059,17 +1084,22 @@ int main(int argc, char **argv) {
             }
             continue;
         }
-        if (strcmp(argv[i], "--chroma") == 0 && i + 1 < argc) {
-            state.chroma_444 = (strcmp(argv[++i], "444") == 0);
+        if (strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
+            state.target_width = (uint32_t)atoi(argv[++i]);
+            continue;
+        }
+        if (strcmp(argv[i], "--height") == 0 && i + 1 < argc) {
+            state.target_height = (uint32_t)atoi(argv[++i]);
             continue;
         }
         if (strcmp(argv[i], "--codec") == 0 && i + 1 < argc) {
-            const char* codec_val = argv[++i];
-            if (strstr(codec_val, "hevc") || strstr(codec_val, "h265")) {
-                state.is_hevc = true;
-            } else {
-                state.is_hevc = false;
-            }
+            strncpy(state.target_codec, argv[++i], sizeof(state.target_codec) - 1);
+            state.is_hevc = (strstr(state.target_codec, "hevc") || strstr(state.target_codec, "h265"));
+            continue;
+        }
+        if (strcmp(argv[i], "--chroma") == 0 && i + 1 < argc) {
+            strncpy(state.target_chroma, argv[++i], sizeof(state.target_chroma) - 1);
+            state.chroma_444 = (strcmp(state.target_chroma, "444") == 0);
             continue;
         }
     }
@@ -1127,7 +1157,23 @@ int main(int argc, char **argv) {
         }
         
         if (state.ready_received) {
-            process_frame_zero_copy(&state);
+            if (state.target_width > 0 && state.target_height > 0 &&
+                (state.width != state.target_width || state.height != state.target_height)) {
+                static bool warned = false;
+                if (!warned) {
+                    std::cerr << "[NativeCapture] Dropping frame with mismatched compositor dimensions: " 
+                              << state.width << "x" << state.height << " (target: " 
+                              << state.target_width << "x" << state.target_height << ")" << std::endl;
+                    warned = true;
+                }
+                if (state.planes[0].fd >= 0) {
+                    close(state.planes[0].fd);
+                    state.planes[0].fd = -1;
+                }
+                state.ready_received = false;
+            } else {
+                process_frame_zero_copy(&state);
+            }
         }
         
         if (state.frame) {

@@ -43,9 +43,9 @@ func InitScreenSize(maxW, maxH int) {
 }
 
 func ForceSetScreenSize(width, height int) bool {
-	// Ensure 8-pixel alignment for maximum compatibility
-	width = (width / 8) * 8
-	height = (height / 8) * 8
+	// Ensure 16-pixel alignment for video codec macroblock/CTU requirements
+	width = (width / 16) * 16
+	height = (height / 16) * 16
 
 	if width < minScreenWidth {
 		width = minScreenWidth
@@ -79,9 +79,9 @@ func SetScreenSize(width, height int) bool {
 		return false
 	}
 
-	// Ensure 8-pixel alignment for maximum compatibility
-	width = (width / 8) * 8
-	height = (height / 8) * 8
+	// Ensure 16-pixel alignment for video codec macroblock/CTU requirements
+	width = (width / 16) * 16
+	height = (height / 16) * 16
 
 	if InitialRes > 0 {
 		return false // Ignore client resizes when a fixed resolution is active
