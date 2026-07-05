@@ -384,11 +384,13 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			SetVideoCodec(vCodec)
 			common.VideoCodec = VideoCodec
 			if VideoCodec != oldCodec {
+				log.Printf("[Config] videoCodec changed from %s to %s, restart requested", oldCodec, VideoCodec)
 				restartRequested = true
 			}
 		}
 		if chromaStr, ok := msg["chroma"].(string); ok {
 			if Chroma != chromaStr {
+				log.Printf("[Config] chroma changed from %s to %s, restart requested", Chroma, chromaStr)
 				restartRequested = true
 			}
 			SetChroma(chromaStr)
@@ -433,6 +435,7 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			SetVideoCodec(codecStr)
 			common.VideoCodec = VideoCodec
 			if VideoCodec != oldCodec {
+				log.Printf("[Config] video_codec changed from %s to %s, restart requested", oldCodec, VideoCodec)
 				restartRequested = true
 			}
 		}
@@ -529,7 +532,16 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			if displayResizeRequested {
 				w, h := GetScreenSize()
 				applyDisplayChange(previousStreamID, w, h, displayChangeReason)
-				previousStreamID = getCurrentFFmpegStreamID()
+				if restartRequested {
+					// Signal client that it must reconnect to see the new stream/codec
+					go func() {
+						time.Sleep(250 * time.Millisecond)
+						log.Printf("Sending reconnect hint to clients after resize and codec restart...")
+						CloseAllClients()
+					}()
+				}
+				broadcastConfig(true)
+				return
 			}
 
 			if restartRequested {

@@ -1,7 +1,6 @@
 package linux
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -105,8 +104,58 @@ func buildH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThres
 func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	buffer := make([]byte, 0, 4*1024*1024)
 	temp := make([]byte, 524288)
-	marker4 := []byte{0x00, 0x00, 0x00, 0x01, 0x09}
-	marker3 := []byte{0x00, 0x00, 0x01, 0x09}
+	currentAU := make([][]byte, 0, 8)
+	currentHasVCL := false
+
+	emitCurrent := func() {
+		if !currentHasVCL && len(currentAU) == 0 {
+			return
+		}
+
+		parsedAtMs := benchmarkClockNowMs()
+
+		if len(currentAU) > 0 {
+			onFrame(EncodedVideoFrame{
+				Data:         joinNALUnits(currentAU),
+				ParsedAtMs:   parsedAtMs,
+				LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
+			})
+		}
+
+		currentAU = currentAU[:0]
+		currentHasVCL = false
+	}
+
+	processNAL := func(nal []byte) {
+		if len(nal) == 0 {
+			return
+		}
+
+		nalCopy := append([]byte(nil), nal...)
+		start, prefixLen, ok := findAnnexBStartCode(nalCopy, 0)
+		if !ok || start+prefixLen >= len(nalCopy) {
+			currentAU = append(currentAU, nalCopy)
+			return
+		}
+
+		headerByte := nalCopy[start+prefixLen]
+		nalType := int(headerByte & 0x1f)
+
+		isVCL := nalType == 1 || nalType == 5
+
+		if isVCL {
+			if currentHasVCL {
+				emitCurrent()
+			}
+			currentAU = append(currentAU, nalCopy)
+			currentHasVCL = true
+		} else {
+			if currentHasVCL && (nalType == 9 || nalType == 7 || nalType == 8) {
+				emitCurrent()
+			}
+			currentAU = append(currentAU, nalCopy)
+		}
+	}
 
 	nextSearchStart := 0
 	for {
@@ -116,9 +165,23 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 			buffer = append(buffer, temp[:n]...)
 
 			for {
-				searchStart := 4
+				startIdx, prefixLen, ok := findAnnexBStartCode(buffer, 0)
+				if !ok {
+					if len(buffer) > 4 {
+						buffer = append([]byte(nil), buffer[len(buffer)-4:]...)
+					}
+					nextSearchStart = 0
+					break
+				}
+				if startIdx > 0 {
+					buffer = buffer[startIdx:]
+					nextSearchStart = 0
+					continue
+				}
+
+				searchStart := prefixLen
 				if oldLen > 0 {
-					if oldLen-4 > 4 {
+					if oldLen-4 > prefixLen {
 						searchStart = oldLen - 4
 					}
 					oldLen = 0
@@ -127,47 +190,18 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 					searchStart = nextSearchStart
 				}
 
-				if len(buffer) < searchStart+5 {
-					break
-				}
-
-				nextIdx := -1
-				m4Idx := bytes.Index(buffer[searchStart:], marker4)
-				m3Idx := bytes.Index(buffer[searchStart:], marker3)
-
-				actualM4 := -1
-				if m4Idx != -1 {
-					actualM4 = m4Idx + searchStart
-				}
-				actualM3 := -1
-				if m3Idx != -1 {
-					actualM3 = m3Idx + searchStart
-				}
-
-				if actualM4 != -1 && (actualM3 == -1 || actualM4 <= actualM3) {
-					nextIdx = actualM4
-				} else if actualM3 != -1 {
-					nextIdx = actualM3
-				}
-
-				if nextIdx != -1 {
-					frame := make([]byte, nextIdx)
-					copy(frame, buffer[:nextIdx])
-					parsedAtMs := benchmarkClockNowMs()
-					onFrame(EncodedVideoFrame{
-						Data:         frame,
-						ParsedAtMs:   parsedAtMs,
-						LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
-					})
-					buffer = buffer[nextIdx:]
-					nextSearchStart = 4
-				} else {
+				nextIdx, nextPrefixLen, hasNext := findAnnexBStartCode(buffer, searchStart)
+				if !hasNext {
 					nextSearchStart = len(buffer) - 4
-					if nextSearchStart < 4 {
-						nextSearchStart = 4
+					if nextSearchStart < prefixLen {
+						nextSearchStart = prefixLen
 					}
 					break
 				}
+
+				processNAL(buffer[:nextIdx])
+				buffer = buffer[nextIdx:]
+				nextSearchStart = nextPrefixLen
 			}
 		}
 		if err != nil {
@@ -175,13 +209,11 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 				log.Printf("Error reading H264 stream: %v", err)
 			}
 			if len(buffer) > 0 {
-				parsedAtMs := benchmarkClockNowMs()
-				onFrame(EncodedVideoFrame{
-					Data:         append([]byte(nil), buffer...),
-					ParsedAtMs:   parsedAtMs,
-					LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
-				})
+				if startIdx, _, ok := findAnnexBStartCode(buffer, 0); ok {
+					processNAL(buffer[startIdx:])
+				}
 			}
+			emitCurrent()
 			return
 		}
 	}

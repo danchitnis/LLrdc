@@ -487,6 +487,10 @@ struct NativeCaptureState {
     bool cancel_received;
     bool exit_requested;
     
+    // Chroma & Codec flags
+    bool chroma_444;
+    bool is_hevc;
+    
 
     
     // CUDA Context
@@ -599,7 +603,7 @@ static bool build_nvenc_init_params(NativeCaptureState *state, NV_ENC_INITIALIZE
     memset(encodeConfig, 0, sizeof(*encodeConfig));
 
     initParams->version = NV_ENC_INITIALIZE_PARAMS_VER;
-    initParams->encodeGUID = NV_ENC_CODEC_H264_GUID;
+    initParams->encodeGUID = state->is_hevc ? NV_ENC_CODEC_HEVC_GUID : NV_ENC_CODEC_H264_GUID;
     initParams->presetGUID = NV_ENC_PRESET_P1_GUID;
     initParams->tuningInfo = NV_ENC_TUNING_INFO_LOW_LATENCY;
     initParams->encodeWidth = state->width;
@@ -656,6 +660,24 @@ static bool build_nvenc_init_params(NativeCaptureState *state, NV_ENC_INITIALIZE
         encodeConfig->encodeCodecConfig.h264Config.idrPeriod = encodeConfig->gopLength;
         encodeConfig->encodeCodecConfig.h264Config.repeatSPSPPS = 1;
         encodeConfig->encodeCodecConfig.h264Config.outputAUD = 1;
+        if (state->chroma_444) {
+            encodeConfig->profileGUID = NV_ENC_H264_PROFILE_HIGH_444_GUID;
+            encodeConfig->encodeCodecConfig.h264Config.chromaFormatIDC = 3;
+        } else {
+            encodeConfig->profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
+            encodeConfig->encodeCodecConfig.h264Config.chromaFormatIDC = 1;
+        }
+    } else if (guid_equals(initParams->encodeGUID, NV_ENC_CODEC_HEVC_GUID)) {
+        encodeConfig->encodeCodecConfig.hevcConfig.idrPeriod = encodeConfig->gopLength;
+        encodeConfig->encodeCodecConfig.hevcConfig.repeatSPSPPS = 1;
+        encodeConfig->encodeCodecConfig.hevcConfig.outputAUD = 1;
+        if (state->chroma_444) {
+            encodeConfig->profileGUID = NV_ENC_HEVC_PROFILE_FREXT_GUID;
+            encodeConfig->encodeCodecConfig.hevcConfig.chromaFormatIDC = 3;
+        } else {
+            encodeConfig->profileGUID = NV_ENC_HEVC_PROFILE_MAIN_GUID;
+            encodeConfig->encodeCodecConfig.hevcConfig.chromaFormatIDC = 1;
+        }
     }
 
     return true;
@@ -834,17 +856,20 @@ void process_frame_zero_copy(NativeCaptureState *state) {
         extMemDesc.size = vkManager.allocationSize;
         extMemDesc.flags = 1; // CU_EXTERNAL_MEMORY_DEDICATED
 
+        std::cerr << "[NativeCapture] Importing Vulkan linear buffer FD into CUDA..." << std::endl;
         CUresult import_res = cuImportExternalMemory(&extMem, &extMemDesc);
         if (import_res != CUDA_SUCCESS) {
             std::cerr << "[NativeCapture] Failed to import Vulkan linear buffer FD into CUDA! Error: " << import_res << ". Exiting." << std::endl;
             close(state->planes[0].fd);
             exit(1);
         }
+        std::cerr << "[NativeCapture] Vulkan linear buffer FD imported to CUDA successfully." << std::endl;
 
         CUDA_EXTERNAL_MEMORY_BUFFER_DESC bufferDesc = {0};
         bufferDesc.offset = 0;
         bufferDesc.size = vkManager.allocationSize;
 
+        std::cerr << "[NativeCapture] Mapping Vulkan buffer memory to CUDA..." << std::endl;
         CUresult map_res = cuExternalMemoryGetMappedBuffer(&devPtr, extMem, &bufferDesc);
         if (map_res != CUDA_SUCCESS) {
             std::cerr << "[NativeCapture] Failed to map Vulkan buffer memory to CUDA! Error: " << map_res << ". Exiting." << std::endl;
@@ -853,6 +878,7 @@ void process_frame_zero_copy(NativeCaptureState *state) {
             close(state->planes[0].fd);
             exit(1);
         }
+        std::cerr << "[NativeCapture] Vulkan buffer memory mapped to CUDA devPtr: " << devPtr << std::endl;
     }
 
     // We no longer need the Wayland DMA-BUF FD in this frame as it was copied by Vulkan
@@ -875,6 +901,15 @@ void process_frame_zero_copy(NativeCaptureState *state) {
         NVENCSTATUS guid_status = state->nvenc_api.nvEncGetEncodeGUIDCount(state->nvenc_encoder, &guidCount);
         std::cerr << "[NativeCapture] nvEncGetEncodeGUIDCount returned status: " << guid_status << ", count: " << guidCount << std::endl;
 
+        uint32_t formatCount = 0;
+        state->nvenc_api.nvEncGetInputFormats(state->nvenc_encoder, NV_ENC_CODEC_H264_GUID, nullptr, 0, &formatCount);
+        std::vector<NV_ENC_BUFFER_FORMAT> inputFormats(formatCount);
+        state->nvenc_api.nvEncGetInputFormats(state->nvenc_encoder, NV_ENC_CODEC_H264_GUID, inputFormats.data(), formatCount, &formatCount);
+        std::cerr << "[NativeCapture] Supported H.264 input formats count: " << formatCount << std::endl;
+        for (uint32_t i = 0; i < formatCount; i++) {
+            std::cerr << "  Format " << i << ": 0x" << std::hex << inputFormats[i] << std::dec << std::endl;
+        }
+
         uint32_t presetCount = 0;
         NVENCSTATUS preset_count_status = state->nvenc_api.nvEncGetEncodePresetCount(state->nvenc_encoder, NV_ENC_CODEC_H264_GUID, &presetCount);
         std::cerr << "[NativeCapture] nvEncGetEncodePresetCount returned status: " << preset_count_status << ", count: " << presetCount << std::endl;
@@ -887,6 +922,7 @@ void process_frame_zero_copy(NativeCaptureState *state) {
             close(state->planes[0].fd);
             exit(1);
         }
+        std::cerr << "[NativeCapture] NVENC Encoder initialized successfully." << std::endl;
         
         // Create bitstream output buffer
         NV_ENC_CREATE_BITSTREAM_BUFFER bitstreamParams = {0};
@@ -896,6 +932,7 @@ void process_frame_zero_copy(NativeCaptureState *state) {
             return;
         }
         state->bitstream_output = bitstreamParams.bitstreamBuffer;
+        std::cerr << "[NativeCapture] NVENC Bitstream Buffer created successfully." << std::endl;
     }
     
     // 5. Register mapped CUDA device pointer as an input resource with NVENC
@@ -913,8 +950,9 @@ void process_frame_zero_copy(NativeCaptureState *state) {
     registerParams.bufferFormat = NV_ENC_BUFFER_FORMAT_ARGB; // Little-endian BGRX
     registerParams.bufferUsage = NV_ENC_INPUT_IMAGE;
     
-    if (state->nvenc_api.nvEncRegisterResource(state->nvenc_encoder, &registerParams) != NV_ENC_SUCCESS) {
-        std::cerr << "[NativeCapture] Failed to register CUDA pointer with NVENC!" << std::endl;
+    NVENCSTATUS reg_status = state->nvenc_api.nvEncRegisterResource(state->nvenc_encoder, &registerParams);
+    if (reg_status != NV_ENC_SUCCESS) {
+        std::cerr << "[NativeCapture] Failed to register CUDA pointer with NVENC! Error: " << reg_status << std::endl;
         return;
     }
     state->registered_input = registerParams.registeredResource;
@@ -923,8 +961,9 @@ void process_frame_zero_copy(NativeCaptureState *state) {
     NV_ENC_MAP_INPUT_RESOURCE mapParams = {0};
     mapParams.version = NV_ENC_MAP_INPUT_RESOURCE_VER;
     mapParams.registeredResource = state->registered_input;
-    if (state->nvenc_api.nvEncMapInputResource(state->nvenc_encoder, &mapParams) != NV_ENC_SUCCESS) {
-        std::cerr << "[NativeCapture] Failed to map input resource!" << std::endl;
+    NVENCSTATUS map_status = state->nvenc_api.nvEncMapInputResource(state->nvenc_encoder, &mapParams);
+    if (map_status != NV_ENC_SUCCESS) {
+        std::cerr << "[NativeCapture] Failed to map input resource! Error: " << map_status << std::endl;
         state->nvenc_api.nvEncUnregisterResource(state->nvenc_encoder, state->registered_input);
         return;
     }
@@ -940,8 +979,9 @@ void process_frame_zero_copy(NativeCaptureState *state) {
     picParams.outputBitstream = state->bitstream_output;
     picParams.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
     
-    if (state->nvenc_api.nvEncEncodePicture(state->nvenc_encoder, &picParams) != NV_ENC_SUCCESS) {
-        std::cerr << "[NativeCapture] nvEncEncodePicture failed!" << std::endl;
+    NVENCSTATUS enc_status = state->nvenc_api.nvEncEncodePicture(state->nvenc_encoder, &picParams);
+    if (enc_status != NV_ENC_SUCCESS) {
+        std::cerr << "[NativeCapture] nvEncEncodePicture failed! Error: " << enc_status << std::endl;
     } else {
         // Lock bitstream to read compressed video data
         NV_ENC_LOCK_BITSTREAM lockParams = {0};
@@ -949,12 +989,15 @@ void process_frame_zero_copy(NativeCaptureState *state) {
         lockParams.outputBitstream = state->bitstream_output;
         lockParams.doNotWait = 0;
         
-        if (state->nvenc_api.nvEncLockBitstream(state->nvenc_encoder, &lockParams) == NV_ENC_SUCCESS) {
+        NVENCSTATUS lock_status = state->nvenc_api.nvEncLockBitstream(state->nvenc_encoder, &lockParams);
+        if (lock_status == NV_ENC_SUCCESS) {
             // Write compressed H.264 video bytes straight to stdout
             fwrite(lockParams.bitstreamBufferPtr, 1, lockParams.bitstreamSizeInBytes, stdout);
             fflush(stdout);
             
             state->nvenc_api.nvEncUnlockBitstream(state->nvenc_encoder, state->bitstream_output);
+        } else {
+            std::cerr << "[NativeCapture] nvEncLockBitstream failed! Error: " << lock_status << std::endl;
         }
     }
     
@@ -1016,6 +1059,19 @@ int main(int argc, char **argv) {
             }
             continue;
         }
+        if (strcmp(argv[i], "--chroma") == 0 && i + 1 < argc) {
+            state.chroma_444 = (strcmp(argv[++i], "444") == 0);
+            continue;
+        }
+        if (strcmp(argv[i], "--codec") == 0 && i + 1 < argc) {
+            const char* codec_val = argv[++i];
+            if (strstr(codec_val, "hevc") || strstr(codec_val, "h265")) {
+                state.is_hevc = true;
+            } else {
+                state.is_hevc = false;
+            }
+            continue;
+        }
     }
 
     if (probe_only) {
@@ -1032,7 +1088,9 @@ int main(int argc, char **argv) {
     
     std::cerr << "[NativeCapture] Starting native C++ zero-copy capture engine..." << std::endl;
     std::cerr << "[NativeCapture] Requested target FPS: " << state.target_fps
-              << ", bitrate: " << state.target_bitrate_mbps << " Mbps" << std::endl;
+              << ", bitrate: " << state.target_bitrate_mbps << " Mbps"
+              << ", chroma: " << (state.chroma_444 ? "4:4:4" : "4:2:0")
+              << ", codec: " << (state.is_hevc ? "HEVC" : "H.264") << std::endl;
     
     state.display = wl_display_connect(NULL);
     if (!state.display) {

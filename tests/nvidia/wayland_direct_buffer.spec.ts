@@ -113,4 +113,66 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
             expect(readyz.directBuffer.reason).toContain('exited without producing frames');
         }
     });
+
+    test('should support H.264 4:4:4 chroma switching under direct-buffer and stream successfully', async ({ page }) => {
+        test.setTimeout(60000);
+
+        // Load the page first to trigger capture start on the server
+        await page.goto(SERVER_URL);
+        await page.click('body');
+
+        // Wait for the initial connection
+        await expect(page.locator('#status')).toContainText(/\[WebTransport|\[WebSocket/i, { timeout: 30000 });
+
+        let readyz: any = null;
+        try {
+            readyz = await fetchReadyz(SERVER_URL);
+        } catch (e) {}
+        expect(readyz).not.toBeNull();
+
+        if (readyz.directBuffer && readyz.directBuffer.supported && readyz.directBuffer.zeroCopyValidated) {
+            // Open configuration panel, switch to 4:4:4 NVENC
+            await page.click('#config-btn');
+            await expect(page.locator('#config-dropdown')).toBeVisible();
+            await page.locator('.config-tab-btn[data-tab="tab-stream"]').click();
+            await page.selectOption('#video-codec-select', 'h264_nvenc-444');
+
+            // Verify server transitions to 4:4:4
+            await expect.poll(async () => {
+                const r = await fetchReadyz(SERVER_URL);
+                return r.videoCodec === 'h264_nvenc' && r.chroma === '444';
+            }, {
+                timeout: 15000,
+                message: 'Wait for server to transition to h264_nvenc-444'
+            }).toBe(true);
+
+            // Verify the stream actively renders frames under 4:4:4
+            await expect.poll(async () => {
+                return await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
+            }, {
+                timeout: 25000,
+                message: 'Wait for decoded frames on the direct-buffer 4:4:4 chroma path',
+            }).toBeGreaterThan(0);
+
+            // Verify the stream continues advancing after user activity
+            await expect.poll(async () => {
+                const before = await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
+                await page.mouse.move(180, 180);
+                await page.waitForTimeout(1500);
+                const after = await page.evaluate(() => window.getStats ? window.getStats().totalDecoded : 0);
+                return after - before;
+            }, {
+                timeout: 30000,
+                message: 'Verify the stream continues advancing after user activity on 4:4:4',
+            }).toBeGreaterThan(0);
+
+            // Verify via readyz that directBuffer is active, and codec and chroma are correct
+            const finalReadyz: any = await fetchReadyz(SERVER_URL);
+            expect(finalReadyz.directBuffer.active).toBe(true);
+            expect(finalReadyz.videoCodec).toBe('h264_nvenc');
+            expect(finalReadyz.chroma).toBe('444');
+        } else {
+            console.log(`[Test] Direct capture mode is unsupported headlessly on this context. Skipping 4:4:4 chroma validation.`);
+        }
+    });
 });

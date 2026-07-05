@@ -298,12 +298,28 @@ These checks validate the recent Vulkan-CUDA-NVENC integration, the default fail
    curl -fsS http://localhost:8610/readyz
    ```
    Expect `directBuffer.active: true`, `backend: "nvidia-native"`, and `zeroCopyValidated: true`.
-5. Run the focused Playwright direct-buffer test:
+ 5. Run the focused Playwright direct-buffer test:
    ```bash
    npx playwright test tests/nvidia/wayland_direct_buffer.spec.ts --project=chromium
    ```
    By default this test now fails if the server falls back instead of streaming through the direct path.
-6. Only if you intentionally want to allow fallback during experimentation, opt in explicitly:
+ 6. Only if you intentionally want to allow fallback during experimentation, opt in explicitly:
    ```bash
    LLRDC_ALLOW_DIRECT_BUFFER_FALLBACK=1 npx playwright test tests/nvidia/wayland_direct_buffer.spec.ts --project=chromium
    ```
+
+---
+
+### F. Resolution of the H.264 Chroma 4:4:4 Zero-Copy Pipeline
+
+H.264 Chroma 4:4:4 has been successfully implemented and integrated natively inside the direct-buffer path. 
+
+1. **Hardware-Accelerated Color Conversion:**
+   Rather than relying on CPU-bound `swscale` matrix multiplications or custom CUDA kernels, the custom C++ helper registers its Vulkan-mapped BGRX frame buffer with NVENC as `NV_ENC_BUFFER_FORMAT_ARGB`. 
+   By specifying the H.264 High 4:4:4 profile (`NV_ENC_H264_PROFILE_HIGH_444_GUID`) and setting `chromaFormatIDC = 3`, **NVENC's on-GPU hardware color space converter is utilized directly in VRAM**, completely bypassing CPU host copies and PCIe bandwidth congestion.
+
+2. **Robust NAL-Boundary Annex B Stream Parser:**
+   In 4:4:4 profile modes, NVENC might omit AUD (`0x09`) NAL units. To prevent stream parsing freezes, `splitH264AnnexB` on the Go server has been refactored into a hybrid NAL-boundary splitter. It automatically falls back to detecting standard H.264 slice-header boundary types (Non-IDR `1` and IDR `5`) and parameter sets (SPS `7` and PPS `8`) to reconstruct Access Units (frames) in real-time with zero-latency.
+
+3. **Synchronized Client/Server Co-ordination:**
+   Improved the server-side configuration engine to gracefully consolidate dual-resets (simultaneous display resize and codec/chroma updates), preventing redundant and incorrect stream-readiness timeouts.

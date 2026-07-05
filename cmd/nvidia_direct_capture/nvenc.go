@@ -53,6 +53,8 @@ func (e *NVENCEncoder) BuildCommand() ([]string, error) {
 			"/usr/local/bin/nvidia_direct_capture_native",
 			"--fps", strconv.Itoa(e.Config.FPS),
 			"--bitrate", strconv.Itoa(e.Config.Bitrate),
+			"--chroma", e.Config.Chroma,
+			"--codec", e.Config.Codec,
 		}, nil
 	}
 
