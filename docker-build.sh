@@ -12,6 +12,7 @@ IMAGE_NAME="${IMAGE_NAME:-danchitnis/llrdc}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 DOCKERFILE="Dockerfile"
 ENABLE_INTEL="false"
+ENABLE_NVIDIA="false"
 ENABLE_MACOS="false"
 BUILD_VARIANT="cpu"
 USE_DRY_RUN="false"
@@ -32,6 +33,11 @@ while [[ $# -gt 0 ]]; do
     --intel)
       ENABLE_INTEL="true"
       BUILD_VARIANT="intel"
+      shift
+      ;;
+    --nvidia)
+      ENABLE_NVIDIA="true"
+      BUILD_VARIANT="nvidia"
       shift
       ;;
     --macos)
@@ -70,6 +76,8 @@ if [ "${IMAGE_TAG_EXPLICIT}" = "false" ]; then
     IMAGE_TAG="macos"
   elif [ "${ENABLE_INTEL}" = "true" ]; then
     IMAGE_TAG="intel"
+  elif [ "${ENABLE_NVIDIA}" = "true" ]; then
+    IMAGE_TAG="nvidia"
   fi
 fi
 
@@ -90,6 +98,7 @@ fi
 DOCKER_BUILD_CMD+=(
   --build-arg "UID=$(id -u)"
   --build-arg "ENABLE_INTEL=${ENABLE_INTEL}"
+  --build-arg "ENABLE_NVIDIA=${ENABLE_NVIDIA}"
   --build-arg "BUILD_VARIANT=${BUILD_VARIANT}"
   --tag "${IMAGE_NAME}:${IMAGE_TAG}"
   "${SCRIPT_DIR}"

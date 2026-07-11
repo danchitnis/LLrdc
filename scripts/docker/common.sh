@@ -12,7 +12,8 @@ detect_image_variant() {
 
 ensure_image_exists() {
   local image_ref="$1"
-  local intel_requested="$2"
+  local intel_requested="${2:-false}"
+  local nvidia_requested="${3:-false}"
   if docker image inspect "$image_ref" >/dev/null 2>&1; then
     return 0
   fi
@@ -20,6 +21,8 @@ ensure_image_exists() {
   echo "ERROR: Docker image ${image_ref} is not available locally."
   if [ "$intel_requested" = "true" ]; then
     echo "Build it with: ./docker-build.sh --intel"
+  elif [ "$nvidia_requested" = "true" ]; then
+    echo "Build it with: ./docker-build.sh --nvidia"
   else
     echo "Build it with: ./docker-build.sh"
   fi

@@ -7,8 +7,14 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY server/ ./server/
-RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server \
-    && CGO_ENABLED=0 go build -buildvcs=false -o nvidia_direct_capture -ldflags="-w -s" ./cmd/nvidia_direct_capture
+RUN CGO_ENABLED=0 go build -buildvcs=false -o llrdc -ldflags="-w -s" ./cmd/server
+
+ARG ENABLE_NVIDIA=false
+RUN if [ "${ENABLE_NVIDIA}" = "true" ]; then \
+         CGO_ENABLED=0 go build -buildvcs=false -o nvidia_direct_capture -ldflags="-w -s" ./cmd/nvidia_direct_capture; \
+       else \
+         touch nvidia_direct_capture; \
+       fi
 
 FROM node:22-alpine AS node-builder
 WORKDIR /app
@@ -47,17 +53,18 @@ RUN wayland-scanner client-header tools/wayland/wlr-virtual-pointer-unstable-v1.
     && gcc -O2 -o direct_buffer_probe tools/direct_buffer_probe.c $(pkg-config --cflags --libs wayland-client) \
     && gcc -O2 -o latency_probe tools/latency_probe.c xdg-shell-client-protocol.c -I. $(pkg-config --cflags --libs wayland-client wayland-cursor)
 
+ARG ENABLE_NVIDIA=false
 ARG CACHEBUST=11
 RUN echo "Cachebust: $CACHEBUST" \
-    && g++ -O3 -Wall -o nvidia_direct_capture_native nvidia_direct_capture_native.cpp -I/tmp -Itools/wayland $(pkg-config --cflags --libs wayland-client) -lvulkan
+    && if [ "${ENABLE_NVIDIA}" = "true" ]; then \
+         g++ -O3 -Wall -o nvidia_direct_capture_native nvidia_direct_capture_native.cpp -I/tmp -Itools/wayland $(pkg-config --cflags --libs wayland-client) -lvulkan; \
+       else \
+         touch nvidia_direct_capture_native; \
+       fi
 
 FROM ubuntu:26.04
-ARG ENABLE_INTEL=false
-ARG BUILD_VARIANT=cpu
-LABEL com.danchitnis.llrdc.build-variant="${BUILD_VARIANT}"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV USE_WAYLAND=true
-ENV LLRDC_BUILD_VARIANT="${BUILD_VARIANT}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   labwc \
@@ -68,9 +75,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   x11-utils \
   dbus-x11 \
   wf-recorder \
-  nvidia-vaapi-driver \
-  libnvidia-egl-wayland1 \
-  libnvidia-egl-gbm1 \
   swaybg \
   ffmpeg \
   xfce4 \
@@ -100,23 +104,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   sudo \
   && rm -rf /var/lib/apt/lists/*
 
-RUN if [ "${ENABLE_INTEL}" = "true" ]; then \
-    apt-get update \
-    && apt-get install -y --no-install-recommends \
-      intel-gpu-tools \
-      intel-media-va-driver-non-free \
-      libvpl2 \
-      libvpl-tools \
-      libmfx-gen1.2 \
-      va-driver-all \
-      libva-drm2 \
-      libva2 \
-      vainfo \
-    && rm -rf /var/lib/apt/lists/*; \
-  else \
-    rm -rf /var/lib/apt/lists/*; \
-  fi
-
 # ── Browser Repositories (Firefox via Official Mozilla APT) ──────────────────
 # Allow users to install Firefox via apt without snap.
 # Snap does not work in unprivileged Docker containers.
@@ -135,9 +122,54 @@ ARG UID=1000
 RUN userdel -r ubuntu || true \
   && useradd -m -s /bin/bash -u ${UID} remote \
   && echo 'remote ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/remote \
-  && if [ "${ENABLE_INTEL}" = "true" ]; then echo 'remote ALL=(ALL) NOPASSWD: /usr/bin/intel_gpu_top' >> /etc/sudoers.d/remote; fi \
   && chmod 0440 /etc/sudoers.d/remote
 
+# Trick glycin into disabling sandboxing by pretending to be a Flatpak Devel environment.
+# This avoids the need for bwrap/unprivileged namespaces which are blocked by host kernels.
+RUN printf '[Instance]\nbuild=true\n\n[Application]\nname=org.llrdc.Devel\n' > /.flatpak-info
+
+# ── Variant-Specific Installation ───────────────────────────────────────────
+ARG ENABLE_INTEL=false
+RUN if [ "${ENABLE_INTEL}" = "true" ]; then \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+      intel-gpu-tools \
+      intel-media-va-driver-non-free \
+      libvpl2 \
+      libvpl-tools \
+      libmfx-gen1.2 \
+      va-driver-all \
+      libva-drm2 \
+      libva2 \
+      vainfo \
+    && echo 'remote ALL=(ALL) NOPASSWD: /usr/bin/intel_gpu_top' >> /etc/sudoers.d/remote \
+    && rm -rf /var/lib/apt/lists/*; \
+  else \
+    rm -rf /var/lib/apt/lists/*; \
+  fi
+
+ARG ENABLE_NVIDIA=false
+RUN if [ "${ENABLE_NVIDIA}" = "true" ]; then \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+      nvidia-vaapi-driver \
+      libnvidia-egl-wayland1 \
+      libnvidia-egl-gbm1 \
+    && rm -rf /var/lib/apt/lists/*; \
+  else \
+    rm -rf /var/lib/apt/lists/*; \
+  fi
+
+# Configure GLVND EGL vendor registry and EGL external platform registries for NVIDIA driver compatibility inside the container
+RUN if [ "${ENABLE_NVIDIA}" = "true" ]; then \
+    mkdir -p /usr/share/glvnd/egl_vendor.d /usr/share/egl/egl_external_platform.d \
+    && echo '{"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0"}}' > /usr/share/glvnd/egl_vendor.d/10_nvidia.json \
+    && echo '{"file_format_version":"1.0.0","ICD":{"library_path":"libnvidia-egl-wayland.so.1"}}' > /usr/share/egl/egl_external_platform.d/20_nvidia_wayland.json; \
+  fi
+
+ARG BUILD_VARIANT=cpu
+LABEL com.danchitnis.llrdc.build-variant="${BUILD_VARIANT}"
+ENV LLRDC_BUILD_VARIANT="${BUILD_VARIANT}"
 RUN printf '%s\n' "${BUILD_VARIANT}" > /etc/llrdc-build-variant
 
 WORKDIR /app
@@ -151,15 +183,6 @@ COPY --from=helper-builder /build/direct_buffer_probe /usr/local/bin/direct_buff
 COPY --from=helper-builder /build/latency_probe /usr/local/bin/latency_probe
 COPY --from=helper-builder /build/nvidia_direct_capture_native /usr/local/bin/nvidia_direct_capture_native
 COPY tools/latency_probe_app.py ./tools/
-
-# Configure GLVND EGL vendor registry and EGL external platform registries for NVIDIA driver compatibility inside the container
-RUN mkdir -p /usr/share/glvnd/egl_vendor.d /usr/share/egl/egl_external_platform.d \
-    && echo '{"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0"}}' > /usr/share/glvnd/egl_vendor.d/10_nvidia.json \
-    && echo '{"file_format_version":"1.0.0","ICD":{"library_path":"libnvidia-egl-wayland.so.1"}}' > /usr/share/egl/egl_external_platform.d/20_nvidia_wayland.json
-
-# Trick glycin into disabling sandboxing by pretending to be a Flatpak Devel environment.
-# This avoids the need for bwrap/unprivileged namespaces which are blocked by host kernels.
-RUN printf '[Instance]\nbuild=true\n\n[Application]\nname=org.llrdc.Devel\n' > /.flatpak-info
 
 RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/

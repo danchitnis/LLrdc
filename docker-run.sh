@@ -203,12 +203,14 @@ done
 if [ "$IMAGE_TAG_EXPLICIT" = "false" ]; then
   if [ "$USE_INTEL" = "true" ]; then
     IMAGE_TAG="intel"
+  elif [ "$USE_NVIDIA" = "true" ]; then
+    IMAGE_TAG="nvidia"
   fi
 fi
 
 IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
 if [ "$USE_DRY_RUN" = "false" ]; then
-  ensure_image_exists "${IMAGE_REF}" "${USE_INTEL}"
+  ensure_image_exists "${IMAGE_REF}" "${USE_INTEL}" "${USE_NVIDIA}"
 fi
 IMAGE_VARIANT="$(detect_image_variant "${IMAGE_REF}")"
 
@@ -224,6 +226,25 @@ if [ "$USE_INTEL" = "true" ] && { [ "$USE_DRY_RUN" = "false" ] || [ -n "$IMAGE_V
     "")
       echo "Warning: Docker image ${IMAGE_REF} does not expose an LLrdc build-variant label."
       echo "Assuming it is a legacy Intel-capable image."
+      ;;
+    *)
+      echo "Warning: Docker image ${IMAGE_REF} reports unknown build variant '${IMAGE_VARIANT}'."
+      ;;
+  esac
+fi
+
+if [ "$USE_NVIDIA" = "true" ] && { [ "$USE_DRY_RUN" = "false" ] || [ -n "$IMAGE_VARIANT" ]; }; then
+  case "${IMAGE_VARIANT}" in
+    nvidia)
+      ;;
+    cpu)
+      echo "❌ ERROR: Docker image ${IMAGE_REF} is a CPU-only build."
+      echo "Use ./docker-build.sh --nvidia to build the NVIDIA image, or run without --nvidia."
+      exit 1
+      ;;
+    "")
+      echo "Warning: Docker image ${IMAGE_REF} does not expose an LLrdc build-variant label."
+      echo "Assuming it is a legacy NVIDIA-capable image."
       ;;
     *)
       echo "Warning: Docker image ${IMAGE_REF} reports unknown build variant '${IMAGE_VARIANT}'."

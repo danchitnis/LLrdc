@@ -261,15 +261,11 @@ We have successfully resolved the hardest hardware and driver constraints inside
 
 Use these commands after changing the native helper, Docker image wiring, or Linux direct-buffer runtime logic.
 
-1. Rebuild the standalone native helper in a disposable Ubuntu container:
+1. Rebuild the full Docker image used by runtime and Playwright validation:
    ```bash
-   bash ./build-native-container.sh
+   ./docker-build.sh --nvidia
    ```
-2. Rebuild the full Docker image used by runtime and Playwright validation:
-   ```bash
-   ./docker-build.sh
-   ```
-3. Optionally verify the Go entrypoints still compile locally:
+2. Optionally verify the Go entrypoints still compile locally:
    ```bash
    go build ./cmd/server ./cmd/nvidia_direct_capture
    ```
