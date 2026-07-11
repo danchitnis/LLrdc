@@ -265,6 +265,7 @@ var (
 	currentAppliedWidth   int
 	currentAppliedHeight  int
 	currentAppliedHDPI    int
+	currentAppliedFPS     int
 )
 
 type displayChangeRequest struct {
@@ -280,6 +281,7 @@ func initializeAppliedDisplayState() {
 	currentAppliedWidth = width
 	currentAppliedHeight = height
 	currentAppliedHDPI = HDPI
+	currentAppliedFPS = FPS
 	displayChangeMu.Unlock()
 }
 
@@ -312,8 +314,8 @@ func queueDisplayChange(previousStreamID uint32, width, height int, reason strin
 func applyDisplayChange(previousStreamID uint32, width, height int, reason string) {
 	displayChangeMu.Lock()
 	defer displayChangeMu.Unlock()
-	if currentAppliedWidth == width && currentAppliedHeight == height && currentAppliedHDPI == HDPI {
-		log.Printf("Display change ignored: size %dx%d and HDPI %d%% are already applied.", width, height, HDPI)
+	if currentAppliedWidth == width && currentAppliedHeight == height && currentAppliedHDPI == HDPI && currentAppliedFPS == FPS {
+		log.Printf("Display change ignored: size %dx%d, HDPI %d%%, and FPS %d are already applied.", width, height, HDPI, FPS)
 		return
 	}
 
@@ -346,6 +348,7 @@ func applyDisplayChange(previousStreamID uint32, width, height int, reason strin
 	currentAppliedWidth = width
 	currentAppliedHeight = height
 	currentAppliedHDPI = HDPI
+	currentAppliedFPS = FPS
 
 	ResumeStreaming()
 
