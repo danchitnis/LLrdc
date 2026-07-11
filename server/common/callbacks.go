@@ -3,6 +3,7 @@ package common
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,6 +13,9 @@ var (
 
 	// OnClientConnected is triggered when a new client is fully connected.
 	OnClientConnected func()
+
+	// OnClientMediaConnected is triggered after the media stream is ready.
+	OnClientMediaConnected func()
 
 	// OnClientDisconnected is triggered when a client disconnects.
 	OnClientDisconnected func()
@@ -48,6 +52,13 @@ func SafeForceKeyframe() {
 func SafeClientConnected() {
 	if OnClientConnected != nil {
 		OnClientConnected()
+	}
+}
+
+// SafeClientMediaConnected runs OnClientMediaConnected safely.
+func SafeClientMediaConnected() {
+	if OnClientMediaConnected != nil {
+		OnClientMediaConnected()
 	}
 }
 
@@ -101,21 +112,28 @@ func SafeFallbackCodec(codec string) {
 }
 
 var (
-	clientTimeoutTimer *time.Timer
-	clientTimeoutMutex sync.Mutex
-	streamingIsPaused  bool
+	clientTimeoutTimer   *time.Timer
+	clientTimeoutMutex   sync.Mutex
+	streamingIsPaused    bool
+	expectingReconnect   bool
+	expectingReconnectMu sync.Mutex
+	ActiveClientCount    int64
 )
 
+func SetExpectingReconnect(value bool) {
+	expectingReconnectMu.Lock()
+	expectingReconnect = value
+	expectingReconnectMu.Unlock()
+}
+
+func isExpectingReconnect() bool {
+	expectingReconnectMu.Lock()
+	defer expectingReconnectMu.Unlock()
+	return expectingReconnect
+}
+
 func GetConnectedClientCount() int {
-	wsSessionsMutex.RLock()
-	wsCount := len(wsSessions)
-	wsSessionsMutex.RUnlock()
-
-	wtSessionsMutex.RLock()
-	wtCount := len(wtSessions)
-	wtSessionsMutex.RUnlock()
-
-	return wsCount + wtCount
+	return int(atomic.LoadInt64(&ActiveClientCount))
 }
 
 func HandleClientConnectionChange() {
@@ -137,18 +155,28 @@ func HandleClientConnectionChange() {
 			log.Println("Client connected. Resuming streaming.")
 			SafeResumeStreaming()
 		}
+		SetExpectingReconnect(false)
 	} else {
+		if isExpectingReconnect() {
+			log.Println("Expecting reconnect due to config/display change; skipping inactivity timer.")
+			if clientTimeoutTimer != nil {
+				clientTimeoutTimer.Stop()
+				clientTimeoutTimer = nil
+			}
+			return
+		}
+
 		if clientTimeoutTimer == nil && !streamingIsPaused {
 			log.Printf("All clients disconnected. Starting inactivity timer: %d seconds", ClientTimeout)
 			clientTimeoutTimer = time.AfterFunc(time.Duration(ClientTimeout)*time.Second, func() {
 				clientTimeoutMutex.Lock()
-				if GetConnectedClientCount() == 0 && !streamingIsPaused {
+				defer clientTimeoutMutex.Unlock()
+				if GetConnectedClientCount() == 0 && !streamingIsPaused && !isExpectingReconnect() {
 					streamingIsPaused = true
 					log.Printf("No clients connected for %d seconds. Pausing streaming to save CPU/GPU resources.", ClientTimeout)
 					SafePauseStreaming()
 				}
 				clientTimeoutTimer = nil
-				clientTimeoutMutex.Unlock()
 			})
 		}
 	}

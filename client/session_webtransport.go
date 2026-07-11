@@ -28,6 +28,17 @@ func (s *Session) connectWebTransport(connectionID uint64, serverURL string, por
 	}
 
 	wtURL := fmt.Sprintf("https://%s:%d/webtransport", u.Hostname(), port)
+	wtParsed, err := url.Parse(wtURL)
+	if err != nil {
+		return err
+	}
+	s.mu.RLock()
+	clientID := s.clientID
+	s.mu.RUnlock()
+	wtQuery := wtParsed.Query()
+	wtQuery.Set("client_id", clientID)
+	wtParsed.RawQuery = wtQuery.Encode()
+	wtURL = wtParsed.String()
 
 	expectedHash, err := base64.StdEncoding.DecodeString(fingerprint)
 	if err != nil {
@@ -56,11 +67,11 @@ func (s *Session) connectWebTransport(connectionID uint64, serverURL string, por
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
-	log.Printf("Connecting to WebTransport at %s...", wtURL)
-	rsp, wtSession, err := dialer.Dial(ctx, wtURL, nil)
+	log.Printf("[Handshake] [%s] Starting WebTransport dial to %s...", time.Now().Format("15:04:05.000"), wtURL)
+	rsp, wtSession, err := dialer.Dial(dialCtx, wtURL, nil)
+	cancel()
 	if err != nil {
 		return fmt.Errorf("webtransport dial failed: %w", err)
 	}
@@ -69,17 +80,41 @@ func (s *Session) connectWebTransport(connectionID uint64, serverURL string, por
 		return fmt.Errorf("webtransport connection rejected with status %d", rsp.StatusCode)
 	}
 
-	log.Println("WebTransport connected successfully. Opening control stream...")
+	log.Printf("[Handshake] [%s] WebTransport connected successfully. Opening control stream...", time.Now().Format("15:04:05.000"))
 
-	controlStream, err := wtSession.OpenStreamSync(context.Background())
+	openCtx, openCancel := context.WithCancel(context.Background())
+	s.mu.Lock()
+	if s.connectionID != connectionID {
+		s.mu.Unlock()
+		openCancel()
+		_ = wtSession.CloseWithError(0, "stale connection")
+		return nil
+	}
+	s.wtSession = wtSession
+	s.wtCancel = openCancel
+	s.mu.Unlock()
+
+	controlCtx, controlCancel := context.WithTimeout(openCtx, 5*time.Second)
+	controlStream, err := wtSession.OpenStreamSync(controlCtx)
+	controlCancel()
 	if err != nil {
+		openCancel()
+		s.mu.Lock()
+		if s.connectionID == connectionID {
+			s.wtSession = nil
+			s.wtCancel = nil
+		}
+		s.mu.Unlock()
 		_ = wtSession.CloseWithError(0, "")
 		return fmt.Errorf("open webtransport control stream: %w", err)
 	}
 
+	log.Printf("[Handshake] [%s] WebTransport control stream opened successfully.", time.Now().Format("15:04:05.000"))
+
 	s.mu.Lock()
 	if s.connectionID != connectionID {
 		s.mu.Unlock()
+		openCancel()
 		_ = controlStream.Close()
 		_ = wtSession.CloseWithError(0, "")
 		return nil
@@ -103,11 +138,23 @@ func (s *Session) readWebTransportControlLoop(connectionID uint64, stream webtra
 	scanner := bufio.NewScanner(stream)
 	// WebTransport uses JSON per line for control
 	for scanner.Scan() {
+		s.mu.RLock()
+		current := s.connectionID == connectionID && s.state.Connected
+		s.mu.RUnlock()
+		if !current {
+			return
+		}
+
 		raw := scanner.Bytes()
 
 		var msg map[string]any
 		if err := json.Unmarshal(raw, &msg); err != nil {
-			s.setError(err)
+			s.mu.RLock()
+			current = s.connectionID == connectionID && s.state.Connected
+			s.mu.RUnlock()
+			if current {
+				s.setError(err)
+			}
 			continue
 		}
 
@@ -156,7 +203,14 @@ func (s *Session) readWebTransportControlLoop(connectionID uint64, stream webtra
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	err := scanner.Err()
+	if err == nil {
+		err = io.EOF
+	}
+	s.mu.RLock()
+	current := s.connectionID == connectionID && s.state.Connected
+	s.mu.RUnlock()
+	if current {
 		s.setError(fmt.Errorf("webtransport control read error: %w", err))
 		go func() {
 			_ = s.disconnectIfCurrent(connectionID)
@@ -165,6 +219,7 @@ func (s *Session) readWebTransportControlLoop(connectionID uint64, stream webtra
 }
 
 func (s *Session) acceptWebTransportStreams(connectionID uint64, wtSession *webtransport.Session) {
+	defer wtSession.CloseWithError(0, "loop exit")
 	for {
 		stream, err := wtSession.AcceptUniStream(context.Background())
 		if err != nil {
@@ -207,13 +262,24 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 
 		streamType := payloadBuf[0]
 		if streamType == 1 { // Video
+			s.mu.RLock()
+			current := s.connectionID == connectionID && s.state.Connected
+			s.mu.RUnlock()
+			if !current {
+				return
+			}
+
 			timestampMs := math.Float64frombits(binary.BigEndian.Uint64(payloadBuf[1:9]))
 			packetTimestamp := int64(timestampMs)
 			chunkData := payloadBuf[9:]
 
 			s.mu.RLock()
 			codec := s.state.VideoCodec
+			current = s.connectionID == connectionID && s.state.Connected
 			s.mu.RUnlock()
+			if !current {
+				return
+			}
 
 			receiveAt := BenchmarkClockNowMs()
 
@@ -244,7 +310,12 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 			}
 
 			if renderErr != nil {
-				s.setError(renderErr)
+				s.mu.RLock()
+				current = s.connectionID == connectionID && s.state.Connected
+				s.mu.RUnlock()
+				if current {
+					s.setError(renderErr)
+				}
 				continue
 			}
 

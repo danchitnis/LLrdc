@@ -67,6 +67,20 @@ func TestControlServerLatencyEndpointWithoutSamples(t *testing.T) {
 	}
 }
 
+func TestRecordPresentedFrameClearsDecoderAwaitingKeyframe(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession(nil)
+	session.mu.Lock()
+	session.state.DecoderAwaitingKeyframe = true
+	session.mu.Unlock()
+
+	session.RecordPresentedFrame(NativeFramePresented{Width: 1280, Height: 720})
+	if session.State().DecoderAwaitingKeyframe {
+		t.Fatal("presented frame should clear decoder keyframe wait state")
+	}
+}
+
 func TestControlServerLatencyEndpointIncludesTimingBreakdown(t *testing.T) {
 	t.Parallel()
 

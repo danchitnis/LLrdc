@@ -51,14 +51,20 @@ func main() {
 	}
 	log.Println("Zero-copy hardware capture pipeline is active.")
 
-	// 6. Monitor Signals for Clean Shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// 6. Monitor Signals for Clean Shutdown and Forwarding
+	sigChan := make(chan os.Signal, 2)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 	go func() {
-		<-sigChan
-		log.Println("Received termination signal, shutting down gracefully...")
-		encoder.Kill()
-		os.Exit(0)
+		for sig := range sigChan {
+			if sig == syscall.SIGUSR1 {
+				log.Println("Received SIGUSR1 in Go parent, forwarding to C++ native encoder child...")
+				_ = encoder.Signal(sig)
+			} else {
+				log.Printf("Received termination signal %v, shutting down gracefully...", sig)
+				encoder.Kill()
+				os.Exit(0)
+			}
+		}
 	}()
 
 	// 7. Stream Bitstream to Standard Output

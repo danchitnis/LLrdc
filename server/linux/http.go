@@ -255,13 +255,75 @@ func broadcastConfig(restarted bool) {
 }
 
 var (
-	displayResizeTimer   *time.Timer
-	displayResizeTimerMu sync.Mutex
+	displayResizeTimer    *time.Timer
+	displayResizeTimerMu  sync.Mutex
+	displayChangeTimer    *time.Timer
+	displayChangeTimerMu  sync.Mutex
+	pendingDisplayChange  *displayChangeRequest
+	lastResizeRequestTime time.Time
+	lastResizeRequestMu   sync.Mutex
+	currentAppliedWidth   int
+	currentAppliedHeight  int
+	currentAppliedHDPI    int
 )
+
+type displayChangeRequest struct {
+	previousStreamID uint32
+	width            int
+	height           int
+	reason           string
+}
+
+func initializeAppliedDisplayState() {
+	width, height := GetScreenSize()
+	displayChangeMu.Lock()
+	currentAppliedWidth = width
+	currentAppliedHeight = height
+	currentAppliedHDPI = HDPI
+	displayChangeMu.Unlock()
+}
+
+func queueDisplayChange(previousStreamID uint32, width, height int, reason string, delay time.Duration) {
+	displayChangeTimerMu.Lock()
+	pendingDisplayChange = &displayChangeRequest{
+		previousStreamID: previousStreamID,
+		width:            width,
+		height:           height,
+		reason:           reason,
+	}
+	if displayChangeTimer != nil {
+		displayChangeTimer.Stop()
+	}
+	displayChangeTimer = time.AfterFunc(delay, func() {
+		displayChangeTimerMu.Lock()
+		request := pendingDisplayChange
+		pendingDisplayChange = nil
+		displayChangeTimer = nil
+		displayChangeTimerMu.Unlock()
+		if request == nil {
+			return
+		}
+		applyDisplayChange(request.previousStreamID, request.width, request.height, request.reason)
+		broadcastConfig(true)
+	})
+	displayChangeTimerMu.Unlock()
+}
 
 func applyDisplayChange(previousStreamID uint32, width, height int, reason string) {
 	displayChangeMu.Lock()
 	defer displayChangeMu.Unlock()
+	if currentAppliedWidth == width && currentAppliedHeight == height && currentAppliedHDPI == HDPI {
+		log.Printf("Display change ignored: size %dx%d and HDPI %d%% are already applied.", width, height, HDPI)
+		return
+	}
+
+	if CaptureMode != CaptureModeDirect {
+		log.Printf("Applying display change for %s: %dx%d. Closing existing sessions...", reason, width, height)
+		common.SetExpectingReconnect(true)
+		CloseAllClients()
+	} else {
+		log.Printf("Applying direct display change for %s: %dx%d without closing client sessions", reason, width, height)
+	}
 
 	if TestPattern {
 		RestartForResize()
@@ -280,6 +342,11 @@ func applyDisplayChange(previousStreamID uint32, width, height int, reason strin
 		log.Printf("Display change did not reach requested state for %s: %v", reason, err)
 	}
 
+	// Update applied state
+	currentAppliedWidth = width
+	currentAppliedHeight = height
+	currentAppliedHDPI = HDPI
+
 	ResumeStreaming()
 
 	PrimeFrameGeneration(0, 5, 100*time.Millisecond)
@@ -287,13 +354,9 @@ func applyDisplayChange(previousStreamID uint32, width, height int, reason strin
 		log.Printf("Display-changed stream did not become ready in time for %s: %v", reason, err)
 		PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 	}
-
-	// Signal client that it must reconnect to see the new stream resolution
-	go func() {
-		time.Sleep(250 * time.Millisecond)
-		log.Printf("Sending reconnect hint to clients after resize and codec restart...")
-		CloseAllClients()
-	}()
+	if CaptureMode == CaptureModeDirect {
+		ForceDirectCaptureKeyframe()
+	}
 }
 
 func HandleInputMessage(msg map[string]interface{}) {
@@ -544,32 +607,28 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 		go func(restartRequested, displayResizeRequested bool, previousStreamID uint32, displayChangeReason string) {
 			if displayResizeRequested {
 				w, h := GetScreenSize()
-				applyDisplayChange(previousStreamID, w, h, displayChangeReason)
-				if restartRequested {
-					// Signal client that it must reconnect to see the new stream/codec
-					go func() {
-						time.Sleep(250 * time.Millisecond)
-						log.Printf("Sending reconnect hint to clients after resize and codec restart...")
-						CloseAllClients()
-					}()
-				}
-				broadcastConfig(true)
+				queueDisplayChange(previousStreamID, w, h, displayChangeReason, 100*time.Millisecond)
 				return
 			}
 
 			if restartRequested {
+				log.Println("Config updated, closing clients for codec restart...")
+				if CaptureMode != CaptureModeDirect {
+					common.SetExpectingReconnect(true)
+					CloseAllClients()
+				} else {
+					log.Println("Direct capture codec restart will preserve client sessions.")
+				}
+
 				log.Println("Config updated, waiting for restarted stream to become ready...")
 				PrimeFrameGeneration(0, 5, 100*time.Millisecond)
 				if err := waitForStreamReadyAfter(previousStreamID, 8*time.Second); err != nil {
 					log.Printf("Restarted stream did not become ready in time: %v", err)
 					PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 				}
-				// Signal client that it must reconnect to see the new stream/codec
-				go func() {
-					time.Sleep(250 * time.Millisecond)
-					log.Printf("Sending reconnect hint to clients...")
-					CloseAllClients()
-				}()
+				if CaptureMode == CaptureModeDirect {
+					ForceDirectCaptureKeyframe()
+				}
 			}
 
 			broadcastConfig(true)
@@ -582,26 +641,49 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 			width := int(widthFloat)
 			height := int(heightFloat)
 			log.Printf("Received resize request: %dx%d (DPR: %.2f, Current InitialRes: %d)", width, height, dpr, InitialRes)
-			
-			displayResizeTimerMu.Lock()
-			if displayResizeTimer != nil {
-				displayResizeTimer.Stop()
-			}
-			displayResizeTimer = time.AfterFunc(200*time.Millisecond, func() {
-				if SetScreenSize(width, height) {
-					// Get the actual clamped size
-					clampedW, clampedH := GetScreenSize()
-					log.Printf("Accepted debounced resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
-					previousStreamID := getCurrentFFmpegStreamID()
-					go func() {
-						applyDisplayChange(previousStreamID, clampedW, clampedH, "client resize")
-						broadcastConfig(true)
-					}()
-				} else {
-					log.Printf("Ignored debounced resize request: %dx%d (InitialRes active or size unchanged)", width, height)
+
+			now := time.Now()
+			lastResizeRequestMu.Lock()
+			timeSinceLast := now.Sub(lastResizeRequestTime)
+			lastResizeRequestTime = now
+			lastResizeRequestMu.Unlock()
+
+			// If it's a discrete resize (more than 500ms since the last resize request),
+			// apply it immediately without debouncing. Otherwise, debounce to handle drag resizes.
+			if timeSinceLast > 500*time.Millisecond {
+				displayResizeTimerMu.Lock()
+				if displayResizeTimer != nil {
+					displayResizeTimer.Stop()
+					displayResizeTimer = nil
 				}
-			})
-			displayResizeTimerMu.Unlock()
+				displayResizeTimerMu.Unlock()
+
+				if SetScreenSize(width, height) {
+					clampedW, clampedH := GetScreenSize()
+					log.Printf("Accepted instant discrete resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
+					previousStreamID := getCurrentFFmpegStreamID()
+					queueDisplayChange(previousStreamID, clampedW, clampedH, "client resize", 100*time.Millisecond)
+				} else {
+					log.Printf("Ignored instant discrete resize request: %dx%d (InitialRes active or size unchanged)", width, height)
+				}
+			} else {
+				displayResizeTimerMu.Lock()
+				if displayResizeTimer != nil {
+					displayResizeTimer.Stop()
+				}
+				displayResizeTimer = time.AfterFunc(200*time.Millisecond, func() {
+					if SetScreenSize(width, height) {
+						// Get the actual clamped size
+						clampedW, clampedH := GetScreenSize()
+						log.Printf("Accepted debounced resize: %dx%d (clamped to %dx%d)", width, height, clampedW, clampedH)
+						previousStreamID := getCurrentFFmpegStreamID()
+						queueDisplayChange(previousStreamID, clampedW, clampedH, "client resize", 100*time.Millisecond)
+					} else {
+						log.Printf("Ignored debounced resize request: %dx%d (InitialRes active or size unchanged)", width, height)
+					}
+				})
+				displayResizeTimerMu.Unlock()
+			}
 		}
 	case "force_keyframe":
 		log.Printf("Received force_keyframe request from client")

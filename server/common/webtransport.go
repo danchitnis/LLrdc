@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -21,6 +23,7 @@ type WebTransportSession struct {
 	videoStream   webtransport.SendStream
 	controlStream webtransport.Stream
 	mu            sync.Mutex
+	ClientID      string
 }
 
 var (
@@ -72,7 +75,7 @@ func InitWebTransport(addr string) {
 				log.Printf("H3: WebTransport upgrade failed: %v", err)
 				return
 			}
-			go handleWebTransportSession(session)
+			go handleWebTransportSession(session, r.URL.Query().Get("client_id"))
 			return
 		}
 
@@ -135,33 +138,33 @@ func InitWebTransport(addr string) {
 	}()
 }
 
-func handleWebTransportSession(session *webtransport.Session) {
+func handleWebTransportSession(session *webtransport.Session, clientID string) {
 	log.Printf("WebTransport session established: %v", session.RemoteAddr())
 
 	wtSession := &WebTransportSession{
-		session: session,
+		session:  session,
+		ClientID: clientID,
 	}
 
 	wtSessionsMutex.Lock()
 	wtSessions[session] = wtSession
 	wtSessionsMutex.Unlock()
+	atomic.AddInt64(&ActiveClientCount, 1)
 
 	defer func() {
 		wtSessionsMutex.Lock()
 		delete(wtSessions, session)
 		wtSessionsMutex.Unlock()
+		atomic.AddInt64(&ActiveClientCount, -1)
 		log.Printf("WebTransport session closed: %v", session.RemoteAddr())
 		SafeClientDisconnected()
 		HandleClientConnectionChange()
 	}()
 
-	if OnClientConnected != nil {
-		OnClientConnected()
-	}
-	HandleClientConnectionChange()
-
 	// Create a unidirectional stream for video
-	videoStream, err := session.OpenUniStream()
+	ctx, cancel := context.WithTimeout(session.Context(), 1*time.Second)
+	videoStream, err := session.OpenUniStreamSync(ctx)
+	cancel()
 	if err != nil {
 		log.Printf("Failed to open WebTransport video stream: %v", err)
 		session.CloseWithError(0, "failed to open video stream")
@@ -171,6 +174,12 @@ func handleWebTransportSession(session *webtransport.Session) {
 	wtSession.mu.Lock()
 	wtSession.videoStream = videoStream
 	wtSession.mu.Unlock()
+
+	if OnClientConnected != nil {
+		OnClientConnected()
+	}
+	SafeClientMediaConnected()
+	HandleClientConnectionChange()
 
 	// Accept bidirectional streams for control
 	for {
@@ -221,7 +230,9 @@ func BroadcastWebTransportJSON(v interface{}) {
 	for _, s := range wtSessions {
 		s.mu.Lock()
 		if s.controlStream != nil {
+			_ = s.controlStream.SetWriteDeadline(time.Now().Add(1 * time.Second))
 			_ = json.NewEncoder(s.controlStream).Encode(v)
+			_ = s.controlStream.SetWriteDeadline(time.Time{})
 		}
 		s.mu.Unlock()
 	}
@@ -232,14 +243,47 @@ func CloseAllSessions() {
 	CloseAllWebSocketSessions()
 }
 
+func CloseClientSessions(clientID string) {
+	if clientID == "" {
+		CloseAllSessions()
+		return
+	}
+	CloseWebTransportSessionsByClientID(clientID)
+	CloseWebSocketSessionsByClientID(clientID)
+}
+
 func CloseAllWebTransportSessions() {
 	wtSessionsMutex.Lock()
-	defer wtSessionsMutex.Unlock()
-
+	sessions := make([]*webtransport.Session, 0, len(wtSessions))
 	for session := range wtSessions {
+		sessions = append(sessions, session)
+		delete(wtSessions, session)
+	}
+	wtSessionsMutex.Unlock()
+
+	for _, session := range sessions {
 		_ = session.CloseWithError(0, "server shutdown/restart")
 	}
-	wtSessions = make(map[*webtransport.Session]*WebTransportSession)
+}
+
+func CloseWebTransportSessionsByClientID(clientID string) {
+	if clientID == "" {
+		return
+	}
+
+	wtSessionsMutex.Lock()
+	sessions := make([]*webtransport.Session, 0)
+	for session, s := range wtSessions {
+		if s.ClientID == clientID {
+			sessions = append(sessions, session)
+			delete(wtSessions, session)
+		}
+	}
+	wtSessionsMutex.Unlock()
+
+	for _, session := range sessions {
+		_ = session.CloseWithError(0, "client reconnect")
+	}
 }
 
 func WriteFrame(frame []byte, streamID uint32, timestampMs int64) {
@@ -266,7 +310,11 @@ func WriteWebTransportFrame(frame []byte, streamID uint32, timestampMs int64) {
 
 	for _, s := range wtSessions {
 		s.mu.Lock()
-		_, _ = s.videoStream.Write(packet)
+		if s.videoStream != nil {
+			_ = s.videoStream.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
+			_, _ = s.videoStream.Write(packet)
+			_ = s.videoStream.SetWriteDeadline(time.Time{})
+		}
 		s.mu.Unlock()
 	}
 }

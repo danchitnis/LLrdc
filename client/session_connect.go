@@ -38,6 +38,17 @@ func (s *Session) Connect(serverURL string) error {
 	if err != nil {
 		return err
 	}
+	u, err := url.Parse(wsURL)
+	if err == nil {
+		q := u.Query()
+		q.Set("client", "native")
+		s.mu.RLock()
+		clientID := s.clientID
+		s.mu.RUnlock()
+		q.Set("client_id", clientID)
+		u.RawQuery = q.Encode()
+		wsURL = u.String()
+	}
 
 	// Initial time synchronization
 	go func() {
@@ -67,6 +78,7 @@ func (s *Session) Connect(serverURL string) error {
 		}
 	}()
 
+	log.Printf("[Handshake] [%s] Starting WebSocket dial to %s", time.Now().Format("15:04:05.000"), wsURL)
 	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{})
 	if err != nil {
 		if resp != nil {
@@ -74,6 +86,7 @@ func (s *Session) Connect(serverURL string) error {
 		}
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
+	log.Printf("[Handshake] [%s] WebSocket dialed successfully. Waiting for initial config...", time.Now().Format("15:04:05.000"))
 	// Read messages until we get the initial config
 	var initMsg map[string]any
 	for {
@@ -94,6 +107,7 @@ func (s *Session) Connect(serverURL string) error {
 		}
 		// Ignore binary or non-config messages during handshake
 	}
+	log.Printf("[Handshake] [%s] WebSocket handshaked. Initial config received.", time.Now().Format("15:04:05.000"))
 
 	lowLatency, _ := initMsg["low_latency"].(bool)
 	if toggler, ok := s.renderer.(LowLatencyRenderer); ok {
@@ -149,12 +163,13 @@ func (s *Session) Connect(serverURL string) error {
 	wtFingerprint, ok1 := initMsg["webtransportFingerprint"].(string)
 	wtPort, ok2 := numberToInt(initMsg["webtransportPort"])
 
-	if ok1 && ok2 && wtFingerprint != "" && wtPort > 0 {
-		go func(cid uint64) {
-			if err := s.connectWebTransport(cid, serverURL, wtPort, wtFingerprint); err != nil {
-				log.Printf("WebTransport connection failed: %v", err)
-			}
-		}(connectionID)
+	if !ok1 || !ok2 || wtFingerprint == "" || wtPort <= 0 {
+		_ = s.disconnectIfCurrentLocked(connectionID)
+		return errors.New("server did not advertise WebTransport")
+	}
+	if err := s.connectWebTransport(connectionID, serverURL, wtPort, wtFingerprint); err != nil {
+		_ = s.disconnectIfCurrentLocked(connectionID)
+		return fmt.Errorf("webtransport connection failed: %w", err)
 	}
 
 	s.emit(EventStateChanged, map[string]any{
@@ -261,11 +276,14 @@ func (s *Session) disconnectIfCurrentLocked(connectionID uint64) error {
 	conn := s.conn
 	wtSession := s.wtSession
 	wtControl := s.wtControl
+	wtCancel := s.wtCancel
 	udpConn := s.udpConn
+	videoCodec := s.state.VideoCodec
 	s.connectionID++
 	s.conn = nil
 	s.wtSession = nil
 	s.wtControl = nil
+	s.wtCancel = nil
 	s.udpConn = nil
 	s.state.Connected = false
 	s.state.WebTransportConnected = false
@@ -278,11 +296,20 @@ func (s *Session) disconnectIfCurrentLocked(connectionID uint64) error {
 	if wtControl != nil {
 		_ = wtControl.Close()
 	}
+	if wtCancel != nil {
+		wtCancel()
+	}
 	if wtSession != nil {
 		_ = wtSession.CloseWithError(0, "disconnect")
 	}
 	if udpConn != nil {
 		_ = udpConn.Close()
+	}
+
+	if s.renderer != nil {
+		if resetter, ok := s.renderer.(VideoStreamResetter); ok {
+			resetter.ResetVideoStream(videoCodec)
+		}
 	}
 
 	s.emit(EventStateChanged, map[string]any{

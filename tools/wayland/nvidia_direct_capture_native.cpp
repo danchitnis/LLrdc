@@ -459,6 +459,19 @@ public:
     }
 };
 
+#include <signal.h>
+
+volatile sig_atomic_t g_force_keyframe = 0;
+volatile sig_atomic_t g_exit_requested = 0;
+
+void sigusr1_handler(int sig) {
+    g_force_keyframe = 1;
+}
+
+void sigterm_handler(int sig) {
+    g_exit_requested = 1;
+}
+
 struct NativeCaptureState {
     struct wl_display *display;
     struct wl_registry *registry;
@@ -999,6 +1012,11 @@ void process_frame_zero_copy(NativeCaptureState *state) {
     picParams.inputHeight = state->height;
     picParams.outputBitstream = state->bitstream_output;
     picParams.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
+    if (g_force_keyframe) {
+        picParams.encodePicFlags = NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;
+        g_force_keyframe = 0;
+        std::cerr << "[NativeCapture] Forcing keyframe (IDR + SPS/PPS) due to SIGUSR1." << std::endl;
+    }
     
     NVENCSTATUS enc_status = state->nvenc_api.nvEncEncodePicture(state->nvenc_encoder, &picParams);
     if (enc_status != NV_ENC_SUCCESS) {
@@ -1055,6 +1073,9 @@ bool probe_hardware_import(NativeCaptureState *state) {
 }
 
 int main(int argc, char **argv) {
+    signal(SIGUSR1, sigusr1_handler);
+    signal(SIGINT, sigterm_handler);
+    signal(SIGTERM, sigterm_handler);
     NativeCaptureState state = {0};
     for (int i = 0; i < 4; i++) state.planes[i].fd = -1;
     state.target_fps = 30;
@@ -1142,7 +1163,7 @@ int main(int argc, char **argv) {
     
     std::cerr << "[NativeCapture] Capture pipeline established successfully." << std::endl;
     
-    while (!state.exit_requested) {
+    while (!state.exit_requested && !g_exit_requested) {
         state.frame = zwlr_export_dmabuf_manager_v1_capture_output(state.dmabuf_manager, 1, state.output);
         zwlr_export_dmabuf_frame_v1_add_listener(state.frame, &frame_listener, &state);
         

@@ -8,6 +8,7 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 	now := time.Now()
 	s.state.LastPresentAt = now
 	s.state.Presenting = true
+	s.state.DecoderAwaitingKeyframe = false
 	s.state.LastPresentedWidth = event.Width
 	s.state.LastPresentedHeight = event.Height
 	if s.state.FirstFramePresentedAt.IsZero() {

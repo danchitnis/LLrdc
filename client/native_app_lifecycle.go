@@ -173,7 +173,10 @@ func (a *NativeApp) attachRendererHooks() {
 	a.renderer.SetLifecycleSink(func(event NativeWindowLifecycle) {
 		a.session.UpdateWindowState(event)
 		if event.Event == "started" {
-			a.scheduleReconnect()
+			state := a.session.State()
+			if !state.Connected && !a.reconnecting.Load() {
+				a.scheduleReconnect()
+			}
 		}
 		if event.Event == "close" {
 			a.requestShutdown("window_close")
@@ -222,6 +225,9 @@ func (a *NativeApp) startAuxiliaryTasks() {
 		case <-sigs:
 			a.requestShutdown("signal")
 		case <-a.shutdownCh:
+		}
+		if a.renderer != nil {
+			a.renderer.Stop()
 		}
 	}()
 

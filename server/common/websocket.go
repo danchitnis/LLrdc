@@ -7,13 +7,17 @@ import (
 	"math"
 	"net/http"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 type WebSocketSession struct {
-	conn *websocket.Conn
-	mu   sync.Mutex
+	conn     *websocket.Conn
+	mu       sync.Mutex
+	IsNative bool
+	ClientID string
 }
 
 var (
@@ -32,13 +36,21 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isNative := r.URL.Query().Get("client") == "native"
+	clientID := r.URL.Query().Get("client_id")
 	wsSession := &WebSocketSession{
-		conn: conn,
+		conn:     conn,
+		IsNative: isNative,
+		ClientID: clientID,
 	}
+
+	// Close only this client's stale transports before registering the new one.
+	CloseClientSessions(clientID)
 
 	wsSessionsMutex.Lock()
 	wsSessions[conn] = wsSession
 	wsSessionsMutex.Unlock()
+	atomic.AddInt64(&ActiveClientCount, 1)
 
 	log.Printf("WebSocket session established: %v", conn.RemoteAddr())
 	if OnClientConnected != nil {
@@ -50,16 +62,23 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		wsSessionsMutex.Lock()
 		delete(wsSessions, conn)
 		wsSessionsMutex.Unlock()
+		atomic.AddInt64(&ActiveClientCount, -1)
 		conn.Close()
 		log.Printf("WebSocket session closed: %v", conn.RemoteAddr())
 		SafeClientDisconnected()
+		if wsSession.ClientID != "" {
+			CloseWebTransportSessionsByClientID(wsSession.ClientID)
+		}
 		HandleClientConnectionChange()
 	}()
 
 	writeJSON := func(v interface{}) error {
 		wsSession.mu.Lock()
 		defer wsSession.mu.Unlock()
-		return conn.WriteJSON(v)
+		_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		err := conn.WriteJSON(v)
+		_ = conn.SetWriteDeadline(time.Time{})
+		return err
 	}
 
 	for {
@@ -85,22 +104,58 @@ func BroadcastWebSocketJSON(v interface{}) {
 	wsSessionsMutex.RLock()
 	defer wsSessionsMutex.RUnlock()
 
-	for _, s := range wsSessions {
+	log.Printf("[Server-Handshake] [%s] BroadcastWebSocketJSON: starting config broadcast to %d sessions", time.Now().Format("15:04:05.000"), len(wsSessions))
+	for conn, s := range wsSessions {
 		s.mu.Lock()
-		_ = s.conn.WriteJSON(v)
+		_ = s.conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		err := s.conn.WriteJSON(v)
+		_ = s.conn.SetWriteDeadline(time.Time{})
 		s.mu.Unlock()
+		log.Printf("[Server-Handshake] [%s] BroadcastWebSocketJSON: wrote config to session %v (err: %v)", time.Now().Format("15:04:05.000"), conn.RemoteAddr(), err)
 	}
 }
 
 func CloseAllWebSocketSessions() {
 	wsSessionsMutex.Lock()
-	defer wsSessionsMutex.Unlock()
+	sessions := make([]*WebSocketSession, 0, len(wsSessions))
+	for conn, s := range wsSessions {
+		sessions = append(sessions, s)
+		delete(wsSessions, conn)
+	}
+	wsSessionsMutex.Unlock()
 
-	for conn := range wsSessions {
+	for _, s := range sessions {
+		conn := s.conn
+		s.mu.Lock()
+		_ = conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
 		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "server restart"))
 		conn.Close()
+		s.mu.Unlock()
 	}
-	wsSessions = make(map[*websocket.Conn]*WebSocketSession)
+}
+
+func CloseWebSocketSessionsByClientID(clientID string) {
+	if clientID == "" {
+		return
+	}
+
+	wsSessionsMutex.Lock()
+	sessions := make([]*WebSocketSession, 0)
+	for conn, s := range wsSessions {
+		if s.ClientID == clientID {
+			sessions = append(sessions, s)
+			delete(wsSessions, conn)
+		}
+	}
+	wsSessionsMutex.Unlock()
+
+	for _, s := range sessions {
+		s.mu.Lock()
+		_ = s.conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
+		_ = s.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "client reconnect"))
+		_ = s.conn.Close()
+		s.mu.Unlock()
+	}
 }
 
 func WriteWebSocketFrame(frame []byte, streamID uint32, timestampMs int64) {
@@ -121,8 +176,13 @@ func WriteWebSocketFrame(frame []byte, streamID uint32, timestampMs int64) {
 	packet := append(header, frame...)
 
 	for _, s := range wsSessions {
+		if s.IsNative {
+			continue // Skip sending binary video frames to native signaling-only sessions!
+		}
 		s.mu.Lock()
+		_ = s.conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
 		_ = s.conn.WriteMessage(websocket.BinaryMessage, packet)
+		_ = s.conn.SetWriteDeadline(time.Time{})
 		s.mu.Unlock()
 	}
 }

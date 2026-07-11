@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"net"
 	"strings"
 	"sync"
@@ -167,7 +168,9 @@ type Session struct {
 	conn         *websocket.Conn
 	wtSession    *webtransport.Session
 	wtControl    webtransport.Stream
+	wtCancel     context.CancelFunc
 	udpConn      *net.UDPConn
+	clientID     string
 	state        SessionState
 	stats        SessionStats
 	closed       chan struct{}
@@ -186,6 +189,7 @@ func NewSession(renderer Renderer) *Session {
 			WindowDesktop:      -1,
 			CurrentTrackCodecs: make(map[string]string),
 		},
+		clientID:         newClientID(),
 		closed:           make(chan struct{}),
 		keyframeRequests: make(chan struct{}, 1),
 	}

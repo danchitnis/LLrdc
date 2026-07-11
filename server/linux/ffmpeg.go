@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -44,10 +45,26 @@ func KillFFmpegWithTimestamp() {
 	now := time.Now()
 	lastFFmpegRestartTime.Store(&now)
 	if ffmpegCmd != nil && ffmpegCmd.Process != nil {
-		log.Printf("Killing wf-recorder (PID %d)...", ffmpegCmd.Process.Pid)
-		_ = ffmpegCmd.Process.Kill()
+		log.Printf("Sending SIGTERM to stream process (PID %d)...", ffmpegCmd.Process.Pid)
+		if err := ffmpegCmd.Process.Signal(syscall.SIGTERM); err != nil {
+			log.Printf("SIGTERM failed, falling back to Kill: %v", err)
+			_ = ffmpegCmd.Process.Kill()
+		}
 	} else {
 		log.Println("KillFFmpegWithTimestamp called but no active process found.")
+	}
+}
+
+func ForceDirectCaptureKeyframe() {
+	ffmpegMutex.Lock()
+	cmd := ffmpegCmd
+	ffmpegMutex.Unlock()
+
+	if cmd != nil && cmd.Process != nil {
+		log.Printf("Sending SIGUSR1 to direct capture helper (PID %d) to force an instant keyframe...", cmd.Process.Pid)
+		_ = cmd.Process.Signal(syscall.SIGUSR1)
+	} else {
+		log.Println("ForceDirectCaptureKeyframe called but no active direct capture process found.")
 	}
 }
 
@@ -740,6 +757,30 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 			// Prime the compositor so damage tracking sessions emit an initial frame without waiting for user input.
 			PrimeFrameGeneration(0, 10, 100*time.Millisecond)
 
+			if CaptureMode == CaptureModeDirect {
+				go func(sid uint32) {
+					// Periodically prime the compositor until the stream produces its first frame
+					for {
+						ffmpegMutex.Lock()
+						activeID := ffmpegStreamID
+						ffmpegMutex.Unlock()
+						if activeID != sid {
+							break
+						}
+
+						streamReadiness.mu.RLock()
+						ready := streamReadiness.readyByStream[sid]
+						streamReadiness.mu.RUnlock()
+						if ready {
+							break
+						}
+
+						PrimeFrameGeneration(0, 2, 50*time.Millisecond)
+						time.Sleep(300 * time.Millisecond)
+					}
+				}(currentStreamID)
+			}
+
 			if CaptureMode == CaptureModeAgent {
 				startTime := time.Now()
 				// We just wait for it to exit.
@@ -830,7 +871,11 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				consecutiveDirectNoFrameExits = 0
 			}
 			if !streamProducedFrame {
-				time.Sleep(500 * time.Millisecond)
+				if time.Since(getLastFFmpegRestartTime()) < 2 * time.Second {
+					time.Sleep(10 * time.Millisecond)
+				} else {
+					time.Sleep(500 * time.Millisecond)
+				}
 			}
 		}
 	}()

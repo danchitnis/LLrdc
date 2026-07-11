@@ -9,9 +9,16 @@ import (
 )
 
 func (s *Session) readLoop(connectionID uint64, conn *websocket.Conn) {
+	defer conn.Close()
 	for {
 		messageType, raw, err := conn.ReadMessage()
 		if err != nil {
+			s.mu.RLock()
+			current := s.connectionID == connectionID && s.state.Connected
+			s.mu.RUnlock()
+			if !current {
+				return
+			}
 			s.setError(err)
 			go func() {
 				_ = s.disconnectIfCurrent(connectionID)

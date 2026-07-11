@@ -15,12 +15,12 @@ var cleanupTasks []func()
 
 func HandleClientConnected() {
 	if CaptureMode == CaptureModeDirect {
-		log.Println("New client connected; keeping direct-buffer capture warm instead of forcing a restart")
+		log.Printf("[Server-Handshake] [%s] HandleClientConnected: keeping direct-buffer capture warm", time.Now().Format("15:04:05.000"))
 		broadcastConfig(false)
 		return
 	}
 
-	log.Println("New client connected, triggering low-latency stream restart concurrently")
+	log.Printf("[Server-Handshake] [%s] HandleClientConnected: low-latency stream restart requested", time.Now().Format("15:04:05.000"))
 	broadcastConfig(false)
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -42,8 +42,18 @@ func Run() error {
 	}
 
 	// Register connection callbacks to common package
-	common.OnForceKeyframe = KillFFmpegWithTimestamp
+	if CaptureMode == CaptureModeDirect {
+		common.OnForceKeyframe = ForceDirectCaptureKeyframe
+	} else {
+		common.OnForceKeyframe = KillFFmpegWithTimestamp
+	}
 	common.OnClientConnected = HandleClientConnected
+	common.OnClientMediaConnected = func() {
+		if CaptureMode == CaptureModeDirect {
+			log.Printf("[Server-Handshake] [%s] Media stream ready; forcing direct-capture keyframe", time.Now().Format("15:04:05.000"))
+			ForceDirectCaptureKeyframe()
+		}
+	}
 	common.OnPauseStreaming = PauseStreamingTimeout
 	common.OnResumeStreaming = ResumeStreamingTimeout
 	common.OnTriggerPing = func() {
@@ -68,9 +78,11 @@ func Run() error {
 		if err := startWayland(); err != nil {
 			return fmt.Errorf("failed to initialize Wayland: %w", err)
 		}
+		initializeAppliedDisplayState()
 		StartClipboardPoller()
 	} else {
 		log.Println("TEST_PATTERN mode: skipping display server setup.")
+		initializeAppliedDisplayState()
 	}
 
 	wtAddr := ":" + fmt.Sprintf("%d", Port+10)

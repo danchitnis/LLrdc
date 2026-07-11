@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strconv"
+	"syscall"
 )
 
 type NVENCEncoder struct {
@@ -66,6 +68,9 @@ func (e *NVENCEncoder) BuildCommand() ([]string, error) {
 
 func (e *NVENCEncoder) Start(args []string) (chan []byte, error) {
 	cmd := exec.Command(args[0], args[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Pdeathsig: syscall.SIGKILL,
+	}
 
 	// Set environmental variables ensuring Wayland is routed correctly
 	runDir := os.Getenv("XDG_RUNTIME_DIR")
@@ -127,6 +132,17 @@ func (e *NVENCEncoder) Start(args []string) (chan []byte, error) {
 
 func (e *NVENCEncoder) Kill() {
 	if e.Cmd != nil && e.Cmd.Process != nil {
-		_ = e.Cmd.Process.Kill()
+		log.Println("Sending SIGTERM to C++ native encoder child for graceful cleanup...")
+		if err := e.Cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			log.Printf("SIGTERM to C++ child failed: %v, falling back to Kill", err)
+			_ = e.Cmd.Process.Kill()
+		}
 	}
+}
+
+func (e *NVENCEncoder) Signal(sig os.Signal) error {
+	if e.Cmd != nil && e.Cmd.Process != nil {
+		return e.Cmd.Process.Signal(sig)
+	}
+	return nil
 }

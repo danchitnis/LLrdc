@@ -1,17 +1,27 @@
 package client
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+func newClientID() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err == nil {
+		return fmt.Sprintf("native-%x", buf)
+	}
+	return "native-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+}
 
 func (s *Session) emit(event Event, data map[string]any) {
 	s.hooks.Emit(event, EventPayload{
