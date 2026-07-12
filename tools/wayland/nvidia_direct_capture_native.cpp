@@ -369,9 +369,14 @@ public:
         importFdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
         importFdInfo.fd = dup(dmaFd);
 
+        VkMemoryDedicatedAllocateInfo dedicatedAlloc = {};
+        dedicatedAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+        dedicatedAlloc.image = dmaImage;
+        dedicatedAlloc.pNext = &importFdInfo;
+
         VkMemoryAllocateInfo memAllocInfo = {};
         memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memAllocInfo.pNext = &importFdInfo;
+        memAllocInfo.pNext = &dedicatedAlloc;
         memAllocInfo.allocationSize = memReqs.size;
 
         VkPhysicalDeviceMemoryProperties memProperties;
@@ -679,7 +684,7 @@ static bool build_nvenc_init_params(NativeCaptureState *state, NV_ENC_INITIALIZE
     uint32_t fps = state->target_fps ? state->target_fps : 30;
     encodeConfig->gopLength = fps * 2; // Periodic keyframe every 2 seconds
     encodeConfig->frameIntervalP = 1;
-    encodeConfig->rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR_LOWDELAY_HQ;
+    encodeConfig->rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
     uint32_t targetBitrate = (state->target_bitrate_mbps ? state->target_bitrate_mbps : 5) * 1000 * 1000;
     encodeConfig->rcParams.averageBitRate = targetBitrate;
     encodeConfig->rcParams.maxBitRate = targetBitrate;
