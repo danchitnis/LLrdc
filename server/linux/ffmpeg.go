@@ -704,8 +704,11 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 						}
 					}
 
+					if codec == "libvpx" || codec == "libaom-av1" {
+						args = append(args, "-p", "cpu-used=8")
+					}
+
 					args = append(args,
-						"-p", "cpu-used=8",
 						"-p", fmt.Sprintf("threads=%d", targetCpuThreads),
 						"-p", fmt.Sprintf("maxrate=%dM", TargetBandwidthMbps),
 						"-p", fmt.Sprintf("bufsize=%dM", TargetBandwidthMbps*2),

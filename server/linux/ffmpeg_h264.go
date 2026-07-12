@@ -144,7 +144,13 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 		isVCL := nalType == 1 || nalType == 5
 
 		if isVCL {
-			if currentHasVCL {
+			payloadIdx := start + prefixLen + 1
+			isFirstSlice := true
+			if payloadIdx < len(nalCopy) {
+				isFirstSlice = (nalCopy[payloadIdx] & 0x80) != 0
+			}
+
+			if isFirstSlice && currentHasVCL {
 				emitCurrent()
 			}
 			currentAU = append(currentAU, nalCopy)
