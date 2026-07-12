@@ -1,0 +1,11 @@
+node_modules
+public
+dist
+.git
+.temp
+bin
+playwright-report
+test-results
+llrdc
+macos-server
+test-logs
