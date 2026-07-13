@@ -459,7 +459,9 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 					"--bitrate", fmt.Sprintf("%d", TargetBandwidthMbps),
 					"--chroma", Chroma,
 					"--render-node", renderNode,
-					"--damage-tracking", fmt.Sprintf("%v", targetDamageTracking),
+					fmt.Sprintf("--damage-tracking=%v", targetDamageTracking),
+					fmt.Sprintf("--vbr=%v", targetVBR),
+					fmt.Sprintf("--vbr-threshold=%d", targetVBRThreshold),
 				}
 				log.Printf("Starting NVIDIA native direct capture: %v", args)
 				cmd = exec.Command(args[0], args[1:]...)

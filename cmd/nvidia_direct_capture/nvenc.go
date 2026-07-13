@@ -51,7 +51,7 @@ func probeNativeCapture() bool {
 func (e *NVENCEncoder) BuildCommand() ([]string, error) {
 	// If the native C++ capture and encode utility is present and initializes successfully, run it directly.
 	if probeNativeCapture() {
-		return []string{
+		args := []string{
 			"/usr/local/bin/nvidia_direct_capture_native",
 			"--fps", strconv.Itoa(e.Config.FPS),
 			"--bitrate", strconv.Itoa(e.Config.Bitrate),
@@ -59,7 +59,15 @@ func (e *NVENCEncoder) BuildCommand() ([]string, error) {
 			"--chroma", e.Config.Chroma,
 			"--width", strconv.Itoa(e.Config.Width),
 			"--height", strconv.Itoa(e.Config.Height),
-		}, nil
+		}
+		if e.Config.VBR {
+			args = append(args, "--vbr")
+			args = append(args, "--vbr-threshold", strconv.Itoa(e.Config.VBRThreshold))
+		}
+		if e.Config.DamageTracking {
+			args = append(args, "--damage-tracking")
+		}
+		return args, nil
 	}
 
 	// Fail closed with a clear, descriptive error as requested when the hardware probe fails.

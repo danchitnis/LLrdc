@@ -14,6 +14,8 @@ type CaptureConfig struct {
 	Chroma         string
 	RenderNode     string
 	DamageTracking bool
+	VBR            bool
+	VBRThreshold   int
 }
 
 func parseConfig() (*CaptureConfig, error) {
@@ -27,6 +29,8 @@ func parseConfig() (*CaptureConfig, error) {
 	flag.StringVar(&config.Chroma, "chroma", "420", "Chroma format (420, 444)")
 	flag.StringVar(&config.RenderNode, "render-node", "/dev/dri/renderD129", "DRM/NVIDIA render node path")
 	flag.BoolVar(&config.DamageTracking, "damage-tracking", false, "Enable compositor damage tracking")
+	flag.BoolVar(&config.VBR, "vbr", false, "Enable Variable Bitrate (VBR)")
+	flag.IntVar(&config.VBRThreshold, "vbr-threshold", 0, "VBR threshold value")
 
 	flag.Parse()
 

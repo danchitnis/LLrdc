@@ -11,6 +11,8 @@
 #include <vector>
 #include <dlfcn.h>
 #include <vulkan/vulkan.h>
+#include <chrono>
+#include <thread>
 
 // Wayland unstable export-dmabuf protocol header
 extern "C" {
@@ -71,6 +73,9 @@ typedef CUresult (*t_cuExternalMemoryGetMappedBuffer)(CUdeviceptr *devPtr_out, C
 typedef CUresult (*t_cuDestroyExternalMemory)(CUexternalMemory extMem);
 typedef CUresult (*t_cuDeviceGetByPCIBusId)(CUdevice *device, const char *pciBusId);
 typedef CUresult (*t_cuDevicePrimaryCtxRetain)(CUcontext *pctx, CUdevice dev);
+typedef CUresult (*t_cuMemcpyDtoH)(void *dstHost, CUdeviceptr srcDevice, size_t ByteCount);
+typedef CUresult (*t_cuMemAllocHost)(void **pp, size_t bytes);
+typedef CUresult (*t_cuMemFreeHost)(void *p);
 
 static t_cuInit cuInit = nullptr;
 static t_cuDeviceGet cuDeviceGet = nullptr;
@@ -83,6 +88,9 @@ static t_cuExternalMemoryGetMappedBuffer cuExternalMemoryGetMappedBuffer = nullp
 static t_cuDestroyExternalMemory cuDestroyExternalMemory = nullptr;
 static t_cuDeviceGetByPCIBusId cuDeviceGetByPCIBusId = nullptr;
 static t_cuDevicePrimaryCtxRetain cuDevicePrimaryCtxRetain = nullptr;
+static t_cuMemcpyDtoH cuMemcpyDtoH = nullptr;
+static t_cuMemAllocHost cuMemAllocHost = nullptr;
+static t_cuMemFreeHost cuMemFreeHost = nullptr;
 
 class HeadlessVulkanManager {
 public:
@@ -510,6 +518,9 @@ struct NativeCaptureState {
     bool is_hevc;
     uint32_t target_width;
     uint32_t target_height;
+    bool target_vbr;
+    uint32_t target_vbr_threshold;
+    bool target_damage_tracking;
     
     char target_codec[64];
     char target_chroma[16];
@@ -686,10 +697,25 @@ static bool build_nvenc_init_params(NativeCaptureState *state, NV_ENC_INITIALIZE
     encodeConfig->frameIntervalP = 1;
     encodeConfig->rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
     uint32_t targetBitrate = (state->target_bitrate_mbps ? state->target_bitrate_mbps : 5) * 1000 * 1000;
-    encodeConfig->rcParams.averageBitRate = targetBitrate;
-    encodeConfig->rcParams.maxBitRate = targetBitrate;
-    encodeConfig->rcParams.vbvBufferSize = targetBitrate;
-    encodeConfig->rcParams.vbvInitialDelay = targetBitrate;
+    if (state->target_vbr) {
+        encodeConfig->rcParams.rateControlMode = NV_ENC_PARAMS_RC_VBR;
+        // Map 0-1000 threshold to NVENC targetQuality (1-51)
+        // High threshold = more aggressive bandwidth reduction (higher QP / lower quality)
+        int targetQuality = 28 + (state->target_vbr_threshold / 50);
+        if (targetQuality < 1) targetQuality = 1;
+        if (targetQuality > 51) targetQuality = 51;
+        encodeConfig->rcParams.targetQuality = (uint8_t)targetQuality;
+        encodeConfig->rcParams.averageBitRate = targetBitrate;
+        encodeConfig->rcParams.maxBitRate = targetBitrate * 2; // Allow peak headroom for motion
+        encodeConfig->rcParams.vbvBufferSize = targetBitrate * 2;
+        encodeConfig->rcParams.vbvInitialDelay = targetBitrate;
+    } else {
+        encodeConfig->rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
+        encodeConfig->rcParams.averageBitRate = targetBitrate;
+        encodeConfig->rcParams.maxBitRate = targetBitrate;
+        encodeConfig->rcParams.vbvBufferSize = targetBitrate;
+        encodeConfig->rcParams.vbvInitialDelay = targetBitrate;
+    }
 
     uint32_t chromaFormat = 1; // Default to YUV 4:2:0
     if (strcmp(state->target_chroma, "444") == 0) {
@@ -747,9 +773,18 @@ bool init_cuda_pipeline(NativeCaptureState *state, const char *pciBusId) {
     cuDestroyExternalMemory = (t_cuDestroyExternalMemory)dlsym(state->cuda_lib, "cuDestroyExternalMemory");
     cuDeviceGetByPCIBusId = (t_cuDeviceGetByPCIBusId)dlsym(state->cuda_lib, "cuDeviceGetByPCIBusId");
     cuDevicePrimaryCtxRetain = (t_cuDevicePrimaryCtxRetain)dlsym(state->cuda_lib, "cuDevicePrimaryCtxRetain");
+    cuMemcpyDtoH = (t_cuMemcpyDtoH)dlsym(state->cuda_lib, "cuMemcpyDtoH_v2");
+    if (!cuMemcpyDtoH) {
+        cuMemcpyDtoH = (t_cuMemcpyDtoH)dlsym(state->cuda_lib, "cuMemcpyDtoH");
+    }
+    cuMemAllocHost = (t_cuMemAllocHost)dlsym(state->cuda_lib, "cuMemAllocHost_v2");
+    if (!cuMemAllocHost) {
+        cuMemAllocHost = (t_cuMemAllocHost)dlsym(state->cuda_lib, "cuMemAllocHost");
+    }
+    cuMemFreeHost = (t_cuMemFreeHost)dlsym(state->cuda_lib, "cuMemFreeHost");
     std::cerr << "[NativeCapture] cuDeviceGetByPCIBusId resolved to: " << (void*)cuDeviceGetByPCIBusId << std::endl;
     
-    if (!cuInit || !cuDeviceGet || !cuCtxPushCurrent || !cuCtxPopCurrent || !cuCtxSetCurrent || !cuImportExternalMemory || !cuExternalMemoryGetMappedBuffer || !cuDestroyExternalMemory || !cuDeviceGetByPCIBusId || !cuDevicePrimaryCtxRetain) {
+    if (!cuInit || !cuDeviceGet || !cuCtxPushCurrent || !cuCtxPopCurrent || !cuCtxSetCurrent || !cuImportExternalMemory || !cuExternalMemoryGetMappedBuffer || !cuDestroyExternalMemory || !cuDeviceGetByPCIBusId || !cuDevicePrimaryCtxRetain || !cuMemcpyDtoH || !cuMemAllocHost || !cuMemFreeHost) {
         std::cerr << "[NativeCapture] Failed to resolve essential CUDA symbols!" << std::endl;
         return false;
     }
@@ -979,6 +1014,43 @@ void process_frame_zero_copy(NativeCaptureState *state) {
         return;
     }
 
+    if (state->target_damage_tracking) {
+        static unsigned char* prev_frame_host = nullptr;
+        static unsigned char* curr_frame_host = nullptr;
+        static size_t frame_buffer_size = 0;
+        
+        if (!prev_frame_host) {
+            frame_buffer_size = vkManager.allocationSize;
+            CUresult res1 = cuMemAllocHost((void**)&prev_frame_host, frame_buffer_size);
+            CUresult res2 = cuMemAllocHost((void**)&curr_frame_host, frame_buffer_size);
+            if (res1 != CUDA_SUCCESS || res2 != CUDA_SUCCESS) {
+                std::cerr << "[NativeCapture] cuMemAllocHost failed! Falling back to malloc." << std::endl;
+                prev_frame_host = (unsigned char*)malloc(frame_buffer_size);
+                curr_frame_host = (unsigned char*)malloc(frame_buffer_size);
+            }
+            memset(prev_frame_host, 0, frame_buffer_size);
+        }
+        
+        CUresult copy_res = cuMemcpyDtoH(curr_frame_host, devPtr, frame_buffer_size);
+        if (copy_res == CUDA_SUCCESS) {
+            static bool is_first_frame = true;
+            if (is_first_frame) {
+                memcpy(prev_frame_host, curr_frame_host, frame_buffer_size);
+                is_first_frame = false;
+            } else {
+                if (!g_force_keyframe && memcmp(curr_frame_host, prev_frame_host, frame_buffer_size) == 0) {
+                    return;
+                }
+                // High performance pointer swap to avoid heavy memcpy!
+                unsigned char* temp = prev_frame_host;
+                prev_frame_host = curr_frame_host;
+                curr_frame_host = temp;
+            }
+        } else {
+            std::cerr << "[NativeCapture] cuMemcpyDtoH failed with error: " << copy_res << std::endl;
+        }
+    }
+
     NV_ENC_REGISTER_RESOURCE registerParams = {0};
     registerParams.version = NV_ENC_REGISTER_RESOURCE_VER;
     registerParams.resourceType = NV_ENC_INPUT_RESOURCE_TYPE_CUDADEVICEPTR;
@@ -1128,6 +1200,18 @@ int main(int argc, char **argv) {
             state.chroma_444 = (strcmp(state.target_chroma, "444") == 0);
             continue;
         }
+        if (strcmp(argv[i], "--vbr") == 0) {
+            state.target_vbr = true;
+            continue;
+        }
+        if (strcmp(argv[i], "--vbr-threshold") == 0 && i + 1 < argc) {
+            state.target_vbr_threshold = (uint32_t)atoi(argv[++i]);
+            continue;
+        }
+        if (strcmp(argv[i], "--damage-tracking") == 0) {
+            state.target_damage_tracking = true;
+            continue;
+        }
     }
 
     if (probe_only) {
@@ -1146,7 +1230,8 @@ int main(int argc, char **argv) {
     std::cerr << "[NativeCapture] Requested target FPS: " << state.target_fps
               << ", bitrate: " << state.target_bitrate_mbps << " Mbps"
               << ", chroma: " << (state.chroma_444 ? "4:4:4" : "4:2:0")
-              << ", codec: " << (state.is_hevc ? "HEVC" : "H.264") << std::endl;
+              << ", codec: " << (state.is_hevc ? "HEVC" : "H.264")
+              << ", damage tracking: " << (state.target_damage_tracking ? "enabled" : "disabled") << std::endl;
     
     state.display = wl_display_connect(NULL);
     if (!state.display) {
@@ -1168,7 +1253,17 @@ int main(int argc, char **argv) {
     
     std::cerr << "[NativeCapture] Capture pipeline established successfully." << std::endl;
     
+    auto last_frame_time = std::chrono::steady_clock::now();
+    double frame_interval_ms = 1000.0 / (state.target_fps ? state.target_fps : 30);
+    
     while (!state.exit_requested && !g_exit_requested) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_frame_time).count();
+        if (elapsed_ms < frame_interval_ms) {
+            std::this_thread::sleep_for(std::chrono::milliseconds((int)(frame_interval_ms - elapsed_ms)));
+        }
+        last_frame_time = std::chrono::steady_clock::now();
+
         state.frame = zwlr_export_dmabuf_manager_v1_capture_output(state.dmabuf_manager, 1, state.output);
         zwlr_export_dmabuf_frame_v1_add_listener(state.frame, &frame_listener, &state);
         
