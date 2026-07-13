@@ -296,6 +296,8 @@ func (a *NativeApp) sendInitialConfig() {
 	}
 
 	a.mu.RLock()
+	configMap["vbr"] = a.vbr
+	configMap["damageTracking"] = a.damageTracking
 	if a.codecIndex >= 0 && a.codecIndex < len(a.codecOptions) {
 		opt := a.codecOptions[a.codecIndex]
 		videoCodecToSend := opt.Value

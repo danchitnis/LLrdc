@@ -63,6 +63,8 @@ type NativeAppOptions struct {
 	ExitAfter    time.Duration
 	LatencyProbe bool
 	DebugCursor  bool
+	VBR          bool
+	DamageTracking bool
 }
 
 type codecOption struct {
@@ -123,6 +125,8 @@ type NativeApp struct {
 	showStats        bool
 	latencyProbe     bool
 	debugCursor      bool
+	vbr              bool
+	damageTracking   bool
 	menuVisible      bool
 	menuSelected     int
 	currentSubmenu   string
@@ -322,6 +326,8 @@ func NewNativeApp(opts NativeAppOptions) *NativeApp {
 		showStats:         opts.ShowStats,
 		latencyProbe:      opts.LatencyProbe,
 		debugCursor:       opts.DebugCursor,
+		vbr:               opts.VBR,
+		damageTracking:    opts.DamageTracking,
 		modifiers:         make(map[string]bool),
 		codecOptions:      defaultCodecOptions(),
 		framerateOptions:  defaultFramerateOptions(),

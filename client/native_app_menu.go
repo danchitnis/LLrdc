@@ -261,6 +261,10 @@ func (a *NativeApp) executeValueCommand(id string) error {
 		return a.setHDPI(strings.TrimPrefix(id, "hdpi.set:"))
 	case strings.HasPrefix(id, "stats.set:"):
 		return a.setStats(strings.TrimPrefix(id, "stats.set:"))
+	case strings.HasPrefix(id, "vbr.set:"):
+		return a.setVBR(strings.TrimPrefix(id, "vbr.set:"))
+	case strings.HasPrefix(id, "damageTracking.set:"):
+		return a.setDamageTracking(strings.TrimPrefix(id, "damageTracking.set:"))
 	case strings.HasPrefix(id, "latency.set:"):
 		return a.setLatencyProbe(strings.TrimPrefix(id, "latency.set:"))
 	case strings.HasPrefix(id, "cursor.set:"):
@@ -576,6 +580,8 @@ func (a *NativeApp) menuItemsLocked() []MenuItemSnapshot {
 		{ID: "codec.menu", Label: "Codec", Value: codec.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "codec.menu"},
 		{ID: "framerate.menu", Label: "Frame Rate", Value: framerate.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "framerate.menu"},
 		{ID: "bitrate.menu", Label: "Bitrate", Value: bitrate.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "bitrate.menu"},
+		{ID: "vbr.menu", Label: "Variable Bitrate (VBR)", Value: onOff(a.vbr), Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "vbr.menu"},
+		{ID: "damageTracking.menu", Label: "Damage Tracking", Value: onOff(a.damageTracking), Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "damageTracking.menu"},
 		{ID: "resolution.menu", Label: "Max Resolution", Value: resolution.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "resolution.menu"},
 		{ID: "hdpi.menu", Label: "HDPI", Value: hdpi.Label, Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "hdpi.menu"},
 		{ID: "stats.menu", Label: "Stats HUD", Value: onOff(a.showStats), Enabled: true, Expandable: true, Expanded: a.currentSubmenu == "stats.menu"},
@@ -649,6 +655,10 @@ func (a *NativeApp) visibleMenuItemsLocked() []MenuItemSnapshot {
 			}
 		case "stats.menu":
 			items = append(items, a.booleanMenuItemsLocked(item.ID, "stats")...)
+		case "vbr.menu":
+			items = append(items, a.booleanMenuItemsLocked(item.ID, "vbr")...)
+		case "damageTracking.menu":
+			items = append(items, a.booleanMenuItemsLocked(item.ID, "damageTracking")...)
 		}
 	}
 	return items
@@ -663,6 +673,10 @@ func (a *NativeApp) booleanMenuItemsLocked(parentID, prefix string) []MenuItemSn
 		currentOn = a.latencyProbe
 	case "cursor":
 		currentOn = a.debugCursor
+	case "vbr":
+		currentOn = a.vbr
+	case "damageTracking":
+		currentOn = a.damageTracking
 	}
 	return []MenuItemSnapshot{
 		{ID: prefix + ".set:on", Label: "On", Enabled: true, Current: currentOn, Depth: 1, ParentID: parentID},
@@ -742,4 +756,36 @@ func (a *NativeApp) menuHintLocked() string {
 		modifier = "CMD+,"
 	}
 	return fmt.Sprintf("SERVER %s | BUILD %s | %s / F1 TOGGLE | ENTER OPEN/SELECT | LEFT BACK | ESC CLOSE", strings.ToUpper(server), strings.ToUpper(a.opts.BuildID), modifier)
+}
+
+func (a *NativeApp) setVBR(value string) error {
+	enabled, err := parseOnOff(value)
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.vbr = enabled
+	a.refreshOverlayLocked()
+	a.mu.Unlock()
+
+	if err := a.session.SendConfig(map[string]any{"vbr": enabled}); err != nil && !strings.Contains(err.Error(), "not connected") {
+		return err
+	}
+	return nil
+}
+
+func (a *NativeApp) setDamageTracking(value string) error {
+	enabled, err := parseOnOff(value)
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.damageTracking = enabled
+	a.refreshOverlayLocked()
+	a.mu.Unlock()
+
+	if err := a.session.SendConfig(map[string]any{"damageTracking": enabled}); err != nil && !strings.Contains(err.Error(), "not connected") {
+		return err
+	}
+	return nil
 }
