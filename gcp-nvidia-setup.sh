@@ -28,9 +28,21 @@ apt-get update -y || error "Failed to update package repositories."
 info "Installing required Mesa and EGL host libraries..."
 apt-get install -y --no-install-recommends libegl-dev mesa-utils || error "Failed to install Mesa/EGL host utilities."
 
-# 4. Install closed-source NVIDIA server driver and allocator libraries
-info "Installing closed-source NVIDIA server driver (580-server) and GBM allocator..."
-apt-get install -y --no-install-recommends nvidia-driver-580-server libnvidia-extra-580-server || error "Failed to install NVIDIA driver metapackages."
+# 4. Detect and install the latest available closed-source NVIDIA server driver and allocator libraries
+info "Querying latest available closed-source NVIDIA server driver..."
+LATEST_DRIVER_VER=$(apt-cache search nvidia-driver- | grep -oE 'nvidia-driver-[0-9]+-server' | grep -oE '[0-9]+' | sort -rn | head -n 1 || echo "")
+if [ -z "$LATEST_DRIVER_VER" ]; then
+  LATEST_DRIVER_VER="580"
+  warn "Could not auto-detect server driver version. Falling back to default: ${LATEST_DRIVER_VER}-server"
+else
+  info "Successfully auto-detected newest NVIDIA server driver version: ${LATEST_DRIVER_VER}-server"
+fi
+
+DRIVER_PKG="nvidia-driver-${LATEST_DRIVER_VER}-server"
+EXTRA_PKG="libnvidia-extra-${LATEST_DRIVER_VER}-server"
+
+info "Installing closed-source NVIDIA server driver (${DRIVER_PKG}) and GBM allocator (${EXTRA_PKG})..."
+apt-get install -y --no-install-recommends "$DRIVER_PKG" "$EXTRA_PKG" || error "Failed to install NVIDIA driver metapackages."
 
 # 5. Check/Enable modesetting inside GCP-specific GRUB configs
 info "Configuring kernel modesetting for nvidia-drm..."
