@@ -331,6 +331,19 @@ if [ "$USE_NVIDIA" = "true" ]; then
   # Enable privileged mode for direct capture to bypass driver-level unprivileged memory export/import blocks
   if [ "$SERVER_CAPTURE_MODE" = "direct" ]; then
     GPU_ARGS="$GPU_ARGS --privileged"
+    # Mount host GBM and NVIDIA Allocator libraries into the container
+    if [ -d /usr/lib/x86_64-linux-gnu/gbm ]; then
+      GPU_ARGS="$GPU_ARGS -v /usr/lib/x86_64-linux-gnu/gbm:/usr/lib/x86_64-linux-gnu/gbm:ro"
+    fi
+    for lib in /usr/lib/x86_64-linux-gnu/libnvidia-allocator.so*; do
+      if [ -e "$lib" ] && [ ! -L "$lib" ]; then
+        GPU_ARGS="$GPU_ARGS -v $lib:$lib:ro"
+      fi
+    done
+    # Mount Vulkan ICD configurations to enable headless Vulkan-CUDA interop
+    if [ -d /usr/share/vulkan/icd.d ]; then
+      GPU_ARGS="$GPU_ARGS -v /usr/share/vulkan/icd.d:/usr/share/vulkan/icd.d:ro"
+    fi
   fi
 fi
 
