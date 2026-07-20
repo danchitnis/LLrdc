@@ -90,7 +90,13 @@ else
   error "nvidia-ctk command not found! Ensure nvidia-container-toolkit package is installed."
 fi
 
-# 8. Success messages & instructions
+# 8. Add invoking user to the docker group
+if [ -n "${SUDO_USER:-}" ]; then
+  info "Adding user $SUDO_USER to the docker group..."
+  usermod -aG docker "$SUDO_USER" || warn "Failed to add $SUDO_USER to the docker group."
+fi
+
+# 9. Success messages & instructions
 echo "--------------------------------------------------------"
 info "Host setup completed successfully!"
 echo "--------------------------------------------------------"
