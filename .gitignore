@@ -14,6 +14,7 @@ dist/
 test-logs/
 /macos-server
 .antigravitycli
+.agents/
 certs/
 .stignore
 .stfolder
