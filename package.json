@@ -26,6 +26,9 @@
     "test:intel": "CONTAINER_IMAGE=danchitnis/llrdc:intel ./test.sh tests/intel",
     "test:nvidia": "./test.sh tests/nvidia",
     "test:latency": "./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
+    "test:latency:cpu": "LLRDC_ACCELERATOR=cpu ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
+    "test:latency:intel": "LLRDC_ACCELERATOR=intel ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
+    "test:latency:nvidia": "LLRDC_ACCELERATOR=nvidia ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
     "test:browser:chrome:nvidia": "npx playwright test tests/nvidia/wayland_direct_buffer.spec.ts"
   },
   "devDependencies": {

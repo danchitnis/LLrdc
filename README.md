@@ -319,17 +319,28 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 
 ## Reproducible Benchmarks
 
-The authoritative benchmark is the native Wayland client lane. It runs H.264 NVENC at 1920×1080/60 with VBR disabled, uses same-host WebTransport, and compares `compat` and `direct` in alternating ABBA order. Build first:
+The authoritative benchmark is the native Wayland client lane. It runs H.264 at 1920×1080/60 with VBR disabled, uses same-host WebTransport, and ends at destination Wayland presentation feedback. NVIDIA and Intel run `compat` and `direct` in alternating order; CPU runs the supported `compat` path.
 
 ```bash
-./docker-build.sh --nvidia
+./docker-build.sh --nvidia       # NVIDIA surface
+# ./docker-build.sh --intel     # Intel surface
+# ./docker-build.sh              # CPU surface
 ```
 
-Run the benchmark (five complete calibration sessions by default):
+Run the NVIDIA benchmark (five calibration sessions by default):
 
 ```bash
-npm run test:latency
+npm run test:latency:nvidia
 ```
+
+Run the CPU or Intel lanes with the same measurement and report format:
+
+```bash
+npm run test:latency:cpu
+npm run test:latency:intel
+```
+
+Each lane records its accelerator, codec, capture mode, calibrated p95 ceiling, and stage breakdown. CPU has no direct-buffer comparison; Intel and NVIDIA compare `compat` versus `direct` and fail if direct regresses by more than one 60 Hz refresh interval.
 
 Run the separate installed-Chrome functional lane:
 
@@ -341,6 +352,9 @@ The native report records nanosecond stages for control delivery, input injectio
 
 Notes:
 - The benchmark disables VBR for reproducibility.
+- On the Intel Linux surface, the logical `h264_qsv` request is realized by
+  the `h264_vaapi` encoder in the DMA-BUF `wf-recorder` path; reports include
+  both the requested codec and the verified encoder backend.
 - Chrome canvas/WebCodecs callbacks are not used for authoritative latency measurements.
 
 ## Chroma 4:4:4

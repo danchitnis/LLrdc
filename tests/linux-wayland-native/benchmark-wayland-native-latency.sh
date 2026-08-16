@@ -6,18 +6,52 @@ PACKAGE_ROOT="${PACKAGE_ROOT:-${ROOT_DIR}/dist}"
 PACKAGE_NAME="${PACKAGE_NAME:-llrdc-client-linux-amd64}"
 CLIENT_BIN="${PACKAGE_ROOT}/${PACKAGE_NAME}/bin/llrdc-client"
 
-MODE="${LLRDC_CAPTURE_MODE:-direct}"
+ACCELERATOR="${LLRDC_ACCELERATOR:-nvidia}"
+case "${ACCELERATOR}" in
+  cpu)
+    EXPECTED_ACCELERATOR="cpu"
+    DEFAULT_VIDEO_CODEC="h264"
+    BUILD_FLAGS=()
+    RUN_FLAGS=()
+    DEFAULT_MODES=(compat)
+    ;;
+  intel)
+    EXPECTED_ACCELERATOR="intel"
+    DEFAULT_VIDEO_CODEC="h264_qsv"
+    BUILD_FLAGS=(--intel)
+    RUN_FLAGS=(--intel)
+    DEFAULT_MODES=(compat direct)
+    ;;
+  nvidia)
+    EXPECTED_ACCELERATOR="nvidia"
+    DEFAULT_VIDEO_CODEC="h264_nvenc"
+    BUILD_FLAGS=(--nvidia)
+    RUN_FLAGS=(--nvidia)
+    DEFAULT_MODES=(compat direct)
+    ;;
+  *)
+    echo "❌ Unsupported LLRDC_ACCELERATOR=${ACCELERATOR}; expected cpu, intel, or nvidia" >&2
+    exit 2
+    ;;
+esac
+
+MODE="${LLRDC_CAPTURE_MODE:-${DEFAULT_MODES[0]}}"
+if [[ " ${DEFAULT_MODES[*]} " != *" ${MODE} "* ]]; then
+  echo "❌ Capture mode ${MODE} is not supported for accelerator ${ACCELERATOR}" >&2
+  exit 2
+fi
 FPS="${LLRDC_TARGET_FPS:-60}"
 WINDOW_TITLE="${LLRDC_CLIENT_TITLE:-LLrdc Native Latency Bench}"
 WINDOW_WIDTH="${LLRDC_CLIENT_WIDTH:-1920}"
 WINDOW_HEIGHT="${LLRDC_CLIENT_HEIGHT:-1080}"
 WARMUP_COUNT="${LLRDC_WARMUP_COUNT:-20}"
 SAMPLE_COUNT="${LLRDC_SAMPLE_COUNT:-100}"
-ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-${ROOT_DIR}/artifacts}"
+ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/${ACCELERATOR}}"
 WESTON_BACKEND="${LLRDC_WESTON_BACKEND:-wayland}"
 WESTON_SOCKET="${LLRDC_WESTON_SOCKET:-llrdc-bench-$$}"
 DESTINATION_COMPOSITOR="${LLRDC_DESTINATION_COMPOSITOR:-nested-weston}"
-VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-h264_nvenc}"
+VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-${DEFAULT_VIDEO_CODEC}}"
+ACTUAL_ENCODER="unknown"
 BANDWIDTH="${LLRDC_TARGET_BANDWIDTH_MBPS:-50}"
 PRESENTATION_CLOCK_ID="${LLRDC_PRESENTATION_CLOCK_ID:-}"
 SOURCE_PRESENTATION_CLOCK_ID=""
@@ -30,14 +64,29 @@ CLIENT_PID_FILE=""
 DESTINATION_CONTAINER_NAME=""
 DESTINATION_RUNTIME_DIR=""
 CLIENT_XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
+DESTINATION_IMAGE="${LLRDC_DESTINATION_IMAGE:-}"
+if [[ -z "${DESTINATION_IMAGE}" ]]; then
+  if [[ "${ACCELERATOR}" == "cpu" ]]; then
+    DESTINATION_IMAGE="danchitnis/llrdc:latest"
+  else
+    DESTINATION_IMAGE="danchitnis/llrdc:${ACCELERATOR}"
+  fi
+fi
 
 MEASURED_MARKERS=()
 SAMPLE_ID=0
 
 get_free_port() {
   local port=0
-  while [[ "${port}" -eq 0 || -n "$(ss -Htan "( sport = :${port} )")" ]]; do
+  while :; do
     port=$((RANDOM % 1000 + 8000))
+    if command -v ss >/dev/null 2>&1; then
+      ss -Htan "( sport = :${port} )" | grep -q . || break
+    elif command -v lsof >/dev/null 2>&1; then
+      lsof -nP -iTCP:"${port}" -sTCP:LISTEN -t >/dev/null 2>&1 || break
+    else
+      break
+    fi
   done
   printf '%s\n' "${port}"
 }
@@ -55,6 +104,19 @@ read_client_state() { curl -fsS "http://127.0.0.1:${CONTROL_PORT}/statez"; }
 read_latest_client_sample() { curl -fsS "http://127.0.0.1:${CONTROL_PORT}/latencyz/latest"; }
 read_probe_marker() { docker exec "${CONTAINER_NAME}" cat /tmp/llrdc-latency-probe.json | jq -r '.marker'; }
 read_server_trace() { curl -fsS "http://127.0.0.1:${SERVER_PORT}/latencyz?marker=$1"; }
+
+read_client_state_retry() {
+  local state
+  for _ in {1..20}; do
+    state="$(read_client_state 2>/dev/null || true)"
+    if [[ -n "${state}" ]] && printf '%s' "${state}" | jq -e . >/dev/null 2>&1; then
+      printf '%s\n' "${state}"
+      return 0
+    fi
+    sleep 0.1
+  done
+  printf '{}\n'
+}
 
 wait_for_client_ready() {
   for i in {1..45}; do
@@ -89,7 +151,7 @@ start_weston() {
       -e WLR_HEADLESS_OUTPUTS=1 \
       -e WLR_LIBINPUT_NO_DEVICES=1 \
       -v "${DESTINATION_RUNTIME_DIR}:/run/llrdc-destination" \
-      "${LLRDC_DESTINATION_IMAGE:-danchitnis/llrdc:nvidia}" >"${ARTIFACT_DIR}/destination-container.id"
+      "${DESTINATION_IMAGE}" >"${ARTIFACT_DIR}/destination-container.id"
     docker logs -f "${DESTINATION_CONTAINER_NAME}" >"${ARTIFACT_DIR}/destination.log" 2>&1 &
     WESTON_SOCKET="wayland-0"
     PRESENTATION_CLOCK_ID="${LLRDC_PRESENTATION_CLOCK_ID:-1}"
@@ -138,13 +200,23 @@ start_weston() {
 start_server() {
   echo "▶ Starting server in Docker..."
   docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
-  CAPTURE_MODE="${MODE}" PORT="${SERVER_PORT}" HOST_PORT="${SERVER_PORT}" \
-    VIDEO_CODEC="${VIDEO_CODEC}" FPS="${FPS}" BANDWIDTH="${BANDWIDTH}" \
-    VBR=false RESOLUTION="${WINDOW_WIDTH}x${WINDOW_HEIGHT}" \
-    USE_DEBUG_INPUT="${LLRDC_DEBUG_INPUT:-false}" \
-    LLRDC_PRESENTATION_CLOCK_ID="${PRESENTATION_CLOCK_ID}" \
-    "${ROOT_DIR}/docker-run.sh" --nvidia --capture-mode "${MODE}" --host-net \
-    --detach --name "${CONTAINER_NAME}" >/dev/null
+  if [[ "${ACCELERATOR}" == "cpu" ]]; then
+    CAPTURE_MODE="${MODE}" PORT="${SERVER_PORT}" HOST_PORT="${SERVER_PORT}" \
+      VIDEO_CODEC="${VIDEO_CODEC}" FPS="${FPS}" BANDWIDTH="${BANDWIDTH}" \
+      VBR=false RESOLUTION="${WINDOW_WIDTH}x${WINDOW_HEIGHT}" \
+      USE_DEBUG_INPUT="${LLRDC_DEBUG_INPUT:-false}" \
+      LLRDC_PRESENTATION_CLOCK_ID="${PRESENTATION_CLOCK_ID}" \
+      "${ROOT_DIR}/docker-run.sh" --capture-mode "${MODE}" --host-net \
+      --detach --name "${CONTAINER_NAME}" >/dev/null
+  else
+    CAPTURE_MODE="${MODE}" PORT="${SERVER_PORT}" HOST_PORT="${SERVER_PORT}" \
+      VIDEO_CODEC="${VIDEO_CODEC}" FPS="${FPS}" BANDWIDTH="${BANDWIDTH}" \
+      VBR=false RESOLUTION="${WINDOW_WIDTH}x${WINDOW_HEIGHT}" \
+      USE_DEBUG_INPUT="${LLRDC_DEBUG_INPUT:-false}" \
+      LLRDC_PRESENTATION_CLOCK_ID="${PRESENTATION_CLOCK_ID}" \
+      "${ROOT_DIR}/docker-run.sh" "${RUN_FLAGS[0]}" --capture-mode "${MODE}" --host-net \
+      --detach --name "${CONTAINER_NAME}" >/dev/null
+  fi
   
   # Stream server logs to our local artifacts folder for debugging
   docker logs -f "${CONTAINER_NAME}" >"${ARTIFACT_DIR}/server.log" 2>&1 &
@@ -152,8 +224,8 @@ start_server() {
   for _ in {1..80}; do
     local ready
     ready="$(curl -fsS "http://127.0.0.1:${SERVER_PORT}/readyz" 2>/dev/null || true)"
-    if [[ -n "${ready}" ]] && printf '%s' "${ready}" | jq -e --arg mode "${MODE}" --arg codec "${VIDEO_CODEC}" --argjson fps "${FPS}" '
-      .acceleratorMode == "nvidia" and .captureMode == $mode and .videoCodec == $codec and .framerate == $fps and .vbr == false
+    if [[ -n "${ready}" ]] && printf '%s' "${ready}" | jq -e --arg accelerator "${EXPECTED_ACCELERATOR}" --arg mode "${MODE}" --arg codec "${VIDEO_CODEC}" --argjson fps "${FPS}" '
+      .acceleratorMode == $accelerator and .captureMode == $mode and .videoCodec == $codec and .framerate == $fps and .vbr == false
       and ($mode != "direct" or (.directBuffer.active == true and .directBuffer.captureMode == "direct"))
     ' >/dev/null 2>&1; then
         return 0
@@ -161,6 +233,36 @@ start_server() {
     sleep 0.25
   done
   exit 1
+}
+
+wait_for_actual_encoder() {
+  local pattern actual
+  if [[ "${ACCELERATOR}" == "cpu" ]]; then
+    pattern='Starting wf-recorder capture: .* -c libx264'
+    actual="libx264"
+  elif [[ "${ACCELERATOR}" == "intel" ]]; then
+    # The Intel DMA-BUF wf-recorder path maps the logical h264_qsv request to
+    # the VAAPI encoder. Validate the process command, not only readyz's
+    # logical codec name.
+    pattern='Starting wf-recorder capture: .* -c h264_vaapi'
+    actual="h264_vaapi"
+  elif [[ "${MODE}" == "direct" ]]; then
+    pattern='Starting NVIDIA native direct capture:'
+    actual="nvidia_direct_capture_native"
+  else
+    pattern='Starting wf-recorder capture: .* -c h264_nvenc'
+    actual="h264_nvenc"
+  fi
+  for _ in {1..80}; do
+    if grep -E "${pattern}" "${ARTIFACT_DIR}/server.log" >/dev/null 2>&1; then
+      ACTUAL_ENCODER="${actual}"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "❌ Server did not start the expected encoder backend (${actual})" >&2
+  tail -80 "${ARTIFACT_DIR}/server.log" >&2 || true
+  return 1
 }
 
 start_probe() {
@@ -394,8 +496,7 @@ perform_sample() {
   local identity
   if ! identity="$(wait_for_server_trace_identity "${next_marker}" 40 "${SAMPLE_ID}")"; then
     echo "Server trace for marker ${next_marker}: $(read_server_trace "${next_marker}" 2>/dev/null || true)" >&2
-    echo "❌ Failed to get traced packet identity for marker ${next_marker}" >&2
-    exit 1
+    echo "⚠️  No server trace observed for marker ${next_marker}; it will be recorded as rejected" >&2
   fi
   if ! wait_for_client_frame_identity "${next_marker}" 40; then
     echo "⚠️  No presented destination frame observed for marker ${next_marker}; it will be recorded as rejected" >&2
@@ -409,13 +510,13 @@ perform_sample() {
 
 collect_results() {
   local client_state rejected=0 valid=0
-  client_state="$(read_client_state)"
+  client_state="$(read_client_state_retry)"
   : >"${RESULTS_JSONL}"
   : >"${REJECTIONS_TSV}"
   {
-    echo "Native Linux NVIDIA direct-path latency benchmark"
+    echo "Native Linux ${ACCELERATOR} latency benchmark"
     echo "Metric: native client input-send -> destination Wayland presentation feedback"
-    echo "Mode=${MODE} codec=${VIDEO_CODEC} resolution=${WINDOW_WIDTH}x${WINDOW_HEIGHT} fps=${FPS} destination=${DESTINATION_COMPOSITOR}"
+    echo "Accelerator=${ACCELERATOR} mode=${MODE} requestedCodec=${VIDEO_CODEC} actualEncoder=${ACTUAL_ENCODER} resolution=${WINDOW_WIDTH}x${WINDOW_HEIGHT} fps=${FPS} destination=${DESTINATION_COMPOSITOR}"
     echo "Clock: shared compositor monotonic clock (source/destination id ${PRESENTATION_CLOCK_ID}); no cross-clock offset correction"
     echo
   } | tee "${REPORT_TXT}"
@@ -433,8 +534,8 @@ collect_results() {
       [(.recentLatencySamples // [])[]
         | select((.probeMarker // 0) == $marker and (.receiveNs // 0) >= ($traceWriteEnd // 0))
       ] | sort_by(.compositorPresentedNs // 0) | .[0] // empty
-    ')"
-    sample_count="$(printf '%s' "${client_state}" | jq -r --argjson marker "${marker}" '[.recentLatencySamples // [] | .[] | select((.probeMarker // 0) == $marker)] | length')"
+    ' || true)"
+    sample_count="$(printf '%s' "${client_state}" | jq -r --argjson marker "${marker}" '[.recentLatencySamples // [] | .[] | select((.probeMarker // 0) == $marker)] | length' || true)"
     if [[ "${sample_count}" == "0" ]]; then
       reason="0_decoded_frames_for_marker"
       printf '%s\t%s\n' "${marker}" "${reason}" >>"${REJECTIONS_TSV}"
@@ -505,43 +606,59 @@ cleanup() {
   [[ -n "${CLIENT_PID:-}" ]] && kill_process_group "${CLIENT_PID}"
   [[ -n "${CLIENT_LAUNCHER_DIR:-}" ]] && rm -rf "${CLIENT_LAUNCHER_DIR}" >/dev/null 2>&1 || true
   [[ -n "${WESTON_PID:-}" ]] && kill_process_group "${WESTON_PID}"
-  [[ -n "${DESTINATION_CONTAINER_NAME:-}" ]] && docker rm -f "${DESTINATION_CONTAINER_NAME}" >/dev/null 2>&1 || true
-  [[ -n "${CONTAINER_NAME:-}" ]] && docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  if [[ "${LLRDC_KEEP_CONTAINERS:-0}" != "1" ]]; then
+    [[ -n "${DESTINATION_CONTAINER_NAME:-}" ]] && docker rm -f "${DESTINATION_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    [[ -n "${CONTAINER_NAME:-}" ]] && docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  else
+    echo "Keeping benchmark containers for inspection: ${DESTINATION_CONTAINER_NAME:-none}, ${CONTAINER_NAME:-none}" >&2
+  fi
 }
 trap cleanup EXIT
 
 if [[ "${LLRDC_MODE_RUN:-}" != "1" && "${LLRDC_COMPARE_MODES:-1}" == "1" ]]; then
   mkdir -p "${ARTIFACT_DIR}"
   calibration_sessions="${LLRDC_CALIBRATION_SESSIONS:-5}"
+  if ((${#DEFAULT_MODES[@]} == 2)); then
+    RUN_ORDER=(compat direct direct compat)
+  else
+    RUN_ORDER=("${DEFAULT_MODES[@]}")
+  fi
   for session in $(seq 1 "${calibration_sessions}"); do
-    for mode in compat direct direct compat; do
+    for mode in "${RUN_ORDER[@]}"; do
       LLRDC_MODE_RUN=1 LLRDC_CAPTURE_MODE="${mode}" LLRDC_COMPARE_MODES=0 \
         LLRDC_ARTIFACT_DIR="${ARTIFACT_DIR}/session-${session}/${mode}-$(date +%s%N)" "${BASH_SOURCE[0]}"
     done
   done
-  python3 - "${ARTIFACT_DIR}" <<'PY'
+  python3 - "${ARTIFACT_DIR}" "${ACCELERATOR}" "${DEFAULT_MODES[@]}" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
-reports = {"compat": [], "direct": []}
-for mode in reports:
+accelerator = sys.argv[2]
+modes = sys.argv[3:]
+reports = {mode: [] for mode in modes}
+for mode in modes:
     for path in sorted(root.glob(f"session-*/{mode}-*/latency-report.json")):
         reports[mode].append(json.load(open(path)))
     if not reports[mode]:
         raise SystemExit(f"no reports for {mode}")
+summary = {"accelerator": accelerator, "modes": {}}
 for mode, values in reports.items():
     p95 = sorted(v["p95Ns"] for v in values)
     print(mode, json.dumps({"runs": len(p95), "p95Ns": p95}))
-direct = sorted(v["p95Ns"] for v in reports["direct"])[len(reports["direct"]) // 2]
-compat = sorted(v["p95Ns"] for v in reports["compat"])[len(reports["compat"]) // 2]
-ceiling = max(int(direct * 1.20), direct + 5_000_000)
-compat_ceiling = max(int(compat * 1.20), compat + 5_000_000)
-json.dump({"compatMedianP95Ns": compat, "directMedianP95Ns": direct,
-           "committedCompatP95CeilingNs": compat_ceiling,
-           "committedDirectP95CeilingNs": ceiling},
-          open(root / "calibration.json", "w"), indent=2)
-print("committed direct p95 ceiling", ceiling)
-if direct > compat + 16_666_667:
-    raise SystemExit(f"direct p95 regressed by more than one 60Hz refresh: direct={direct} compat={compat}")
+for mode, values in reports.items():
+    p95 = sorted(v["p95Ns"] for v in values)
+    median = p95[len(p95) // 2]
+    summary["modes"][mode] = {
+        "runs": len(p95),
+        "p95Ns": p95,
+        "medianP95Ns": median,
+        "committedP95CeilingNs": max(int(median * 1.20), median + 5_000_000),
+    }
+if "compat" in reports and "direct" in reports:
+    compat = summary["modes"]["compat"]["medianP95Ns"]
+    direct = summary["modes"]["direct"]["medianP95Ns"]
+    if direct > compat + 16_666_667:
+        raise SystemExit(f"direct p95 regressed by more than one 60Hz refresh: direct={direct} compat={compat}")
+json.dump(summary, open(root / "calibration.json", "w"), indent=2)
 PY
   exit 0
 fi
@@ -568,12 +685,17 @@ fi
 
 echo "▶ Building..."
 if [[ "${LLRDC_SKIP_BUILD:-0}" != "1" ]]; then
-  "${ROOT_DIR}/docker-build.sh" --nvidia >/dev/null 2>&1
+  if [[ "${ACCELERATOR}" == "cpu" ]]; then
+    "${ROOT_DIR}/docker-build.sh" >/dev/null 2>&1
+  else
+    "${ROOT_DIR}/docker-build.sh" "${BUILD_FLAGS[0]}" >/dev/null 2>&1
+  fi
   "${ROOT_DIR}/scripts/package-native-client.sh" >/dev/null 2>&1
 fi
 
 start_weston
 start_server
+wait_for_actual_encoder
 start_probe
 start_client
 

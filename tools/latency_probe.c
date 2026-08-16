@@ -50,6 +50,8 @@ struct probe_app {
     int64_t drawn_at_ns;
     int64_t probe_commit_ns;
     int64_t source_presented_ns;
+    bool sample_commit_pending;
+    bool sample_commit_in_flight;
 
     int mouse_x, mouse_y;
     struct wl_buffer *buffer;
@@ -61,6 +63,15 @@ struct probe_app {
 struct presentation_feedback_context {
     struct probe_app *app;
     int marker;
+    bool sampled;
+    int64_t commit_ns;
+};
+
+struct frame_callback_context {
+    struct probe_app *app;
+    int marker;
+    bool sampled;
+    int64_t commit_ns;
 };
 
 static clockid_t benchmark_clock_id(void) {
@@ -135,11 +146,20 @@ static void fill_buffer(struct probe_app *app) {
 }
 
 static void frame_handle_done(void *data, struct wl_callback *callback, uint32_t time) {
-    struct probe_app *app = data;
-    app->drawn_at_ms = get_now_ms();
-    app->drawn_at_ns = get_now_ns();
-    write_state(app);
+    (void)time;
+    struct frame_callback_context *ctx = data;
+    struct probe_app *app = ctx->app;
+    // Only the frame callback belonging to the sampled commit may update the
+    // state consumed by the server. Motion/cursor redraws can use the same
+    // marker, but are not the sampled source update.
+    if (ctx->sampled && ctx->marker == app->marker) {
+        app->probe_commit_ns = ctx->commit_ns;
+        app->drawn_at_ms = get_now_ms();
+        app->drawn_at_ns = get_now_ns();
+        write_state(app);
+    }
     wl_callback_destroy(callback);
+    free(ctx);
 }
 static const struct wl_callback_listener frame_listener = { .done = frame_handle_done };
 
@@ -159,15 +179,24 @@ static void feedback_presented(void *data, struct wp_presentation_feedback *feed
     struct presentation_feedback_context *ctx = data;
     struct probe_app *app = ctx->app;
     uint64_t seconds = ((uint64_t)sec_hi << 32) | sec_lo;
-    if (ctx->marker == app->marker) {
+    if (ctx->sampled && ctx->marker == app->marker) {
+        // Preserve the commit timestamp captured for this exact feedback
+        // object.  A later redraw may have committed the same marker, but it
+        // must not replace the sampled commit in the latency trace.
+        app->probe_commit_ns = ctx->commit_ns;
         app->source_presented_ns = (int64_t)(seconds * 1000000000ULL + nsec);
+        app->sample_commit_in_flight = false;
         write_state(app);
     }
     free(ctx);
 }
 static void feedback_discarded(void *data, struct wp_presentation_feedback *feedback) {
     (void)feedback;
-    free(data);
+    struct presentation_feedback_context *ctx = data;
+    if (ctx->sampled && ctx->marker == ctx->app->marker) {
+        ctx->app->sample_commit_in_flight = false;
+    }
+    free(ctx);
 }
 static const struct wp_presentation_feedback_listener feedback_listener = {
     .sync_output = feedback_sync_output,
@@ -176,18 +205,38 @@ static const struct wp_presentation_feedback_listener feedback_listener = {
 };
 
 static void commit_frame(struct probe_app *app) {
+    // Do not let an auxiliary cursor/brightness redraw supersede the sampled
+    // commit while its presentation feedback is still outstanding.
+    if (!app->sample_commit_pending && app->sample_commit_in_flight) return;
     fill_buffer(app);
     wl_surface_attach(app->surface, app->buffer, 0, 0);
     wl_surface_damage(app->surface, 0, 0, app->width, app->height);
     struct wl_callback *callback = wl_surface_frame(app->surface);
-    wl_callback_add_listener(callback, &frame_listener, app);
+    int marker = app->marker;
+    bool sampled = app->sample_commit_pending;
+    int64_t commit_ns = get_now_ns();
+    struct frame_callback_context *frame_ctx = calloc(1, sizeof(*frame_ctx));
+    if (frame_ctx) {
+        frame_ctx->app = app;
+        frame_ctx->marker = marker;
+        frame_ctx->sampled = sampled;
+        frame_ctx->commit_ns = commit_ns;
+        if (wl_callback_add_listener(callback, &frame_listener, frame_ctx) < 0) {
+            free(frame_ctx);
+            wl_callback_destroy(callback);
+        }
+    } else {
+        wl_callback_destroy(callback);
+    }
     if (app->presentation) {
         struct wp_presentation_feedback *feedback = wp_presentation_feedback(app->presentation, app->surface);
         if (feedback) {
             struct presentation_feedback_context *ctx = calloc(1, sizeof(*ctx));
             if (ctx) {
                 ctx->app = app;
-                ctx->marker = app->marker;
+                ctx->marker = marker;
+                ctx->sampled = sampled;
+                ctx->commit_ns = commit_ns;
                 if (wp_presentation_feedback_add_listener(feedback, &feedback_listener, ctx) < 0) {
                     free(ctx);
                     wp_presentation_feedback_destroy(feedback);
@@ -197,8 +246,8 @@ static void commit_frame(struct probe_app *app) {
             }
         }
     }
-    app->probe_commit_ns = get_now_ns();
     wl_surface_commit(app->surface);
+    if (sampled) app->sample_commit_in_flight = true;
 }
 
 static uint64_t next_sample_id(void) {
@@ -221,8 +270,11 @@ static void trigger(struct probe_app *app) {
     app->requested_at_ms = now;
     app->requested_at_ns = get_now_ns();
     app->source_presented_ns = 0;
+    app->sample_commit_in_flight = false;
+    app->sample_commit_pending = true;
     app->last_trigger_ms = now;
     commit_frame(app);
+    app->sample_commit_pending = false;
 }
 
 static void xdg_surface_handle_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
@@ -245,6 +297,7 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer, uin
     app->mouse_x = wl_fixed_to_int(surface_x);
     app->mouse_y = wl_fixed_to_int(surface_y);
 
+    if (app->sample_commit_in_flight) return;
     write_state(app);
 
     bool near_center = (abs(app->mouse_x - app->width/2) < 50 && abs(app->mouse_y - app->height/2) < 50);
