@@ -5,6 +5,7 @@ package wayland
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/danchitnis/llrdc/client"
 )
@@ -42,6 +43,12 @@ type NativeRenderer struct {
 }
 
 func NewNativeRenderer(opts client.NativeRendererOptions) (*NativeRenderer, error) {
+	if opts.Width <= 0 {
+		opts.Width = 1280
+	}
+	if opts.Height <= 0 {
+		opts.Height = 720
+	}
 	return &NativeRenderer{
 		title:                   opts.Title,
 		width:                   opts.Width,
@@ -154,6 +161,10 @@ func (r *NativeRenderer) HandleVideoFrame(codec string, frame []byte, packetTime
 	return r.HandleVideoFrameWithTiming(codec, frame, packetTimestamp, 0, 0, 0, 0, client.BenchmarkClockNowMs())
 }
 
+func (r *NativeRenderer) HandleVideoFrameWithTimingNs(codec string, frame []byte, packetTimestamp int64, receiveNs int64) error {
+	return r.enqueueVideoSample(nativeVideoSample{codec: codec, data: frame, packetTimestamp: packetTimestamp, receiveAt: receiveNs / int64(time.Millisecond), receiveNs: receiveNs})
+}
+
 func (r *NativeRenderer) HandleVideoFrameWithTiming(
 	codec string,
 	frame []byte,
@@ -174,6 +185,10 @@ func (r *NativeRenderer) HandleVideoFrameWithTiming(
 		firstPacketReadAt:            firstPacketReadAt,
 		receiveAt:                    receiveAt,
 	}
+	return r.enqueueVideoSample(sample)
+}
+
+func (r *NativeRenderer) enqueueVideoSample(sample nativeVideoSample) error {
 
 	r.mu.RLock()
 	lowLatency := r.lowLatency
@@ -240,6 +255,7 @@ type nativeVideoSample struct {
 	firstRemotePacketAt          int64
 	firstPacketReadAt            int64
 	receiveAt                    int64
+	receiveNs                    int64
 }
 
 type nativeDecodedSample struct {
@@ -250,7 +266,9 @@ type nativeDecodedSample struct {
 	firstRemotePacketAt          int64
 	firstPacketReadAt            int64
 	receiveAt                    int64
+	receiveNs                    int64
 	decodeReadyAt                int64
+	decodeReadyNs                int64
 }
 
 type nativeResizeRequest struct {

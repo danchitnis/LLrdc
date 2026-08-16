@@ -2,7 +2,7 @@ package common
 
 func StartLatencyProbeFrameSend(frameAtMs int64) *LatencyProbeSendTrace {
 	state, ok := ReadLatencyProbeState()
-	if !ok || frameAtMs < state.DrawnAtMs {
+	if !ok || state.SourcePresentedNs <= 0 || frameAtMs < state.DrawnAtMs {
 		return nil
 	}
 
@@ -10,13 +10,22 @@ func StartLatencyProbeFrameSend(frameAtMs int64) *LatencyProbeSendTrace {
 	defer latencyTraceMu.Unlock()
 
 	pendingInputMu.Lock()
-	inputAt := pendingInputTime
+	input := pendingInput
 	pendingInputMu.Unlock()
 
 	record, exists := latencyTraceRecords[state.Marker]
 	if !exists {
 		record.Marker = state.Marker
-		record.ServerTimeMs = inputAt
+		record.SampleID = input.SampleID
+		record.ClientInputSendNs = input.ClientInputSendNs
+		record.ServerInputReceivedNs = input.ServerInputReceivedNs
+		record.ServerInputInjectedNs = input.ServerInputInjectedNs
+		record.ServerTimeMs = input.ServerInputReceivedNs / 1_000_000
+		record.ProbeCommitNs = state.ProbeCommitNs
+		record.ProbeRequestedNs = state.ProbeRequestedNs
+		record.ProbeDrawnNs = state.ProbeDrawnNs
+		record.SourcePresentedNs = state.SourcePresentedNs
+		record.SourcePresentationClockID = state.PresentationClockID
 		record.RequestedAtMs = state.RequestedAtMs
 		record.DrawnAtMs = state.DrawnAtMs
 	}
@@ -34,7 +43,7 @@ func StartLatencyProbeFrameSend(frameAtMs int64) *LatencyProbeSendTrace {
 
 func StartLatencyProbeEncodedFrame(frameAtMs int64, containerTimestamp uint64) *LatencyProbeSendTrace {
 	state, ok := ReadLatencyProbeState()
-	if !ok || frameAtMs < state.DrawnAtMs {
+	if !ok || state.SourcePresentedNs <= 0 || frameAtMs < state.DrawnAtMs {
 		return nil
 	}
 
@@ -42,13 +51,22 @@ func StartLatencyProbeEncodedFrame(frameAtMs int64, containerTimestamp uint64) *
 	defer latencyTraceMu.Unlock()
 
 	pendingInputMu.Lock()
-	inputAt := pendingInputTime
+	input := pendingInput
 	pendingInputMu.Unlock()
 
 	record, exists := latencyTraceRecords[state.Marker]
 	if !exists {
 		record.Marker = state.Marker
-		record.ServerTimeMs = inputAt
+		record.SampleID = input.SampleID
+		record.ClientInputSendNs = input.ClientInputSendNs
+		record.ServerInputReceivedNs = input.ServerInputReceivedNs
+		record.ServerInputInjectedNs = input.ServerInputInjectedNs
+		record.ServerTimeMs = input.ServerInputReceivedNs / 1_000_000
+		record.ProbeCommitNs = state.ProbeCommitNs
+		record.ProbeRequestedNs = state.ProbeRequestedNs
+		record.ProbeDrawnNs = state.ProbeDrawnNs
+		record.SourcePresentedNs = state.SourcePresentedNs
+		record.SourcePresentationClockID = state.PresentationClockID
 		record.RequestedAtMs = state.RequestedAtMs
 		record.DrawnAtMs = state.DrawnAtMs
 	}
@@ -104,15 +122,44 @@ func NoteLatencyProbeFrameSendStart(trace *LatencyProbeSendTrace, frameAtMs int6
 }
 
 func FinishLatencyProbeFrameSend(trace *LatencyProbeSendTrace, frameAtMs int64) {
-	if trace == nil {
+	if trace == nil || frameAtMs <= 0 {
 		return
-	}
-	if frameAtMs <= 0 {
-		frameAtMs = BenchmarkClockNowMs()
 	}
 	NoteLatencyProbeFirstPacketAttempt(trace, frameAtMs)
 	NoteLatencyProbeFirstPacket(trace, frameAtMs)
 	NoteLatencyProbeLastPacket(trace, frameAtMs)
+}
+
+func NoteLatencyProbeWebTransportWriteStart(trace *LatencyProbeSendTrace, atNs int64) {
+	if trace == nil || atNs <= 0 {
+		return
+	}
+	latencyTraceMu.Lock()
+	defer latencyTraceMu.Unlock()
+	record, ok := latencyTraceRecords[trace.Marker]
+	if !ok {
+		return
+	}
+	if record.WebTransportWriteStartNs == 0 {
+		record.WebTransportWriteStartNs = atNs
+	}
+	latencyTraceRecords[trace.Marker] = record
+}
+
+func NoteLatencyProbeWebTransportWriteEnd(trace *LatencyProbeSendTrace, atNs int64) {
+	if trace == nil || atNs <= 0 {
+		return
+	}
+	latencyTraceMu.Lock()
+	defer latencyTraceMu.Unlock()
+	record, ok := latencyTraceRecords[trace.Marker]
+	if !ok {
+		return
+	}
+	if record.WebTransportWriteEndNs == 0 {
+		record.WebTransportWriteEndNs = atNs
+	}
+	latencyTraceRecords[trace.Marker] = record
 }
 
 func RecordLatencyProbeFrame(frameAtMs int64) {

@@ -7,7 +7,7 @@ LLrdc (Low Latency remote desktop) is an entirely web-based, low-latency remote 
 - **XFCE4 Desktop in Docker**: Runs a full Ubuntu 24.04 and XFCE4 desktop environment inside a reproducible Docker container.
 - **Web-Based Client**: Access your desktop entirely via a modern web browser—no client software required.
 - **High-Performance Streaming**: Leverages WebRTC for ultra-low latency video streaming, with fallback to WebCodecs/WebSockets. Uses variable bitrate (bitrate drops on static screens) with an optional peak bandwidth cap.
-- **Native Go Client**: Includes a Docker-built Linux native client using Go, SDL2, and FFmpeg decode libraries with no Chromium, WebView, or WebKit dependency.
+- **Native Go Client**: Includes a Docker-built Linux native client using Go, SDL2, Wayland presentation feedback, and FFmpeg decode libraries.
 
 
 
@@ -134,7 +134,7 @@ To stop the session and clean up all background processes and containers, simply
 
 ## Native Client
 
-The repo also includes a native Linux client in [cmd/client/main.go](/home/danial/code/LLrdc/cmd/client/main.go). It is built and tested inside Docker from [Dockerfile.client](/home/danial/code/LLrdc/Dockerfile.client), but runs as a real SDL windowed client rather than embedding Chromium, WebView, or WebKit.
+The repo also includes a native Linux client in [cmd/client/main.go](/home/danial/code/LLrdc/cmd/client/main.go). It is built and tested inside Docker from [Dockerfile.client](/home/danial/code/LLrdc/Dockerfile.client), but runs as a real SDL windowed client rather than embedding a browser.
 
 ### Build the Native Client Image
 
@@ -197,7 +197,7 @@ Display backend behavior:
 - Native Linux client runtime is Wayland-only.
 - The host must provide `XDG_RUNTIME_DIR` and a `WAYLAND_DISPLAY` socket.
 - `WAYLAND_DISPLAY` defaults to `wayland-0` when unset.
-- No Chromium, WebView, or WebKit is used in any path.
+- The authoritative Linux latency lane is the native SDL/Wayland client. The separate browser lane uses the installed Google Chrome binary on the active Wayland session for functional checks only.
 
 ### Verify the Packaged Host Runtime
 
@@ -209,21 +209,13 @@ npm run client:verify-package
 
 ### Test the Native Client
 
-The native Linux client test uses Dockerized native/cgo unit tests plus the latency benchmark. This is the authoritative Linux native lane because it packages the client, launches a dedicated Weston bench, connects to a real LLrdc server over WebRTC, drives deterministic input, and verifies measured native presentation latency.
+The native Linux client test uses Dockerized native/cgo unit tests plus the latency benchmark. This is the authoritative Linux native lane because it packages the client, launches a dedicated Weston bench, connects to a real LLrdc server over same-host WebTransport, drives deterministic input, decodes the visual sample ID, and verifies destination Wayland presentation feedback.
 
 ```bash
 npm run client:test
 ```
 
-That command:
-- runs host-safe Go unit tests for `internal/client` and `cmd/client`
-- runs `go test -tags native ./internal/client ./cmd/client` in the Docker `test` stage
-
-The E2E alias uses the same benchmark-based path:
-
-```bash
-npm run client:test:e2e
-```
+That command runs host-safe Go tests, builds the native/cgo client test image, and executes the authoritative benchmark.
 
 Run the benchmark directly when you want to tune sample count, codec, or ULL settings:
 
@@ -232,6 +224,16 @@ npm run client:benchmark:latency
 ```
 
 - `client:benchmark:latency` packages the client, launches a dedicated Weston bench, drives deterministic pointer moves through the native client control API, and reports stage timings from control injection through native present using a monotonic clock plus probe-marker correlation.
+
+The destination Wayland surface must be foreground and visible to its compositor. The benchmark checks focus and requires at least one `wp_presentation` **presented** callback before sampling; an occluded or superseded surface is a hard failure. An installed desktop is not sufficient by itself: an SSH shell does not carry GNOME's application-activation context, so a nested Weston window started remotely can remain unfocused and correctly produce only discarded feedback.
+
+For `nzxt5`, synchronize the repository and run the remote-session wrapper from SSH:
+
+```bash
+ssh nzxt5 'cd ~/code/LLrdc && ./scripts/run-remote-wayland-latency.sh'
+```
+
+By default the wrapper starts an isolated headless `labwc` Wayland destination in a disposable NVIDIA-image container. This avoids SSH/GNOME focus and lock-state problems while still requiring real `wp_presentation` feedback. It imports the active user environment when available, synchronizes the source and destination presentation clock, and fails instead of substituting SDL render-submit time. To measure against the physical GNOME compositor instead, use `LLRDC_DESTINATION_COMPOSITOR=gnome`; that requires an unlocked local or GNOME Remote Desktop/RDP session and launches the native client through GNOME application activation. Do not use `ssh -X` or an X11-only session for this benchmark.
 
 ## Clipboard
 
@@ -317,67 +319,29 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 
 ## Reproducible Benchmarks
 
-The repo now uses two canonical latency benchmark scenarios:
-
-1. `low-end CPU`: `vp8`, `1080p`, `compat`, at `30 FPS` and `60 FPS`
-2. `high-end GPU`: `av1_nvenc`, `4K`, `compat` vs `direct`, at `60 FPS`
-
-The benchmark harness is in [tests/wayland_latency_breakdown.spec.ts](/home/danial/code/LLrdc/tests/wayland_latency_breakdown.spec.ts), and the canonical results live in [latency-breakdown.md](/home/danial/code/LLrdc/latency-breakdown.md).
-
-Build first:
+The authoritative benchmark is the native Wayland client lane. It runs H.264 NVENC at 1920×1080/60 with VBR disabled, uses same-host WebTransport, and compares `compat` and `direct` in alternating ABBA order. Build first:
 
 ```bash
-./docker-build.sh
-./docker-build.sh --intel
+./docker-build.sh --nvidia
 ```
 
-Run one profile:
-
-```bash
-npm run test:latency:cpu-1080p30
-npm run test:latency:cpu-1080p60
-npm run test:latency:nvidia-4k60
-```
-
-Run the full profile matrix:
-
-```bash
-npm run test:latency:profiles
-```
-
-The stage-breakdown benchmark combines:
-- remote app timestamps from the probe window
-- server-side `firstFrameBroadcastAtMs` from `/latencyz`
-- browser `requestVideoFrameCallback()` metadata for receive, decode, and presentation timing
-
-The JSON output includes:
-- `inputToRequest`
-- `requestToDraw`
-- `drawToFirstFrameBroadcast`
-- `firstFrameBroadcastToReceive`
-- `receiveToDecodeReady`
-- `decodeReadyToCompose`
-- `composeToExpectedDisplay`
-- `expectedDisplayToCallback`
-- `drawToCallback`
-- `inputToCallback`
-
-Notes:
-- `4K60` GPU runs require a working local Docker + NVIDIA setup.
-- The benchmark disables VBR for reproducibility.
-- The `4K60` AV1 profile has an occasional visual-probe flake; the test retries automatically.
-- The UI latency bar is not the source of truth for these measurements.
-
-### Legacy Benchmarks
-
-Older ad hoc latency and direct-buffer benchmark scripts are still present:
+Run the benchmark (five complete calibration sessions by default):
 
 ```bash
 npm run test:latency
-npm run test:direct-benchmark
 ```
 
-Use the profile-based commands above for current baseline work.
+Run the separate installed-Chrome functional lane:
+
+```bash
+npm run test:browser:chrome:nvidia
+```
+
+The native report records nanosecond stages for control delivery, input injection, source commit and presentation, capture/encode, WebTransport write, client read/decode, SDL submission, and destination compositor presentation. It rejects duplicate/undecodable/discarded/non-monotonic samples and never repairs timestamps. Its endpoint is compositor feedback, not physical photon emission; a camera or photodiode is required for that.
+
+Notes:
+- The benchmark disables VBR for reproducibility.
+- Chrome canvas/WebCodecs callbacks are not used for authoritative latency measurements.
 
 ## Chroma 4:4:4
 

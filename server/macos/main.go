@@ -347,5 +347,5 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 
 func broadcastVideoFrame(data []byte, isKeyframe bool, codec string) {
 	// For WebTransport we don't have stream IDs for individual frames, just use 0
-	common.WriteFrame(data, 0, common.BenchmarkClockNowMs())
+	common.WriteFrame(data, 0, common.BenchmarkClockNowMs(), nil)
 }

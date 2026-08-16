@@ -238,6 +238,9 @@ func broadcastJSON(msg interface{}) {
 
 func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string) {
 	noteStreamFrame(streamID)
+	if CaptureMode == CaptureModeDirect {
+		markDirectBufferFrameValidated()
+	}
 	timestampMs := benchmarkClockNowMs()
 	if frame.LatencyTrace != nil {
 		noteLatencyProbeFrameDispatch(frame.LatencyTrace, timestampMs)
@@ -246,7 +249,7 @@ func broadcastVideoFrame(frame EncodedVideoFrame, streamID uint32, codec string)
 	// Copy frame for delivery so we don't share memory with IVF reader
 	copyFrame := make([]byte, len(frame.Data))
 	copy(copyFrame, frame.Data)
-	common.WriteFrame(copyFrame, streamID, timestampMs)
+	common.WriteFrame(copyFrame, streamID, timestampMs, frame.LatencyTrace)
 }
 
 func broadcastConfig(restarted bool) {
@@ -366,36 +369,44 @@ func HandleInputMessage(msg map[string]interface{}) {
 	msgType, _ := msg["type"].(string)
 	ts, _ := msg["ts"].(float64)
 	sentTime := int64(ts)
+	var sampleID uint64
+	if value, ok := msg["sampleId"].(float64); ok && value > 0 {
+		sampleID = uint64(value)
+	}
+	var clientInputSendNs int64
+	if value, ok := msg["clientInputSendNs"].(float64); ok && value > 0 {
+		clientInputSendNs = int64(value)
+	}
 
 	if UseDebugInput && sentTime > 0 && msgType != "mousemove" {
 		log.Printf("HOST_RECV: type=%s, delay=%v ms", msgType, benchmarkClockNowMs()-sentTime)
 	}
 
-	if msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "key" || msgType == "wheel" {
-		setLastInputReceivedAt(benchmarkClockNowMs())
+	if sampleID > 0 && (msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "key" || msgType == "wheel") {
+		common.SetLastInputSample(sampleID, clientInputSendNs, common.BenchmarkClockNowNs())
 	}
 
 	switch msgType {
 	case "keydown", "keyup", "key":
 		if key, ok := msg["key"].(string); ok {
-			injectKey(key, msgType, sentTime)
+			injectKey(key, msgType, sentTime, sampleID)
 		}
 	case "mousemove":
 		if x, ok1 := msg["x"].(float64); ok1 {
 			if y, ok2 := msg["y"].(float64); ok2 {
-				injectMouseMove(x, y, sentTime)
+				injectMouseMove(x, y, sentTime, sampleID)
 			}
 		}
 	case "mousebtn":
 		if btn, ok := msg["button"].(float64); ok {
 			if action, ok2 := msg["action"].(string); ok2 {
-				injectMouseButton(int(btn), action, sentTime)
+				injectMouseButton(int(btn), action, sentTime, sampleID)
 			}
 		}
 	case "wheel":
 		if dx, ok1 := msg["deltaX"].(float64); ok1 {
 			if dy, ok2 := msg["deltaY"].(float64); ok2 {
-				injectMouseWheel(dx, dy, sentTime)
+				injectMouseWheel(dx, dy, sentTime, sampleID)
 			}
 		}
 	case "spawn":

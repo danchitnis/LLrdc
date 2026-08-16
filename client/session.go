@@ -117,6 +117,7 @@ type SessionState struct {
 	WindowHasFocus          bool               `json:"windowHasFocus"`
 	WindowPointerInside     bool               `json:"windowPointerInside"`
 	WindowHasSurface        bool               `json:"windowHasSurface"`
+	PresentationClockID     uint32             `json:"presentationClockId,omitempty"`
 	WindowDesktop           int                `json:"windowDesktop"`
 	Presenting              bool               `json:"presenting"`
 	DecoderAwaitingKeyframe bool               `json:"decoderAwaitingKeyframe"`
@@ -239,6 +240,9 @@ func (s *Session) UpdateWindowState(state NativeWindowLifecycle) {
 	if state.RenderLoopStarted {
 		s.state.RenderLoopStarted = true
 	}
+	if state.PresentationClockID != 0 {
+		s.state.PresentationClockID = state.PresentationClockID
+	}
 	if state.Width > 0 {
 		s.state.WindowWidth = state.Width
 	}
@@ -295,6 +299,7 @@ func (s *Session) UpdateWindowState(state NativeWindowLifecycle) {
 		"windowDesktop":           current.WindowDesktop,
 		"presenting":              current.Presenting,
 		"renderLoopStarted":       current.RenderLoopStarted,
+		"presentationClockId":     current.PresentationClockID,
 		"decoderAwaitingKeyframe": current.DecoderAwaitingKeyframe,
 		"windowError":             state.Error,
 	})

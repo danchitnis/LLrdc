@@ -76,8 +76,12 @@ func (s *Session) SendConfig(config map[string]any) error {
 }
 
 func (s *Session) SendInput(msg map[string]any) error {
-	s.emit(EventInputSent, cloneMap(msg))
-	return s.sendMessage(msg)
+	payload := cloneMap(msg)
+	if sampleID, ok := numberToInt64(payload["sampleId"]); ok && sampleID > 0 {
+		payload["clientInputSendNs"] = BenchmarkClockNowNs()
+	}
+	s.emit(EventInputSent, cloneMap(payload))
+	return s.sendMessage(payload)
 }
 
 func (s *Session) SendPing() error {
@@ -88,12 +92,18 @@ func (s *Session) SendPing() error {
 }
 
 func (s *Session) sendMessage(msg map[string]any) error {
-	body, err := json.Marshal(msg)
+	s.mu.Lock()
+	payload := cloneMap(msg)
+	if sampleID, ok := numberToInt64(payload["sampleId"]); ok && sampleID > 0 {
+		// Stamp immediately before serializing the control message so the
+		// server-side value represents the native send boundary, not event setup.
+		payload["clientInputSendNs"] = BenchmarkClockNowNs()
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
-
-	s.mu.Lock()
 	if msgType, _ := msg["type"].(string); msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "wheel" {
 		s.stats.InputMessagesSent++
 	}

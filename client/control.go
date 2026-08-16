@@ -75,6 +75,7 @@ func (s *ControlServer) handleReady(w http.ResponseWriter, _ *http.Request) {
 		"connected":               state.Connected,
 		"webtransportConnected":   state.WebTransportConnected,
 		"renderLoopStarted":       state.RenderLoopStarted,
+		"presentationClockId":     state.PresentationClockID,
 		"shutdownRequested":       state.ShutdownRequested,
 		"shutdownReason":          state.ShutdownReason,
 		"windowBackend":           state.WindowBackend,
@@ -170,18 +171,30 @@ func (s *ControlServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *ControlServer) handleMouseMove(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		X float64 `json:"x"`
-		Y float64 `json:"y"`
+		X        float64 `json:"x"`
+		Y        float64 `json:"y"`
+		SampleID uint64  `json:"sampleId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	err := s.session.SendInput(map[string]any{
-		"type": "mousemove",
-		"x":    payload.X,
-		"y":    payload.Y,
-	})
+	var err error
+	if payload.SampleID > 0 {
+		msg := map[string]any{
+			"type":     "mousemove",
+			"x":        payload.X,
+			"y":        payload.Y,
+			"sampleId": payload.SampleID,
+		}
+		err = s.session.SendInput(msg)
+	} else {
+		err = s.session.SendInput(map[string]any{
+			"type": "mousemove",
+			"x":    payload.X,
+			"y":    payload.Y,
+		})
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
@@ -191,18 +204,26 @@ func (s *ControlServer) handleMouseMove(w http.ResponseWriter, r *http.Request) 
 
 func (s *ControlServer) handleMouseButton(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		Button int    `json:"button"`
-		Action string `json:"action"`
+		Button   int    `json:"button"`
+		Action   string `json:"action"`
+		SampleID uint64 `json:"sampleId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	err := s.session.SendInput(map[string]any{
-		"type":   "mousebtn",
-		"button": payload.Button,
-		"action": payload.Action,
-	})
+	msg := map[string]any{
+		"type":     "mousebtn",
+		"button":   payload.Button,
+		"action":   payload.Action,
+		"sampleId": payload.SampleID,
+	}
+	// Keep the timestamp on the control payload even if a future transport
+	// adapter bypasses Session.sendMessage's last-moment stamping.
+	if payload.SampleID > 0 {
+		msg["clientInputSendNs"] = BenchmarkClockNowNs()
+	}
+	err := s.session.SendInput(msg)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return

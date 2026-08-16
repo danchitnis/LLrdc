@@ -286,12 +286,12 @@ func CloseWebTransportSessionsByClientID(clientID string) {
 	}
 }
 
-func WriteFrame(frame []byte, streamID uint32, timestampMs int64) {
-	WriteWebTransportFrame(frame, streamID, timestampMs)
+func WriteFrame(frame []byte, streamID uint32, timestampMs int64, trace *LatencyProbeSendTrace) {
+	WriteWebTransportFrame(frame, streamID, timestampMs, trace)
 	WriteWebSocketFrame(frame, streamID, timestampMs)
 }
 
-func WriteWebTransportFrame(frame []byte, streamID uint32, timestampMs int64) {
+func WriteWebTransportFrame(frame []byte, streamID uint32, timestampMs int64, trace *LatencyProbeSendTrace) {
 	wtSessionsMutex.RLock()
 	defer wtSessionsMutex.RUnlock()
 
@@ -311,8 +311,11 @@ func WriteWebTransportFrame(frame []byte, streamID uint32, timestampMs int64) {
 	for _, s := range wtSessions {
 		s.mu.Lock()
 		if s.videoStream != nil {
+			writeStartNs := BenchmarkClockNowNs()
+			NoteLatencyProbeWebTransportWriteStart(trace, writeStartNs)
 			_ = s.videoStream.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
 			_, _ = s.videoStream.Write(packet)
+			NoteLatencyProbeWebTransportWriteEnd(trace, BenchmarkClockNowNs())
 			_ = s.videoStream.SetWriteDeadline(time.Time{})
 		}
 		s.mu.Unlock()

@@ -371,8 +371,8 @@ test('macOS split architecture supports H.264 4:4:4 encoding', async ({ page }) 
 });
 
 test('macOS split architecture supports HEVC 4:4:4 encoding', async ({ page, browserName }) => {
-    if (browserName === 'chromium') {
-        test.skip(true, 'Chromium does not support HEVC (H.265)');
+    if (browserName !== 'firefox') {
+        test.skip(true, 'Installed Chrome does not support HEVC (H.265) in this macOS lane');
     }
     test.setTimeout(60000);
     // Connection and baseline reset handled by beforeEach

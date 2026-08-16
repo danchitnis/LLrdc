@@ -281,7 +281,8 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 				return
 			}
 
-			receiveAt := BenchmarkClockNowMs()
+			receiveNs := BenchmarkClockNowNs()
+			receiveAt := receiveNs / int64(time.Millisecond)
 
 			s.mu.Lock()
 			now := time.Now()
@@ -294,7 +295,9 @@ func (s *Session) readWebTransportMediaStream(connectionID uint64, stream webtra
 			s.mu.Unlock()
 
 			var renderErr error
-			if tr, ok := s.renderer.(TimedVideoFrameHandler); ok {
+			if trNs, ok := s.renderer.(TimedVideoFrameHandlerNs); ok {
+				renderErr = trNs.HandleVideoFrameWithTimingNs(codec, chunkData, packetTimestamp, receiveNs)
+			} else if tr, ok := s.renderer.(TimedVideoFrameHandler); ok {
 				renderErr = tr.HandleVideoFrameWithTiming(
 					codec,
 					chunkData,

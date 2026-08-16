@@ -238,7 +238,7 @@ Display backend selection:
   - WAYLAND_DISPLAY defaults to wayland-0 when unset.
 
 Important:
-  - This is a native SDL client. It does not embed Chromium, WebView, or WebKit.
+  - This is a native SDL client. It does not embed a browser or WebView.
   - VP8 and H.264 are decoded through the bundled FFmpeg codec libraries.
   - The package uses the host's native SDL/Wayland/audio stack.
   - Audio and clipboard integration still depend on the host session environment.

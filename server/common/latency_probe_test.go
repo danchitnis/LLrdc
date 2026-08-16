@@ -13,7 +13,7 @@ func resetLatencyProbeState(t *testing.T) {
 	latencyTraceMu.Unlock()
 
 	pendingInputMu.Lock()
-	pendingInputTime = 0
+	pendingInput = pendingInputSample{}
 	pendingInputMu.Unlock()
 
 	pendingSampleTraceMu.Lock()
@@ -22,6 +22,29 @@ func resetLatencyProbeState(t *testing.T) {
 
 	if err := os.Remove(latencyProbeStatePath); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("remove latency probe state: %v", err)
+	}
+	if err := os.Remove(latencyProbeNextSamplePath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove latency probe sample handoff: %v", err)
+	}
+}
+
+func TestLatencyProbeSampleIdentitySurvivesUnsampledMouseUp(t *testing.T) {
+	resetLatencyProbeState(t)
+	t.Cleanup(func() { resetLatencyProbeState(t) })
+
+	SetLastInputSample(17, 1_000, 2_000)
+	// A mouse-up without a benchmark identity must not replace the armed
+	// sample before the probe's encoded frame is traced.
+	SetLastInputSample(0, 0, 0)
+	NoteInputInjected(17, 3_000)
+	writeLatencyProbeStateFile(t, latencyProbeStateFile{Marker: 17, DrawnAtMs: 4, SourcePresentedNs: 4_500})
+	trace := StartLatencyProbeEncodedFrame(5, 0)
+	if trace == nil {
+		t.Fatal("StartLatencyProbeEncodedFrame returned nil")
+	}
+	record, ok := SnapshotLatencyTrace("17")
+	if !ok || record.SampleID != 17 || record.ServerInputInjectedNs != 3_000 {
+		t.Fatalf("sample identity was overwritten: %+v, ok=%v", record, ok)
 	}
 }
 
@@ -42,9 +65,10 @@ func TestLatencyProbeSendTraceRecordsOrdering(t *testing.T) {
 
 	SetLastInputReceivedAt(10)
 	writeLatencyProbeStateFile(t, latencyProbeStateFile{
-		Marker:        7,
-		RequestedAtMs: 20,
-		DrawnAtMs:     30,
+		Marker:            7,
+		RequestedAtMs:     20,
+		DrawnAtMs:         30,
+		SourcePresentedNs: 31_000,
 	})
 
 	trace := StartLatencyProbeEncodedFrame(35, 1234)
@@ -114,15 +138,45 @@ func TestLatencyProbeSendTraceRecordsOrdering(t *testing.T) {
 	}
 }
 
+func TestLatencyProbeTraceCarriesSampleAndNanosecondStages(t *testing.T) {
+	resetLatencyProbeState(t)
+	t.Cleanup(func() { resetLatencyProbeState(t) })
+
+	SetLastInputSample(42, 1_000, 2_000)
+	NoteInputInjected(42, 3_000)
+	writeLatencyProbeStateFile(t, latencyProbeStateFile{
+		Marker: 12, DrawnAtMs: 4, ProbeCommitNs: 4_000,
+		SourcePresentedNs: 5_000, PresentationClockID: 1,
+	})
+	trace := StartLatencyProbeEncodedFrame(6, 0)
+	if trace == nil {
+		t.Fatal("StartLatencyProbeEncodedFrame returned nil")
+	}
+	NoteLatencyProbeWebTransportWriteStart(trace, 6_000)
+	NoteLatencyProbeWebTransportWriteEnd(trace, 7_000)
+
+	record, ok := SnapshotLatencyTrace("12")
+	if !ok {
+		t.Fatal("SnapshotLatencyTrace did not return record")
+	}
+	if record.SampleID != 42 || record.ClientInputSendNs != 1_000 || record.ServerInputReceivedNs != 2_000 || record.ServerInputInjectedNs != 3_000 {
+		t.Fatalf("unexpected input identity/timestamps: %+v", record)
+	}
+	if record.ProbeCommitNs != 4_000 || record.SourcePresentedNs != 5_000 || record.SourcePresentationClockID != 1 || record.WebTransportWriteEndNs != 7_000 {
+		t.Fatalf("unexpected nanosecond stages: %+v", record)
+	}
+}
+
 func TestFinishLatencyProbeFrameSendBackfillsPacketTimes(t *testing.T) {
 	resetLatencyProbeState(t)
 	t.Cleanup(func() { resetLatencyProbeState(t) })
 
 	SetLastInputReceivedAt(100)
 	writeLatencyProbeStateFile(t, latencyProbeStateFile{
-		Marker:        9,
-		RequestedAtMs: 110,
-		DrawnAtMs:     120,
+		Marker:            9,
+		RequestedAtMs:     110,
+		DrawnAtMs:         120,
+		SourcePresentedNs: 121_000,
 	})
 
 	trace := StartLatencyProbeEncodedFrame(125, 987)
@@ -170,9 +224,10 @@ func TestPendingSampleTraceCapturesFirstPacketIdentityFromSocketWrite(t *testing
 
 	SetLastInputReceivedAt(200)
 	writeLatencyProbeStateFile(t, latencyProbeStateFile{
-		Marker:        11,
-		RequestedAtMs: 210,
-		DrawnAtMs:     220,
+		Marker:            11,
+		RequestedAtMs:     210,
+		DrawnAtMs:         220,
+		SourcePresentedNs: 221_000,
 	})
 
 	trace := StartLatencyProbeFrameSend(225)

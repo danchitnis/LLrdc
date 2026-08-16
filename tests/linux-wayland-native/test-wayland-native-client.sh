@@ -12,7 +12,7 @@ docker build -f "${ROOT_DIR}/Dockerfile.client" --target test -t "${IMAGE_NAME}-
 
 echo "▶ Native client ULL latency benchmark..."
 export WEBTRANSPORT_ENABLED="${WEBTRANSPORT_ENABLED:-true}"
-export LLRDC_VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-vp8}"
+export LLRDC_VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-h264_nvenc}"
 "${ROOT_DIR}/tests/linux-wayland-native/benchmark-wayland-native-latency.sh"
 
 echo "Native Linux client test passed"

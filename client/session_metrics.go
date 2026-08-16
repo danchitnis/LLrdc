@@ -27,6 +27,10 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 		DecodeReadyAt:                event.DecodeReadyAt,
 		PresentationAt:               event.PresentationAt,
 		PresentationSource:           event.PresentationSource,
+		CompositorPresentedNs:        event.CompositorPresentedNs,
+		RenderSubmittedNs:            event.RenderSubmittedNs,
+		ReceiveNs:                    event.ReceiveNs,
+		DecodeReadyNs:                event.DecodeReadyNs,
 	}
 	if event.CompositorPresentedAt > 0 {
 		sample.CompositorPresentedAt = event.CompositorPresentedAt
@@ -44,9 +48,16 @@ func (s *Session) RecordPresentedFrame(event NativeFramePresented) {
 		"presentationAt":               sample.PresentationAt,
 		"compositorPresentedAt":        sample.CompositorPresentedAt,
 		"presentationSource":           sample.PresentationSource,
+		"compositorPresentedNs":        sample.CompositorPresentedNs,
+		"renderSubmittedNs":            sample.RenderSubmittedNs,
+		"receiveNs":                    sample.ReceiveNs,
+		"decodeReadyNs":                sample.DecodeReadyNs,
 	}
 	s.state.RecentLatencySamples = append(s.state.RecentLatencySamples, sample)
-	if len(s.state.RecentLatencySamples) > 3000 {
+	// The benchmark collects after the measured window; retain enough decoded
+	// frames for a five-minute 60 FPS run so early marker identities remain
+	// available for exact post-write correlation.
+	if len(s.state.RecentLatencySamples) > 30000 {
 		s.state.RecentLatencySamples = s.state.RecentLatencySamples[1:]
 	}
 

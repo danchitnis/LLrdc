@@ -72,7 +72,6 @@ body {
 }
 
 #display.crisp, #sharpness-layer.crisp {
-  image-rendering: -webkit-optimize-contrast !important;
   image-rendering: crisp-edges !important;
 }
 

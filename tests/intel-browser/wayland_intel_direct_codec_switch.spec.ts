@@ -95,7 +95,7 @@ test.describe('Wayland Intel Direct Codec Switch', () => {
         // Wait for the new track to stream
         await expect(page.locator('#status')).toContainText(/\[h265 🚀 GPU\]/, { timeout: 45000 });
         
-        // Note: Chromium does not support HEVC decoding due to licensing, so we cannot use waitForStreamingFrames here.
+        // Note: the installed Chrome lane does not support HEVC decoding here, so use server-side frame checks.
         // We will rely on the server-side readyz check to verify the switch was successful.
 
         // Check backend via readyz that chroma is 444 and codec is h265_qsv or hevc_vaapi (since it's resolved internally)

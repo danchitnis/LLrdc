@@ -287,6 +287,12 @@ func (a *NativeApp) startConnectLoop() {
 }
 
 func (a *NativeApp) sendInitialConfig() {
+	if os.Getenv("LLRDC_SKIP_INITIAL_CONFIG") == "1" {
+		// The native benchmark starts the server with its final codec, display,
+		// and capture settings. Skipping this client-side replay avoids a
+		// resize/restart race that can discard the first direct-capture keyframe.
+		return
+	}
 	configMap := make(map[string]any)
 	configMap["framerate"] = a.currentFramerateValue()
 	configMap["max_res"] = a.currentResolution().Value

@@ -7,6 +7,7 @@ import (
 
 type InputTask struct {
 	Type     string
+	SampleID uint64
 	NX, NY   float64
 	Button   int
 	Action   string
@@ -72,20 +73,24 @@ func HandleInputMessage(msg map[string]interface{}) {
 	msgType, _ := msg["type"].(string)
 	ts, _ := msg["ts"].(float64)
 	sentTime := int64(ts)
+	sampleID := uint64(numberFromMessage(msg, "sampleId"))
+	clientInputSendNs := int64(numberFromMessage(msg, "clientInputSendNs"))
 
 	if UseDebugInput && sentTime > 0 && msgType != "mousemove" {
 		log.Printf("HOST_RECV: type=%s, delay=%v ms", msgType, BenchmarkClockNowMs()-sentTime)
 	}
 
-	if msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "key" || msgType == "wheel" {
-		SetLastInputReceivedAt(BenchmarkClockNowMs())
+	// Keep the measured sample armed until its first encoded frame is traced.
+	// Unsampled follow-up events (for example mouse-up) must not overwrite it.
+	if sampleID > 0 && (msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "key" || msgType == "wheel") {
+		SetLastInputSample(sampleID, clientInputSendNs, BenchmarkClockNowNs())
 	}
 
 	switch msgType {
 	case "keydown", "keyup", "key":
 		if key, ok := msg["key"].(string); ok {
 			select {
-			case inputChan <- InputTask{Type: msgType, Key: key, SentTime: sentTime}:
+			case inputChan <- InputTask{Type: msgType, SampleID: sampleID, Key: key, SentTime: sentTime}:
 			default:
 			}
 		}
@@ -93,7 +98,7 @@ func HandleInputMessage(msg map[string]interface{}) {
 		if x, ok1 := msg["x"].(float64); ok1 {
 			if y, ok2 := msg["y"].(float64); ok2 {
 				select {
-				case inputChan <- InputTask{Type: "mousemove", NX: x, NY: y, SentTime: sentTime}:
+				case inputChan <- InputTask{Type: "mousemove", SampleID: sampleID, NX: x, NY: y, SentTime: sentTime}:
 				default:
 				}
 			}
@@ -102,7 +107,7 @@ func HandleInputMessage(msg map[string]interface{}) {
 		if btn, ok := msg["button"].(float64); ok {
 			if action, ok2 := msg["action"].(string); ok2 {
 				select {
-				case inputChan <- InputTask{Type: "mousebtn", Button: int(btn), Action: action, SentTime: sentTime}:
+				case inputChan <- InputTask{Type: "mousebtn", SampleID: sampleID, Button: int(btn), Action: action, SentTime: sentTime}:
 				default:
 				}
 			}
@@ -111,10 +116,31 @@ func HandleInputMessage(msg map[string]interface{}) {
 		if dx, ok1 := msg["deltaX"].(float64); ok1 {
 			if dy, ok2 := msg["deltaY"].(float64); ok2 {
 				select {
-				case inputChan <- InputTask{Type: "wheel", DX: dx, DY: dy, SentTime: sentTime}:
+				case inputChan <- InputTask{Type: "wheel", SampleID: sampleID, DX: dx, DY: dy, SentTime: sentTime}:
 				default:
 				}
 			}
 		}
+	}
+}
+
+func numberFromMessage(msg map[string]interface{}, key string) float64 {
+	value, ok := msg[key]
+	if !ok {
+		return 0
+	}
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	case uint64:
+		return float64(typed)
+	default:
+		return 0
 	}
 }

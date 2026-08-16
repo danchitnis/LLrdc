@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danchitnis/llrdc/client"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
 func TestNewNativeRendererDefaults(t *testing.T) {
 	t.Parallel()
 
-	renderer, err := NewNativeRenderer(NativeRendererOptions{})
+	renderer, err := NewNativeRenderer(client.NativeRendererOptions{})
 	if err != nil {
 		t.Fatalf("NewNativeRenderer returned error: %v", err)
 	}
@@ -81,30 +82,25 @@ func TestSDLScancodeToDOM(t *testing.T) {
 func TestHandleVideoFrameLowLatencyKeepsNewestSample(t *testing.T) {
 	t.Parallel()
 
-	renderer, err := NewNativeRenderer(NativeRendererOptions{})
+	renderer, err := NewNativeRenderer(client.NativeRendererOptions{})
 	if err != nil {
 		t.Fatalf("NewNativeRenderer returned error: %v", err)
 	}
 	defer renderer.Close()
 
-	nativeRenderer, ok := renderer.(*NativeRenderer)
-	if !ok {
-		t.Fatalf("unexpected renderer type %T", renderer)
-	}
-
-	nativeRenderer.SetLowLatency(true)
-	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x01}, 1, 9, 80, 90, 100, 110); err != nil {
+	renderer.SetLowLatency(true)
+	if err := renderer.HandleVideoFrameWithTiming("video/VP8", []byte{0x01}, 1, 9, 80, 90, 100, 110); err != nil {
 		t.Fatalf("first handleVideoFrameWithTiming returned error: %v", err)
 	}
-	if err := nativeRenderer.handleVideoFrameWithTiming("video/VP8", []byte{0x02}, 2, 19, 180, 190, 200, 210); err != nil {
+	if err := renderer.HandleVideoFrameWithTiming("video/VP8", []byte{0x02}, 2, 19, 180, 190, 200, 210); err != nil {
 		t.Fatalf("second handleVideoFrameWithTiming returned error: %v", err)
 	}
 
-	if got := len(nativeRenderer.samples); got != 1 {
+	if got := len(renderer.samples); got != 1 {
 		t.Fatalf("unexpected sample queue length: got %d want 1", got)
 	}
 
-	sample := <-nativeRenderer.samples
+	sample := <-renderer.samples
 	if sample.packetTimestamp != 2 {
 		t.Fatalf("unexpected queued packet timestamp: got %d want 2", sample.packetTimestamp)
 	}
@@ -137,7 +133,7 @@ func TestNativeRendererInputs(t *testing.T) {
 		t.Skip("skipping headed test in short mode")
 	}
 
-	opts := NativeRendererOptions{
+	opts := client.NativeRendererOptions{
 		Title:     "LLrdc Test Window",
 		Width:     640,
 		Height:    480,
@@ -165,7 +161,7 @@ func TestNativeRendererInputs(t *testing.T) {
 	// Wait for the renderer to initialize and start its loop
 	// We check for RenderLoopStarted event
 	loopStarted := make(chan struct{})
-	renderer.SetLifecycleSink(func(event NativeWindowLifecycle) {
+	renderer.SetLifecycleSink(func(event client.NativeWindowLifecycle) {
 		if event.RenderLoopStarted {
 			close(loopStarted)
 		}

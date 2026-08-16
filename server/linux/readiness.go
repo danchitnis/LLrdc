@@ -127,18 +127,21 @@ func marshalReadinessStatus() ([]byte, error) {
 	directState := snapshotDirectBufferState()
 	screenWidth, screenHeight := GetScreenSize()
 	payload := map[string]interface{}{
-		"ready":           readiness.IsReady(),
-		"conditions":      readiness.Snapshot(),
-		"directBuffer":    directState,
+		"ready":            readiness.IsReady(),
+		"conditions":       readiness.Snapshot(),
+		"directBuffer":     directState,
 		"directModeActive": directState.Active,
 		"directActive":     directState.Active,
-		"acceleratorMode": currentAcceleratorMode(),
-		"useIntel":        UseIntel,
-		"useNvidia":       UseNVIDIA,
-		"screenWidth":     screenWidth,
-		"screenHeight":    screenHeight,
-		"videoCodec":      VideoCodec,
-		"chroma":          Chroma,
+		"acceleratorMode":  currentAcceleratorMode(),
+		"useIntel":         UseIntel,
+		"useNvidia":        UseNVIDIA,
+		"screenWidth":      screenWidth,
+		"screenHeight":     screenHeight,
+		"videoCodec":       VideoCodec,
+		"chroma":           Chroma,
+		"captureMode":      CaptureMode,
+		"framerate":        FPS,
+		"vbr":              targetVBR,
 	}
 	return json.Marshal(payload)
 }

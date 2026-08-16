@@ -105,9 +105,20 @@ func setDirectBufferActive(active bool, reason string) {
 		}
 
 		state.Active = active && state.Supported
-		state.ZeroCopyValidated = state.Active
+		if !active {
+			state.ZeroCopyValidated = false
+		}
 		if reason != "" {
 			state.Reason = reason
+		}
+	})
+}
+
+func markDirectBufferFrameValidated() {
+	updateDirectBufferState(func(state *directBufferStatus) {
+		if state.CaptureMode == CaptureModeDirect && state.Active && state.Supported {
+			state.ZeroCopyValidated = true
+			state.Reason = "Direct-buffer probe passed and first hardware frame was encoded"
 		}
 	})
 }
