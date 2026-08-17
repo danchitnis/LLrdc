@@ -29,13 +29,13 @@ To build the Docker image, run the included build script from the repository's r
 
 This builds the CPU-only image tagged `danchitnis/llrdc:latest`.
 
-If you want Intel QSV support, build the Intel variant explicitly:
+If you want Intel VAAPI support, build the Intel variant explicitly:
 
 ```bash
 ./docker-build.sh --intel
 ```
 
-This creates `danchitnis/llrdc:intel`, which includes the Intel media drivers, QSV tooling, and related FFmpeg acceleration stack.
+This creates `danchitnis/llrdc:intel`, which includes the Intel media drivers, VAAPI tooling, and related FFmpeg acceleration stack.
 
 ### 2. Run the Container
 
@@ -53,7 +53,7 @@ To enable GPU acceleration (NVENC) on NVIDIA systems, add the `--nvidia` flag:
 
 The script will automatically detect and map CUDA/NVCC paths and switch to `h264_nvenc` encoding for high-performance streaming.
 
-To enable Intel QSV acceleration, build the Intel image first and then run with `--intel`:
+To enable Intel VAAPI acceleration, build the Intel image first and then run with `--intel`:
 
 ```bash
 ./docker-build.sh --intel
@@ -268,10 +268,10 @@ The `llrdc` binary supports the following flags, categorized by their primary us
 #### User Flags
 - `--port`: Port for both HTTP and WebRTC UDP (default: `8080`).
 - `--fps`: Target frames per second (default: `30`).
-- `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h264_qsv`, `h264_vaapi`, `h265`, `h265_nvenc`, `h265_qsv`, `hevc_vaapi`, `av1`, `av1_nvenc`, or `av1_qsv`.
+- `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h264_vaapi`, `h265`, `h265_nvenc`, `h265_vaapi`, `hevc_vaapi`, `av1`, `av1_nvenc`, or `av1_vaapi`.
 - `--chroma`: Chroma subsampling format, `420` (default) or `444`. See [Chroma 4:4:4](#chroma-444) below.
 - `--use-nvidia`: Enable NVIDIA acceleration for NVENC codecs.
-- `--use-intel`: Enable Intel acceleration for QSV codecs.
+- `--use-intel`: Enable Intel acceleration for VAAPI codecs.
 - `--capture-mode`: Capture mode, `compat` (default) or `direct`.
 - `--use-debug-ffmpeg`: Enable verbose FFmpeg logging.
 - `--use-debug-x11`: Enable verbose X11/XFCE session logging.
@@ -319,7 +319,7 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 
 ## Reproducible Benchmarks
 
-The authoritative benchmark is the native Wayland client lane. It runs H.264 at 1920×1080/60 with VBR disabled, uses same-host WebTransport, and ends at destination Wayland presentation feedback. NVIDIA and Intel run `compat` and `direct` in alternating order; CPU runs the supported `compat` path.
+The authoritative benchmark is the native Wayland client lane. It runs H.264 at 1920×1080/60 with VBR disabled, uses same-host WebTransport, and ends at destination Wayland presentation feedback. Each accelerator invocation reports one capture mode independently; GPU lanes default to `direct`, while CPU uses `compat`.
 
 ```bash
 ./docker-build.sh --nvidia       # NVIDIA surface
@@ -327,7 +327,7 @@ The authoritative benchmark is the native Wayland client lane. It runs H.264 at 
 # ./docker-build.sh              # CPU surface
 ```
 
-Run the NVIDIA benchmark (five calibration sessions by default):
+Run the NVIDIA direct-path benchmark:
 
 ```bash
 npm run test:latency:nvidia
@@ -340,7 +340,26 @@ npm run test:latency:cpu
 npm run test:latency:intel
 ```
 
-Each lane records its accelerator, codec, capture mode, calibrated p95 ceiling, and stage breakdown. CPU has no direct-buffer comparison; Intel and NVIDIA compare `compat` versus `direct` and fail if direct regresses by more than one 60 Hz refresh interval.
+On `nzxt5`, use the generic host-local runner:
+
+```bash
+./scripts/benchmark-latency.sh
+```
+
+This defaults to the NVIDIA lane. Select another surface explicitly:
+
+```bash
+./scripts/benchmark-latency.sh --accel cpu
+./scripts/benchmark-latency.sh --accel intel
+```
+
+Select `cpu`, `intel`, or `nvidia` with `--accel`. The runner chooses
+H.264 software, VAAPI, or NVENC respectively, runs the supported capture
+comparison, and writes results to a timestamped directory under
+`.artefact/<accelerator>/`. Use `--mode direct --samples 20` for a quick
+GPU direct-path check.
+
+Each invocation reports its own accelerator, codec, capture mode, percentile statistics, and stage breakdown. Intel and NVIDIA can be run independently in `compat` mode with `--mode compat`; CPU supports `compat` only.
 
 Run the separate installed-Chrome functional lane:
 
@@ -352,9 +371,9 @@ The native report records nanosecond stages for control delivery, input injectio
 
 Notes:
 - The benchmark disables VBR for reproducibility.
-- On the Intel Linux surface, the logical `h264_qsv` request is realized by
-  the `h264_vaapi` encoder in the DMA-BUF `wf-recorder` path; reports include
-  both the requested codec and the verified encoder backend.
+- On the Intel Linux surface, direct capture uses the `h264_vaapi` encoder in
+  the DMA-BUF `wf-recorder` path; reports include the requested codec and the
+  verified encoder backend.
 - Chrome canvas/WebCodecs callbacks are not used for authoritative latency measurements.
 
 ## Chroma 4:4:4
@@ -365,8 +384,8 @@ Chroma 4:4:4 avoids chroma subsampling, improving clarity for text and sharp edg
 
 | Codec | 4:4:4 Support | Notes |
 | :--- | :--- | :--- |
-| `h264_qsv` (Intel) | ❌ | Restricted to 4:2:0. **Low CPU usage** via hardware acceleration. |
-| `h265_qsv` (Intel) | ✅ | **4:4:4 support**. Low CPU usage via hardware-accelerated conversion. |
+| `h264_vaapi` (Intel) | ❌ | Restricted to 4:2:0. **Low CPU usage** via hardware acceleration. |
+| `h265_vaapi` (Intel) | ✅ | **4:4:4 support**. Low CPU usage via hardware-accelerated conversion. |
 | `h264/h265` (NVIDIA) | ✅ | **4:4:4 support** on compatible GPUs. |
 | `CPU codecs` | ❌ | Restricted to 4:2:0. High CPU usage. |
 

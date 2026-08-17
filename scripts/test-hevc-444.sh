@@ -22,7 +22,7 @@ docker run -d --name "${CONTAINER_NAME}" \
   --device /dev/dri:/dev/dri \
   -e USE_INTEL=true \
   -e INTEL_RENDER_NODE=/dev/dri/renderD130 \
-  -e VIDEO_CODEC=h265_qsv \
+  -e VIDEO_CODEC=h265_vaapi \
   -e CHROMA=444 \
   -e CAPTURE_MODE=direct \
   danchitnis/llrdc:intel \

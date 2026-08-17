@@ -29,7 +29,7 @@ test.describe('Wayland Intel H.265 Fallback', () => {
                 PORT: PORT.toString(),
                 HOST_PORT: PORT.toString(),
                 CONTAINER_NAME,
-                VIDEO_CODEC: 'h265_qsv',
+                VIDEO_CODEC: 'h265_vaapi',
             },
             stdio: 'inherit',
         });
@@ -44,7 +44,7 @@ test.describe('Wayland Intel H.265 Fallback', () => {
         } catch (e) {}
     });
 
-    test('should fall back from Intel h265_qsv to CPU h265 in compat mode', async ({ page }) => {
+    test('should fall back from Intel h265_vaapi to CPU h265 in compat mode', async ({ page }) => {
         test.setTimeout(120000);
 
         await expect.poll(async () => {
@@ -70,7 +70,7 @@ test.describe('Wayland Intel H.265 Fallback', () => {
 
         await expect(page.locator('#status')).toContainText(/\[h265\]/i, { timeout: 45000 });
         await expect(page.locator('#video-codec-select')).toHaveValue('h265');
-        await expect(page.locator('#video-codec-select option[value="h265_qsv"]')).toHaveCount(0);
+        await expect(page.locator('#video-codec-select option[value="h265_vaapi"]')).toHaveCount(0);
 
         await waitForStreamingFrames(page, 'Wait for sustained Intel compat fallback to CPU H.265');
     });

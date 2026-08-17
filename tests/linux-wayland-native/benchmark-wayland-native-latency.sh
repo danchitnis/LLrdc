@@ -17,7 +17,7 @@ case "${ACCELERATOR}" in
     ;;
   intel)
     EXPECTED_ACCELERATOR="intel"
-    DEFAULT_VIDEO_CODEC="h264_qsv"
+    DEFAULT_VIDEO_CODEC="h264_vaapi"
     BUILD_FLAGS=(--intel)
     RUN_FLAGS=(--intel)
     DEFAULT_MODES=(compat direct)
@@ -45,12 +45,16 @@ WINDOW_TITLE="${LLRDC_CLIENT_TITLE:-LLrdc Native Latency Bench}"
 WINDOW_WIDTH="${LLRDC_CLIENT_WIDTH:-1920}"
 WINDOW_HEIGHT="${LLRDC_CLIENT_HEIGHT:-1080}"
 WARMUP_COUNT="${LLRDC_WARMUP_COUNT:-20}"
-SAMPLE_COUNT="${LLRDC_SAMPLE_COUNT:-100}"
-ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/${ACCELERATOR}}"
+SAMPLE_COUNT="${LLRDC_SAMPLE_COUNT:-20}"
+ARTEFACT_DIR="${LLRDC_ARTEFACT_DIR:-${ROOT_DIR}/.artefact/${ACCELERATOR}}"
+if [[ "${ARTEFACT_DIR}" != /* ]]; then
+  ARTEFACT_DIR="${ROOT_DIR}/${ARTEFACT_DIR}"
+fi
 WESTON_BACKEND="${LLRDC_WESTON_BACKEND:-wayland}"
 WESTON_SOCKET="${LLRDC_WESTON_SOCKET:-llrdc-bench-$$}"
 DESTINATION_COMPOSITOR="${LLRDC_DESTINATION_COMPOSITOR:-nested-weston}"
 VIDEO_CODEC="${LLRDC_VIDEO_CODEC:-${DEFAULT_VIDEO_CODEC}}"
+CHROMA="${LLRDC_CHROMA:-420}"
 ACTUAL_ENCODER="unknown"
 BANDWIDTH="${LLRDC_TARGET_BANDWIDTH_MBPS:-50}"
 PRESENTATION_CLOCK_ID="${LLRDC_PRESENTATION_CLOCK_ID:-}"
@@ -119,9 +123,11 @@ read_client_state_retry() {
 }
 
 wait_for_client_ready() {
+  local last_ready='{}'
   for i in {1..45}; do
     local ready=""
     ready="$(curl -fsS "http://127.0.0.1:${CONTROL_PORT}/readyz" 2>/dev/null || true)"
+    [[ -n "${ready}" ]] && last_ready="${ready}"
     local focus_ok='.windowHasFocus == true'
     if [[ "${REQUIRE_CLIENT_FOCUS}" == "0" ]]; then
       focus_ok='true'
@@ -131,7 +137,12 @@ wait_for_client_ready() {
     fi
     sleep 1
   done
-  echo "❌ Native Wayland client did not become foreground/focused; compositor feedback would be discarded for an occluded surface" >&2
+  echo "❌ Native Wayland client did not become ready; compositor feedback would be discarded for an unavailable surface" >&2
+  echo "   Last client readiness state: ${last_ready}" >&2
+  if [[ -f "${CLIENT_LOG:-}" ]]; then
+    echo "   Last client log lines:" >&2
+    tail -40 "${CLIENT_LOG}" >&2 || true
+  fi
   return 1
 }
 
@@ -140,7 +151,9 @@ start_weston() {
   if [[ "${DESTINATION_COMPOSITOR}" == "labwc" ]]; then
     echo "▶ Launching isolated headless labwc destination..."
     DESTINATION_CONTAINER_NAME="${LLRDC_DESTINATION_CONTAINER_NAME:-llrdc-wayland-destination-${SERVER_PORT}}"
-    DESTINATION_RUNTIME_DIR="${ARTIFACT_DIR}/destination-runtime"
+    # Keep the Wayland socket path below Linux's 108-byte UNIX-socket limit;
+    # compare-mode artefact paths are intentionally nested and can be long.
+    DESTINATION_RUNTIME_DIR="${ROOT_DIR}/.artefact/.runtime/${SERVER_PORT}"
     mkdir -p "${DESTINATION_RUNTIME_DIR}"
     chmod 777 "${DESTINATION_RUNTIME_DIR}"
     docker rm -f "${DESTINATION_CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -151,8 +164,8 @@ start_weston() {
       -e WLR_HEADLESS_OUTPUTS=1 \
       -e WLR_LIBINPUT_NO_DEVICES=1 \
       -v "${DESTINATION_RUNTIME_DIR}:/run/llrdc-destination" \
-      "${DESTINATION_IMAGE}" >"${ARTIFACT_DIR}/destination-container.id"
-    docker logs -f "${DESTINATION_CONTAINER_NAME}" >"${ARTIFACT_DIR}/destination.log" 2>&1 &
+      "${DESTINATION_IMAGE}" >"${ARTEFACT_DIR}/destination-container.id"
+    docker logs -f "${DESTINATION_CONTAINER_NAME}" >"${ARTEFACT_DIR}/destination.log" 2>&1 &
     WESTON_SOCKET="wayland-0"
     PRESENTATION_CLOCK_ID="${LLRDC_PRESENTATION_CLOCK_ID:-1}"
     CLIENT_XDG_RUNTIME_DIR="${DESTINATION_RUNTIME_DIR}"
@@ -173,7 +186,7 @@ start_weston() {
     export WESTON_SOCKET PRESENTATION_CLOCK_ID
     return 0
   fi
-  local clock_shim="${ARTIFACT_DIR}/libllrdc-monotonic-clock.so"
+  local clock_shim="${ARTEFACT_DIR}/libllrdc-monotonic-clock.so"
   if ! cc -shared -fPIC -O2 -o "${clock_shim}" "${ROOT_DIR}/tests/linux-wayland-native/force-monotonic-clock.c" -ldl; then
     echo "❌ Cannot build the monotonic-clock Weston shim" >&2
     return 1
@@ -203,6 +216,7 @@ start_server() {
   if [[ "${ACCELERATOR}" == "cpu" ]]; then
     CAPTURE_MODE="${MODE}" PORT="${SERVER_PORT}" HOST_PORT="${SERVER_PORT}" \
       VIDEO_CODEC="${VIDEO_CODEC}" FPS="${FPS}" BANDWIDTH="${BANDWIDTH}" \
+      CHROMA="${CHROMA}" \
       VBR=false RESOLUTION="${WINDOW_WIDTH}x${WINDOW_HEIGHT}" \
       USE_DEBUG_INPUT="${LLRDC_DEBUG_INPUT:-false}" \
       LLRDC_PRESENTATION_CLOCK_ID="${PRESENTATION_CLOCK_ID}" \
@@ -211,6 +225,7 @@ start_server() {
   else
     CAPTURE_MODE="${MODE}" PORT="${SERVER_PORT}" HOST_PORT="${SERVER_PORT}" \
       VIDEO_CODEC="${VIDEO_CODEC}" FPS="${FPS}" BANDWIDTH="${BANDWIDTH}" \
+      CHROMA="${CHROMA}" \
       VBR=false RESOLUTION="${WINDOW_WIDTH}x${WINDOW_HEIGHT}" \
       USE_DEBUG_INPUT="${LLRDC_DEBUG_INPUT:-false}" \
       LLRDC_PRESENTATION_CLOCK_ID="${PRESENTATION_CLOCK_ID}" \
@@ -218,8 +233,8 @@ start_server() {
       --detach --name "${CONTAINER_NAME}" >/dev/null
   fi
   
-  # Stream server logs to our local artifacts folder for debugging
-  docker logs -f "${CONTAINER_NAME}" >"${ARTIFACT_DIR}/server.log" 2>&1 &
+  # Stream server logs to the benchmark artefact folder for debugging
+  docker logs -f "${CONTAINER_NAME}" >"${ARTEFACT_DIR}/server.log" 2>&1 &
   
   for _ in {1..80}; do
     local ready
@@ -228,6 +243,7 @@ start_server() {
       .acceleratorMode == $accelerator and .captureMode == $mode and .videoCodec == $codec and .framerate == $fps and .vbr == false
       and ($mode != "direct" or (.directBuffer.active == true and .directBuffer.captureMode == "direct"))
     ' >/dev/null 2>&1; then
+        printf '%s\n' "${ready}" >"${ARTEFACT_DIR}/server-readyz.json"
         return 0
     fi
     sleep 0.25
@@ -241,9 +257,8 @@ wait_for_actual_encoder() {
     pattern='Starting wf-recorder capture: .* -c libx264'
     actual="libx264"
   elif [[ "${ACCELERATOR}" == "intel" ]]; then
-    # The Intel DMA-BUF wf-recorder path maps the logical h264_qsv request to
-    # the VAAPI encoder. Validate the process command, not only readyz's
-    # logical codec name.
+    # Validate the Intel DMA-BUF wf-recorder VAAPI encoder command, not only
+    # readyz's logical codec name.
     pattern='Starting wf-recorder capture: .* -c h264_vaapi'
     actual="h264_vaapi"
   elif [[ "${MODE}" == "direct" ]]; then
@@ -254,14 +269,14 @@ wait_for_actual_encoder() {
     actual="h264_nvenc"
   fi
   for _ in {1..80}; do
-    if grep -E "${pattern}" "${ARTIFACT_DIR}/server.log" >/dev/null 2>&1; then
+    if grep -E "${pattern}" "${ARTEFACT_DIR}/server.log" >/dev/null 2>&1; then
       ACTUAL_ENCODER="${actual}"
       return 0
     fi
     sleep 0.25
   done
   echo "❌ Server did not start the expected encoder backend (${actual})" >&2
-  tail -80 "${ARTIFACT_DIR}/server.log" >&2 || true
+  tail -80 "${ARTEFACT_DIR}/server.log" >&2 || true
   return 1
 }
 
@@ -296,7 +311,7 @@ start_client() {
       echo "❌ LLRDC_GNOME_ACTIVATE=1 requires gio (GLib) on the remote host" >&2
       return 1
     fi
-    CLIENT_LAUNCHER_DIR="${ARTIFACT_DIR}/gnome-client-launch"
+    CLIENT_LAUNCHER_DIR="${ARTEFACT_DIR}/gnome-client-launch"
     CLIENT_PID_FILE="${CLIENT_LAUNCHER_DIR}/pid"
     mkdir -p "${CLIENT_LAUNCHER_DIR}"
     cat >"${CLIENT_LAUNCHER_DIR}/launch.sh" <<EOF
@@ -358,6 +373,7 @@ EOF
   fi
   wait_for_client_ready
   CLIENT_PRESENTATION_CLOCK_ID="$(curl -fsS "http://127.0.0.1:${CONTROL_PORT}/readyz" | jq -r '.presentationClockId // 0')"
+  curl -fsS "http://127.0.0.1:${CONTROL_PORT}/readyz" >"${ARTEFACT_DIR}/client-readyz.json" || true
   if [[ "${CLIENT_PRESENTATION_CLOCK_ID}" != "1" && "${CLIENT_PRESENTATION_CLOCK_ID}" != "4" ]]; then
     echo "❌ Native client did not advertise Wayland presentation clock" >&2
     return 1
@@ -590,8 +606,12 @@ collect_results() {
       --argjson decodeReadyNs "${decode_ns}" --argjson renderSubmittedNs "${render_ns}" \
       --argjson compositorPresentedNs "${presented_ns}" --argjson totalNs "${total_ns}" \
       '{sampleId:$sampleId,marker:$marker,clientInputSendNs:$clientInputSendNs,serverInputReceivedNs:$serverInputReceivedNs,serverInputInjectedNs:$serverInputInjectedNs,probeRequestedNs:$probeRequestedNs,probeDrawnNs:$probeDrawnNs,probeCommitNs:$probeCommitNs,sourcePresentedNs:$sourcePresentedNs,webTransportWriteStartNs:$webTransportWriteStartNs,webTransportWriteEndNs:$webTransportWriteEndNs,receiveNs:$receiveNs,decodeReadyNs:$decodeReadyNs,renderSubmittedNs:$renderSubmittedNs,compositorPresentedNs:$compositorPresentedNs,totalNs:$totalNs}' >>"${RESULTS_JSONL}"
-    printf 'marker=%s total=%.3fms control=%.3fms encode+capture=%.3fms transport=%.3fms decode=%.3fms render=%.3fms compositor=%.3fms\n' \
-      "${marker}" "$((total_ns / 1000000))" "$(((received_ns - input_ns) / 1000000))" "$(((write_start_ns - source_ns) / 1000000))" "$(((receive_ns - write_end_ns) / 1000000))" "$(((decode_ns - receive_ns) / 1000000))" "$(((render_ns - decode_ns) / 1000000))" "$(((presented_ns - render_ns) / 1000000))" | tee -a "${REPORT_TXT}"
+    sample_line="$(printf 'marker=%s total=%.3fms control=%.3fms encode+capture=%.3fms transport=%.3fms decode=%.3fms render=%.3fms compositor=%.3fms' \
+      "${marker}" "$((total_ns / 1000000))" "$(((received_ns - input_ns) / 1000000))" "$(((write_start_ns - source_ns) / 1000000))" "$(((receive_ns - write_end_ns) / 1000000))" "$(((decode_ns - receive_ns) / 1000000))" "$(((render_ns - decode_ns) / 1000000))" "$(((presented_ns - render_ns) / 1000000))")"
+    printf '%s\n' "${sample_line}" >>"${REPORT_TXT}"
+    if [[ "${LLRDC_VERBOSE_SAMPLES:-0}" == "1" ]]; then
+      printf '%s\n' "${sample_line}"
+    fi
     valid=$((valid + 1))
   done
   local total=$((valid + rejected))
@@ -602,7 +622,37 @@ collect_results() {
   echo "Valid samples=${valid}; rejected=${rejected}" | tee -a "${REPORT_TXT}"
 }
 
+collect_runtime_diagnostics() {
+  local artefact="${ARTEFACT_DIR:-}"
+  [[ -n "${artefact}" && -d "${artefact}" ]] || return 0
+
+  # The live followers below are useful while a run is in progress.  Capture
+  # complete snapshots before removing containers so early startup output and
+  # the probe's internal state are still available after the run exits.
+  if [[ -n "${CONTAINER_NAME:-}" ]]; then
+    docker logs "${CONTAINER_NAME}" >"${artefact}/server-complete.log" 2>&1 || true
+    docker inspect "${CONTAINER_NAME}" >"${artefact}/server-inspect.json" 2>/dev/null || true
+    docker exec "${CONTAINER_NAME}" sh -c 'cat /tmp/latency-probe.log 2>/dev/null || true' \
+      >"${artefact}/latency-probe.log" 2>&1 || true
+    docker exec "${CONTAINER_NAME}" sh -c 'cat /tmp/llrdc-latency-probe.json 2>/dev/null || true' \
+      >"${artefact}/latency-probe-final.json" 2>/dev/null || true
+    curl -fsS "http://127.0.0.1:${SERVER_PORT}/readyz" \
+      >"${artefact}/server-readyz-final.json" 2>/dev/null || true
+  fi
+  if [[ -n "${DESTINATION_CONTAINER_NAME:-}" ]]; then
+    docker logs "${DESTINATION_CONTAINER_NAME}" >"${artefact}/destination-complete.log" 2>&1 || true
+    docker inspect "${DESTINATION_CONTAINER_NAME}" >"${artefact}/destination-inspect.json" 2>/dev/null || true
+  fi
+  if [[ -n "${CONTROL_PORT:-}" ]]; then
+    curl -fsS "http://127.0.0.1:${CONTROL_PORT}/readyz" \
+      >"${artefact}/client-readyz-final.json" 2>/dev/null || true
+    curl -fsS "http://127.0.0.1:${CONTROL_PORT}/statez" \
+      >"${artefact}/client-state-final.json" 2>/dev/null || true
+  fi
+}
+
 cleanup() {
+  collect_runtime_diagnostics
   [[ -n "${CLIENT_PID:-}" ]] && kill_process_group "${CLIENT_PID}"
   [[ -n "${CLIENT_LAUNCHER_DIR:-}" ]] && rm -rf "${CLIENT_LAUNCHER_DIR}" >/dev/null 2>&1 || true
   [[ -n "${WESTON_PID:-}" ]] && kill_process_group "${WESTON_PID}"
@@ -612,11 +662,12 @@ cleanup() {
   else
     echo "Keeping benchmark containers for inspection: ${DESTINATION_CONTAINER_NAME:-none}, ${CONTAINER_NAME:-none}" >&2
   fi
+  [[ -n "${DESTINATION_RUNTIME_DIR:-}" ]] && rm -rf "${DESTINATION_RUNTIME_DIR}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 if [[ "${LLRDC_MODE_RUN:-}" != "1" && "${LLRDC_COMPARE_MODES:-1}" == "1" ]]; then
-  mkdir -p "${ARTIFACT_DIR}"
+  mkdir -p "${ARTEFACT_DIR}"
   calibration_sessions="${LLRDC_CALIBRATION_SESSIONS:-5}"
   if ((${#DEFAULT_MODES[@]} == 2)); then
     RUN_ORDER=(compat direct direct compat)
@@ -626,10 +677,10 @@ if [[ "${LLRDC_MODE_RUN:-}" != "1" && "${LLRDC_COMPARE_MODES:-1}" == "1" ]]; the
   for session in $(seq 1 "${calibration_sessions}"); do
     for mode in "${RUN_ORDER[@]}"; do
       LLRDC_MODE_RUN=1 LLRDC_CAPTURE_MODE="${mode}" LLRDC_COMPARE_MODES=0 \
-        LLRDC_ARTIFACT_DIR="${ARTIFACT_DIR}/session-${session}/${mode}-$(date +%s%N)" "${BASH_SOURCE[0]}"
+        LLRDC_ARTEFACT_DIR="${ARTEFACT_DIR}/session-${session}/${mode}-$(date +%s%N)" "${BASH_SOURCE[0]}"
     done
   done
-  python3 - "${ARTIFACT_DIR}" "${ACCELERATOR}" "${DEFAULT_MODES[@]}" <<'PY'
+  python3 - "${ARTEFACT_DIR}" "${ACCELERATOR}" "${DEFAULT_MODES[@]}" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 accelerator = sys.argv[2]
@@ -663,34 +714,61 @@ PY
   exit 0
 fi
 
-mkdir -p "${ARTIFACT_DIR}"
+mkdir -p "${ARTEFACT_DIR}"
 SERVER_PORT="$(get_free_port)"
 CONTROL_PORT="$(get_free_port)"
 CONTAINER_NAME="llrdc-native-latency-${SERVER_PORT}"
-CLIENT_LOG="${ARTIFACT_DIR}/client-latency.log"
-WESTON_LOG="${ARTIFACT_DIR}/weston-bench.log"
-REPORT_TXT="${ARTIFACT_DIR}/latency-report.txt"
-RESULTS_JSONL="${ARTIFACT_DIR}/latency-results.jsonl"
-REJECTIONS_TSV="${ARTIFACT_DIR}/latency-rejections.tsv"
-CLIENT_CONFIG="${ARTIFACT_DIR}/benchmark-client-config.yaml"
+CLIENT_LOG="${ARTEFACT_DIR}/client-latency.log"
+WESTON_LOG="${ARTEFACT_DIR}/weston-bench.log"
+REPORT_TXT="${ARTEFACT_DIR}/latency-report.txt"
+RESULTS_JSONL="${ARTEFACT_DIR}/latency-results.jsonl"
+REJECTIONS_TSV="${ARTEFACT_DIR}/latency-rejections.tsv"
+CLIENT_CONFIG="${ARTEFACT_DIR}/benchmark-client-config.yaml"
 
 if [[ -f "${ROOT_DIR}/config.yaml" ]]; then
   cp "${ROOT_DIR}/config.yaml" "${CLIENT_CONFIG}"
 else
   : >"${CLIENT_CONFIG}"
 fi
+if grep -q '^videoCodec:' "${CLIENT_CONFIG}"; then
+  sed -i "s/^videoCodec:.*/videoCodec: \"${VIDEO_CODEC}\"/" "${CLIENT_CONFIG}"
+else
+  printf 'videoCodec: "%s"\n' "${VIDEO_CODEC}" >>"${CLIENT_CONFIG}"
+fi
+if grep -q '^chroma:' "${CLIENT_CONFIG}"; then
+  sed -i "s/^chroma:.*/chroma: \"${CHROMA}\"/" "${CLIENT_CONFIG}"
+else
+  printf 'chroma: "%s"\n' "${CHROMA}" >>"${CLIENT_CONFIG}"
+fi
 if ! grep -q '^dpi:' "${CLIENT_CONFIG}"; then
   printf '\ndpi: %s\n' "${CLIENT_DPI}" >>"${CLIENT_CONFIG}"
 fi
 
+run_build_step() {
+  local label="$1"
+  shift
+  local log_file="${ARTEFACT_DIR}/${label}.log"
+  echo "▶ ${label}..."
+  if "$@" >"${log_file}" 2>&1; then
+    return 0
+  fi
+  echo "❌ ${label} failed; log: ${log_file}" >&2
+  tail -80 "${log_file}" >&2 || true
+  return 1
+}
+
 echo "▶ Building..."
 if [[ "${LLRDC_SKIP_BUILD:-0}" != "1" ]]; then
   if [[ "${ACCELERATOR}" == "cpu" ]]; then
-    "${ROOT_DIR}/docker-build.sh" >/dev/null 2>&1
+    run_build_step docker-build "${ROOT_DIR}/docker-build.sh"
   else
-    "${ROOT_DIR}/docker-build.sh" "${BUILD_FLAGS[0]}" >/dev/null 2>&1
+    run_build_step docker-build "${ROOT_DIR}/docker-build.sh" "${BUILD_FLAGS[0]}"
   fi
-  "${ROOT_DIR}/scripts/package-native-client.sh" >/dev/null 2>&1
+  run_build_step package-native-client "${ROOT_DIR}/scripts/package-native-client.sh"
+elif [[ ! -x "${CLIENT_BIN}" ]]; then
+  echo "❌ --skip-build requested, but the native client package is missing or not executable: ${CLIENT_BIN}" >&2
+  echo "   Run without --skip-build once to build/package the Linux native client." >&2
+  exit 2
 fi
 
 start_weston
@@ -712,30 +790,93 @@ fi
 echo "▶ Warmup (${WARMUP_COUNT})..."
 for _ in $(seq 1 "${WARMUP_COUNT}"); do perform_sample 0 "${CURRENT_MARKER}"; done
 echo "▶ Samples (${SAMPLE_COUNT})..."
-for _ in $(seq 1 "${SAMPLE_COUNT}"); do perform_sample 1 "${CURRENT_MARKER}"; sleep 0.5; done
+for sample_index in $(seq 1 "${SAMPLE_COUNT}"); do
+  perform_sample 1 "${CURRENT_MARKER}"
+  sleep 0.5
+  if (( sample_index == 1 || sample_index % 10 == 0 || sample_index == SAMPLE_COUNT )); then
+    echo "  Progress: ${sample_index}/${SAMPLE_COUNT} measured"
+  fi
+done
 
 collect_results
-LLRDC_P95_CEILING_NS="${LLRDC_P95_CEILING_NS:-0}" python3 - "${RESULTS_JSONL}" "${ARTIFACT_DIR}/latency-report.json" <<'PY'
+LLRDC_P95_CEILING_NS="${LLRDC_P95_CEILING_NS:-0}" python3 - "${RESULTS_JSONL}" "${ARTEFACT_DIR}/latency-report.json" <<'PY'
 import json, os, statistics, sys
-rows = [json.loads(line)["totalNs"] for line in open(sys.argv[1]) if line.strip()]
-if not rows:
+
+samples = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+rows = [sample["totalNs"] for sample in samples]
+if not samples:
     raise SystemExit("no valid latency rows")
 rows.sort()
-def percentile(p):
-    rank = (len(rows) - 1) * p
-    lo, hi = int(rank), min(len(rows) - 1, int(rank) + 1)
+
+def percentile(values, p):
+    rank = (len(values) - 1) * p
+    lo, hi = int(rank), min(len(values) - 1, int(rank) + 1)
     if lo == hi:
-        return rows[lo]
-    return int(rows[lo] + (rows[hi] - rows[lo]) * (rank - lo))
-report = {"count": len(rows), "minNs": rows[0], "p50Ns": percentile(.50),
-          "p95Ns": percentile(.95), "p99Ns": percentile(.99), "maxNs": rows[-1],
+        return values[lo]
+    return int(values[lo] + (values[hi] - values[lo]) * (rank - lo))
+
+report = {"count": len(rows), "minNs": rows[0], "p50Ns": percentile(rows, .50),
+          "p95Ns": percentile(rows, .95), "p99Ns": percentile(rows, .99), "maxNs": rows[-1],
           "meanNs": int(statistics.mean(rows))}
+
+stages = {
+    "control delivery": ("clientInputSendNs", "serverInputReceivedNs"),
+    "server input injection": ("serverInputReceivedNs", "serverInputInjectedNs"),
+    "source application commit": ("serverInputInjectedNs", "probeCommitNs"),
+    "source compositor presentation": ("probeCommitNs", "sourcePresentedNs"),
+    "capture plus encode": ("sourcePresentedNs", "webTransportWriteStartNs"),
+    "WebTransport write": ("webTransportWriteStartNs", "webTransportWriteEndNs"),
+    "client read": ("webTransportWriteEndNs", "receiveNs"),
+    "decode": ("receiveNs", "decodeReadyNs"),
+    "render submission": ("decodeReadyNs", "renderSubmittedNs"),
+    "destination scheduling": ("renderSubmittedNs", "compositorPresentedNs"),
+}
+stage_report = {}
+for name, (start, end) in stages.items():
+    values = sorted(sample[end] - sample[start] for sample in samples)
+    stage_report[name] = {
+        "p50Ns": percentile(values, .50),
+        "p95Ns": percentile(values, .95),
+        "meanNs": int(statistics.mean(values)),
+    }
+report["stages"] = stage_report
+
 ceiling = int(os.environ.get("LLRDC_P95_CEILING_NS", "0"))
 if ceiling and report["p95Ns"] > ceiling:
     raise SystemExit(f"p95 {report['p95Ns']} exceeds committed ceiling {ceiling}")
 json.dump(report, open(sys.argv[2], "w"), indent=2)
-print(json.dumps(report))
+
+def ms(value):
+    return f"{value / 1_000_000:.3f}"
+
+def rule(widths):
+    return "+" + "+".join("-" * (width + 2) for width in widths) + "+"
+
+def table_row(values, widths, right_align=()):
+    cells = []
+    for index, (value, width) in enumerate(zip(values, widths)):
+        text = str(value)
+        cells.append(f" {text:>{width}} " if index in right_align else f" {text:<{width}} ")
+    return "|" + "|".join(cells) + "|"
+
+print(f"\nLatency statistics ({len(samples)} valid samples; milliseconds)")
+total_widths = (27, 10, 10, 10, 10)
+print(rule(total_widths))
+print(table_row(("Metric", "p50", "p95", "mean", "max"), total_widths, (1, 2, 3, 4)))
+print(rule(total_widths))
+print(table_row(("Total latency", ms(report["p50Ns"]), ms(report["p95Ns"]), ms(report["meanNs"]), ms(report["maxNs"])), total_widths, (1, 2, 3, 4)))
+print(rule(total_widths))
+stage_widths = (35, 10, 10, 10)
+print()
+print(rule(stage_widths))
+print(table_row(("Pipeline stage", "p50", "p95", "mean"), stage_widths, (1, 2, 3)))
+print(rule(stage_widths))
+for name, values in stage_report.items():
+    print(table_row((name, ms(values["p50Ns"]), ms(values["p95Ns"]), ms(values["meanNs"])), stage_widths, (1, 2, 3)))
+print(rule(stage_widths))
 PY
 echo "✅ Done. Report: ${REPORT_TXT}"
 printf "\nFinal Results Summary:\n"
-cat "${REPORT_TXT}"
+sed -n '1,4p' "${REPORT_TXT}"
+grep '^Valid samples=' "${REPORT_TXT}" | tail -n 1
+echo "Detailed per-sample timings: ${REPORT_TXT}"

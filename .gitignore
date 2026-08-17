@@ -1,5 +1,7 @@
 .temp
 .DS_Store
+# macOS AppleDouble resource-fork sidecars created during archive/sync operations
+._*
 node_modules
 bin/
 playwright-report/
@@ -18,4 +20,4 @@ test-logs/
 certs/
 .stignore
 .stfolder
-artifacts/
+.artefact/

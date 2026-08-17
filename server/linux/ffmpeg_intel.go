@@ -4,10 +4,10 @@ import (
 	"fmt"
 )
 
-func buildQSVH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int) []string {
+func buildVAAPIH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int) []string {
 	var outputArgs []string
 
-	outputArgs = append(outputArgs, "-c:v", "h264_qsv", "-preset", "veryfast", "-async_depth", "1", "-bf", "0", "-aud", "1")
+	outputArgs = append(outputArgs, "-c:v", "h264_vaapi", "-preset", "veryfast", "-async_depth", "1", "-bf", "0", "-aud", "1")
 
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)
@@ -49,10 +49,10 @@ func buildQSVH264Args(mode string, bw int, quality int, fps int, vbr bool, vbrTh
 }
 
 // server/linux/ffmpeg_intel.go
-func buildQSVH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int, chroma string) []string {
+func buildVAAPIH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int, chroma string) []string {
 	var outputArgs []string
 
-	outputArgs = append(outputArgs, "-c:v", "hevc_qsv", "-preset", "veryfast", "-async_depth", "1", "-bf", "0")
+	outputArgs = append(outputArgs, "-c:v", "hevc_vaapi", "-preset", "veryfast", "-async_depth", "1", "-bf", "0")
 	if chroma == "444" {
 		outputArgs = append(outputArgs, "-profile:v", "scc")
 	}
@@ -96,10 +96,10 @@ func buildQSVH265Args(mode string, bw int, quality int, fps int, vbr bool, vbrTh
 	return outputArgs
 }
 
-func buildQSVAV1Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int) []string {
+func buildVAAPIAV1Args(mode string, bw int, quality int, fps int, vbr bool, vbrThreshold int, keyframeInterval int) []string {
 	var outputArgs []string
 
-	outputArgs = append(outputArgs, "-c:v", "av1_qsv", "-preset", "veryfast", "-async_depth", "1", "-bf", "0")
+	outputArgs = append(outputArgs, "-c:v", "av1_vaapi", "-preset", "veryfast", "-async_depth", "1", "-bf", "0")
 
 	if mode == "bandwidth" {
 		bitrateStr := fmt.Sprintf("%dk", bw*1000)

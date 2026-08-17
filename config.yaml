@@ -1,2 +1,2 @@
-videoCodec: "hevc_qsv"
+videoCodec: "hevc_vaapi"
 chroma: "444"

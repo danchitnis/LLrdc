@@ -52,18 +52,18 @@ func LoadClientConfig(path string) (ClientConfig, error) {
 }
 
 type NativeAppOptions struct {
-	Renderer     WindowRenderer
-	ControlAddr  string
-	ServerURL    string
-	ConfigPath   string
-	Config       ClientConfig
-	Paths        AppPaths
-	BuildID      string
-	ShowStats    bool
-	ExitAfter    time.Duration
-	LatencyProbe bool
-	DebugCursor  bool
-	VBR          bool
+	Renderer       WindowRenderer
+	ControlAddr    string
+	ServerURL      string
+	ConfigPath     string
+	Config         ClientConfig
+	Paths          AppPaths
+	BuildID        string
+	ShowStats      bool
+	ExitAfter      time.Duration
+	LatencyProbe   bool
+	DebugCursor    bool
+	VBR            bool
 	DamageTracking bool
 }
 
@@ -213,7 +213,7 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 
 					encoderSuffix := encoder
 					if encoder == "intel" {
-						encoderSuffix = "qsv"
+						encoderSuffix = "vaapi"
 					}
 
 					val := codec
@@ -263,14 +263,14 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 		}
 	}
 
-	var qsv, nvenc bool
+	var vaapi, nvenc bool
 	if lastConfig != nil {
-		qsv, _ = lastConfig["qsvAvailable"].(bool)
+		vaapi, _ = lastConfig["vaapiAvailable"].(bool)
 		nvenc, _ = lastConfig["nvidiaAvailable"].(bool)
 	} else {
 		// If server config is not available, assume all hardware codecs are possible
 		// to allow initial configuration from YAML to be respected.
-		qsv = true
+		vaapi = true
 		nvenc = true
 	}
 
@@ -294,16 +294,15 @@ func (a *NativeApp) buildCodecOptions() []codecOption {
 
 		// Check server hardware availability
 		isNVENC := strings.HasSuffix(val, "_nvenc")
-		isQSV := strings.HasSuffix(val, "_qsv")
 		isVAAPI := strings.HasSuffix(val, "_vaapi")
 
 		shouldShow := false
-		if !isNVENC && !isQSV && !isVAAPI {
+		if !isNVENC && !isVAAPI {
 			shouldShow = true // CPU fallback is always an option if renderer supports it
 		} else if isNVENC {
 			shouldShow = nvenc
-		} else if isQSV || isVAAPI {
-			shouldShow = qsv
+		} else if isVAAPI {
+			shouldShow = vaapi
 		}
 
 		if shouldShow {
@@ -372,11 +371,11 @@ func defaultCodecOptions() []codecOption {
 		{Label: "H.264 (CPU)", Value: "h264"},
 		{Label: "H.264 (4:4:4)", Value: "h264-444", Chroma: "444"},
 		{Label: "H.264 (NVIDIA 4:4:4)", Value: "h264_nvenc", Chroma: "444"},
-		{Label: "H.264 (Intel)", Value: "h264_qsv"},
+		{Label: "H.264 (Intel)", Value: "h264_vaapi"},
 		{Label: "H.265 (CPU)", Value: "h265"},
 		{Label: "H.265 (4:4:4)", Value: "h265-444", Chroma: "444"},
 		{Label: "H.265 (NVIDIA 4:4:4)", Value: "h265_nvenc", Chroma: "444"},
-		{Label: "HEVC 4:4:4 (Intel)", Value: "h265_qsv-444", Chroma: "444"},
+		{Label: "HEVC 4:4:4 (Intel)", Value: "h265_vaapi-444", Chroma: "444"},
 		{Label: "AV1 (CPU)", Value: "av1"},
 		{Label: "AV1 (NVIDIA NVENC)", Value: "av1_nvenc"},
 	}

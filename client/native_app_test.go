@@ -55,7 +55,7 @@ func TestNativeAppFiltersCodecOptionsByRendererSupport(t *testing.T) {
 	})
 	linuxApp.session.mu.Lock()
 	linuxApp.session.state.LastConfig = map[string]any{
-		"qsvAvailable":    false,
+		"vaapiAvailable":  false,
 		"nvidiaAvailable": false,
 	}
 	linuxApp.session.mu.Unlock()
@@ -81,7 +81,7 @@ func TestNativeAppFiltersCodecOptionsByRendererSupport(t *testing.T) {
 	})
 	macosApp.session.mu.Lock()
 	macosApp.session.state.LastConfig = map[string]any{
-		"qsvAvailable":    false,
+		"vaapiAvailable":  false,
 		"nvidiaAvailable": false,
 	}
 	macosApp.session.mu.Unlock()

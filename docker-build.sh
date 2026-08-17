@@ -88,7 +88,7 @@ echo "  Variant: ${BUILD_VARIANT}"
 
 DOCKER_BUILD_CMD=(
   docker build
-  -f "${DOCKERFILE}"
+  -f "${SCRIPT_DIR}/${DOCKERFILE}"
 )
 
 if [ "${NO_CACHE}" = "true" ]; then

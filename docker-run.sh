@@ -20,7 +20,7 @@ SERVER_FPS="${FPS:-30}"
 SERVER_BANDWIDTH="${BANDWIDTH:-5}"
 SERVER_VBR="${VBR:-false}"
 SERVER_DAMAGE_TRACKING="${DAMAGE_TRACKING:-false}"
-SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
+SERVER_VIDEO_CODEC="${VIDEO_CODEC:-}"
 SERVER_CHROMA="${CHROMA:-420}"
 SERVER_CAPTURE_MODE="${CAPTURE_MODE:-compat}"
 SERVER_RESOLUTION="${RESOLUTION:-0}"
@@ -258,6 +258,9 @@ if [ "$USE_NVIDIA" = "false" ] && [ "$USE_INTEL" = "false" ]; then
 elif [ "$USE_INTEL" = "true" ]; then
   echo "  Mode  : Wayland (Intel GPU)"
 else
+  if [ -z "${SERVER_VIDEO_CODEC:-}" ]; then
+    SERVER_VIDEO_CODEC="h264"
+  fi
   echo "  Mode  : Wayland (NVIDIA GPU)"
 fi
 
@@ -269,7 +272,7 @@ fi
 GPU_ARGS=""
 if [ "$USE_INTEL" = "true" ]; then
   if [ -z "${SERVER_VIDEO_CODEC:-}" ] || [ "$SERVER_VIDEO_CODEC" = "vp8" ]; then
-    SERVER_VIDEO_CODEC="h264_qsv"
+    SERVER_VIDEO_CODEC="h264_vaapi"
   fi
   if [ -d /dev/dri ]; then
     GPU_ARGS="--device /dev/dri:/dev/dri"

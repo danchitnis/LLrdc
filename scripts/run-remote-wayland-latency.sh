@@ -7,6 +7,9 @@ set -euo pipefail
 # real Wayland presentation feedback.
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -n "${LLRDC_ARTEFACT_DIR:-}" && "${LLRDC_ARTEFACT_DIR}" != /* ]]; then
+  export LLRDC_ARTEFACT_DIR="${ROOT_DIR}/${LLRDC_ARTEFACT_DIR}"
+fi
 UID_VALUE="$(id -u)"
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${UID_VALUE}}"
 
@@ -44,9 +47,9 @@ if [[ "${DESTINATION_COMPOSITOR}" == "labwc" ]]; then
   export LLRDC_SKIP_WESTON="0"
   export LLRDC_GNOME_ACTIVATE="0"
   export LLRDC_REQUIRE_CLIENT_FOCUS="0"
-  export LLRDC_ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/remote-wayland-$(date +%Y%m%d-%H%M%S)}"
+  export LLRDC_ARTEFACT_DIR="${LLRDC_ARTEFACT_DIR:-${ROOT_DIR}/.artefact/remote-wayland-$(date +%Y%m%d-%H%M%S)}"
   echo "▶ Destination: isolated headless labwc compositor (lock-independent)"
-  echo "▶ Artifacts: ${LLRDC_ARTIFACT_DIR}"
+  echo "▶ Artefacts: ${LLRDC_ARTEFACT_DIR}"
   if [[ "${LLRDC_VALIDATE_SESSION_ONLY:-0}" == "1" ]]; then
     echo "✅ Isolated destination validation passed"
     exit 0
@@ -110,11 +113,11 @@ fi
 export LLRDC_DESTINATION_COMPOSITOR="gnome"
 export LLRDC_SKIP_WESTON="${LLRDC_SKIP_WESTON:-1}"
 export LLRDC_GNOME_ACTIVATE="${LLRDC_GNOME_ACTIVATE:-1}"
-export LLRDC_ARTIFACT_DIR="${LLRDC_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/remote-wayland-$(date +%Y%m%d-%H%M%S)}"
+export LLRDC_ARTEFACT_DIR="${LLRDC_ARTEFACT_DIR:-${ROOT_DIR}/.artefact/remote-wayland-$(date +%Y%m%d-%H%M%S)}"
 
 echo "▶ Wayland session: ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}"
 echo "▶ Destination: active GNOME compositor (GNOME application activation enabled)"
-echo "▶ Artifacts: ${LLRDC_ARTIFACT_DIR}"
+echo "▶ Artefacts: ${LLRDC_ARTEFACT_DIR}"
 if [[ "${LLRDC_VALIDATE_SESSION_ONLY:-0}" == "1" ]]; then
   echo "✅ Graphical session validation passed"
   exit 0

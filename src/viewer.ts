@@ -116,7 +116,7 @@ session.events.on('serverMessage', (msg: any) => {
             browserCombos.forEach((combo: any) => {
                 let encoderSuffix = combo.encoder;
                 if (combo.encoder === 'intel') {
-                    encoderSuffix = 'qsv';
+                    encoderSuffix = 'vaapi';
                 }
 
                 let val = combo.codec;
@@ -169,18 +169,8 @@ session.events.on('serverMessage', (msg: any) => {
                     else targetValue = 'h264-444';
                 } else if (targetValue.startsWith('h265') || targetValue.startsWith('hevc')) {
                     if (targetValue.includes('_nvenc')) targetValue = 'h265_nvenc-444';
-                    else if (targetValue.includes('_qsv') || targetValue.includes('_vaapi')) targetValue = 'h265_qsv-444';
+                    else if (targetValue.includes('_vaapi')) targetValue = 'h265_vaapi-444';
                     else targetValue = 'h265-444';
-                }
-            }
-
-            // Standard mapping for _vaapi to _qsv for 4:2:0 profiles
-            if (!options.some(opt => opt.value === targetValue)) {
-                if (targetValue.includes('_vaapi')) {
-                    const qsvMapped = targetValue.replace('_vaapi', '_qsv');
-                    if (options.some(opt => opt.value === qsvMapped)) {
-                        targetValue = qsvMapped;
-                    }
                 }
             }
 

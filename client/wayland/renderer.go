@@ -143,7 +143,7 @@ func (r *NativeRenderer) PreferredVideoCodec() string {
 }
 
 func (r *NativeRenderer) SupportedVideoCodecs() []string {
-	return []string{"vp8", "h264", "h264_nvenc", "h264_qsv", "h265", "h265_nvenc", "h265_qsv-444", "hevc", "hevc_vaapi", "av1", "av1_nvenc"}
+	return []string{"vp8", "h264", "h264_nvenc", "h264_vaapi", "h265", "h265_nvenc", "h265_vaapi-444", "hevc", "hevc_vaapi", "av1", "av1_nvenc"}
 }
 
 func (r *NativeRenderer) ResetVideoStream(codec string) {
