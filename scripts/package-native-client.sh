@@ -2,8 +2,13 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 IMAGE_NAME="${CLIENT_IMAGE_NAME:-llrdc-client:native}"
-PACKAGE_ROOT="${PACKAGE_ROOT:-dist}"
+PACKAGE_ROOT="${PACKAGE_ROOT:-${ROOT_DIR}/dist}"
+if [[ "${PACKAGE_ROOT}" != /* ]]; then
+  PACKAGE_ROOT="${ROOT_DIR}/${PACKAGE_ROOT}"
+fi
 IMAGE_PLATFORM="${CLIENT_IMAGE_PLATFORM:-linux/amd64}"
 FFMPEG_RELEASE_BASE="${FFMPEG_RELEASE_BASE:-https://ffmpeg.org/releases}"
 FFMPEG_VERSION="${FFMPEG_VERSION:-auto}"
@@ -36,8 +41,8 @@ BUILD_ID="${CLIENT_BUILD_ID:-$(
 
   {
     {
-      find cmd internal client server -type f -print0
-      printf '%s\0' Dockerfile.client go.mod go.sum scripts/package-native-client.sh
+      find "${ROOT_DIR}/cmd" "${ROOT_DIR}/internal" "${ROOT_DIR}/client" "${ROOT_DIR}/server" -type f -print0
+      printf '%s\0' "${ROOT_DIR}/Dockerfile.client" "${ROOT_DIR}/go.mod" "${ROOT_DIR}/go.sum" "${ROOT_DIR}/scripts/package-native-client.sh"
     } | xargs -0 sha256sum
     printf '%s  %s\n' "${RESOLVED_FFMPEG_VERSION}" "FFMPEG_VERSION"
     printf '%s  %s\n' "${FFMPEG_SOURCE_SHA256}" "FFMPEG_SOURCE_SHA256"
@@ -81,8 +86,8 @@ DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}" docker build \
   --build-arg "CLIENT_BUILD_ID=${BUILD_ID}" \
   --build-arg "FFMPEG_VERSION=${RESOLVED_FFMPEG_VERSION}" \
   --build-arg "FFMPEG_SOURCE_SHA256=${FFMPEG_SOURCE_SHA256}" \
-  -f Dockerfile.client \
-  -t "${IMAGE_NAME}" .
+  -f "${ROOT_DIR}/Dockerfile.client" \
+  -t "${IMAGE_NAME}" "${ROOT_DIR}"
 
 ARCH="$(docker image inspect "${IMAGE_NAME}" --format '{{.Architecture}}')"
 OS="$(docker image inspect "${IMAGE_NAME}" --format '{{.Os}}')"
@@ -238,7 +243,7 @@ Display backend selection:
   - WAYLAND_DISPLAY defaults to wayland-0 when unset.
 
 Important:
-  - This is a native SDL client. It does not embed Chromium, WebView, or WebKit.
+  - This is a native SDL client. It does not embed a browser or WebView.
   - VP8 and H.264 are decoded through the bundled FFmpeg codec libraries.
   - The package uses the host's native SDL/Wayland/audio stack.
   - Audio and clipboard integration still depend on the host session environment.

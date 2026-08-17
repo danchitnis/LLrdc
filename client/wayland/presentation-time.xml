@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="presentation_time">
+  <copyright>
+    Copyright © 2013-2014 Collabora, Ltd.
+</copyright>
+  <interface name="wp_presentation" version="1">
+    <description summary="timed presentation related wl_surface requests">
+      The main feature of this interface is accurate presentation timing
+      feedback for a wl_surface commit.
+    </description>
+    <request name="destroy" type="destructor"/>
+    <request name="feedback">
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="callback" type="new_id" interface="wp_presentation_feedback"/>
+    </request>
+    <event name="clock_id">
+      <arg name="clk_id" type="uint"/>
+    </event>
+  </interface>
+  <interface name="wp_presentation_feedback" version="1">
+    <event name="sync_output">
+      <arg name="output" type="object" interface="wl_output" allow-null="true"/>
+    </event>
+    <event name="presented">
+      <arg name="tv_sec_hi" type="uint"/>
+      <arg name="tv_sec_lo" type="uint"/>
+      <arg name="tv_nsec" type="uint"/>
+      <arg name="refresh" type="uint"/>
+      <arg name="seq_hi" type="uint"/>
+      <arg name="seq_lo" type="uint"/>
+      <arg name="flags" type="uint"/>
+    </event>
+    <event name="discarded" type="destructor"/>
+  </interface>
+</protocol>

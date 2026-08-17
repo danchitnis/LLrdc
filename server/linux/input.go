@@ -217,6 +217,10 @@ func runActivityPulse() {
 }
 
 func ExecTask(task inputTask) error {
+	common.NoteInputInjected(task.SampleID, common.BenchmarkClockNowNs())
+	if task.Type == "mousebtn" && task.Action == "mousedown" {
+		common.ArmLatencyProbeSample(task.SampleID)
+	}
 	// Any input task updates the activity timer to keep the pulse running
 	updateActivity()
 
@@ -315,30 +319,46 @@ func triggerPingLocked() {
 	}
 }
 
-func injectMouseMove(nx, ny float64, sentTime int64) {
+func injectMouseMove(nx, ny float64, sentTime int64, sampleIDs ...uint64) {
+	var sampleID uint64
+	if len(sampleIDs) > 0 {
+		sampleID = sampleIDs[0]
+	}
 	select {
-	case inputChan <- inputTask{Type: "mousemove", NX: nx, NY: ny, SentTime: sentTime}:
+	case inputChan <- inputTask{Type: "mousemove", SampleID: sampleID, NX: nx, NY: ny, SentTime: sentTime}:
 	default:
 	}
 }
 
-func injectMouseButton(button int, action string, sentTime int64) {
+func injectMouseButton(button int, action string, sentTime int64, sampleIDs ...uint64) {
+	var sampleID uint64
+	if len(sampleIDs) > 0 {
+		sampleID = sampleIDs[0]
+	}
 	select {
-	case inputChan <- inputTask{Type: "mousebtn", Button: button, Action: action, SentTime: sentTime}:
+	case inputChan <- inputTask{Type: "mousebtn", SampleID: sampleID, Button: button, Action: action, SentTime: sentTime}:
 	default:
 	}
 }
 
-func injectKey(key, action string, sentTime int64) {
+func injectKey(key, action string, sentTime int64, sampleIDs ...uint64) {
+	var sampleID uint64
+	if len(sampleIDs) > 0 {
+		sampleID = sampleIDs[0]
+	}
 	select {
-	case inputChan <- inputTask{Type: action, Key: key, SentTime: sentTime}:
+	case inputChan <- inputTask{Type: action, SampleID: sampleID, Key: key, SentTime: sentTime}:
 	default:
 	}
 }
 
-func injectMouseWheel(dx, dy float64, sentTime int64) {
+func injectMouseWheel(dx, dy float64, sentTime int64, sampleIDs ...uint64) {
+	var sampleID uint64
+	if len(sampleIDs) > 0 {
+		sampleID = sampleIDs[0]
+	}
 	select {
-	case inputChan <- inputTask{Type: "wheel", DX: dx, DY: dy, SentTime: sentTime}:
+	case inputChan <- inputTask{Type: "wheel", SampleID: sampleID, DX: dx, DY: dy, SentTime: sentTime}:
 	default:
 	}
 }

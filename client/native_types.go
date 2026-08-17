@@ -51,6 +51,7 @@ type NativeWindowLifecycle struct {
 	HasSurface              bool
 	Desktop                 int
 	RenderLoopStarted       bool
+	PresentationClockID     uint32
 	DecoderStateChanged     bool
 	DecoderAwaitingKeyframe bool
 	DecodeError             bool
@@ -68,10 +69,14 @@ type NativeFramePresented struct {
 	FirstRemotePacketAt          int64
 	FirstPacketReadAt            int64
 	ReceiveAt                    int64
+	ReceiveNs                    int64
 	DecodeReadyAt                int64
+	DecodeReadyNs                int64
 	PresentationAt               int64
 	PresentationSource           string
 	CompositorPresentedAt        int64
+	CompositorPresentedNs        int64
+	RenderSubmittedNs            int64
 }
 
 type LatencyBreakdown struct {
@@ -87,6 +92,10 @@ type LatencyBreakdown struct {
 	PresentationAt               int64  `json:"presentationAt"`
 	CompositorPresentedAt        int64  `json:"compositorPresentedAt,omitempty"`
 	PresentationSource           string `json:"presentationSource,omitempty"`
+	CompositorPresentedNs        int64  `json:"compositorPresentedNs,omitempty"`
+	RenderSubmittedNs            int64  `json:"renderSubmittedNs,omitempty"`
+	ReceiveNs                    int64  `json:"receiveNs,omitempty"`
+	DecodeReadyNs                int64  `json:"decodeReadyNs,omitempty"`
 }
 
 type LocalInputSample struct {
@@ -127,4 +136,8 @@ type TimedVideoFrameHandler interface {
 		firstPacketReadAt int64,
 		receiveAt int64,
 	) error
+}
+
+type TimedVideoFrameHandlerNs interface {
+	HandleVideoFrameWithTimingNs(codec string, frame []byte, packetTimestamp int64, receiveNs int64) error
 }

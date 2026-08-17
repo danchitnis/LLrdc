@@ -30,8 +30,8 @@ func (s *Session) SendConfig(config map[string]any) error {
 
 	if vCodec, ok := msg["videoCodec"].(string); ok && lastConfig != nil {
 		if vCodec == "h264" {
-			if qsv, _ := lastConfig["qsvAvailable"].(bool); qsv {
-				msg["videoCodec"] = "h264_qsv"
+			if vaapi, _ := lastConfig["vaapiAvailable"].(bool); vaapi {
+				msg["videoCodec"] = "h264_vaapi"
 			} else if nvenc, _ := lastConfig["nvidiaAvailable"].(bool); nvenc {
 				msg["videoCodec"] = "h264_nvenc"
 			}
@@ -54,8 +54,8 @@ func (s *Session) SendConfig(config map[string]any) error {
 
 			if vt, _ := lastConfig["vtAvailable"].(bool); vt || hasMacOSEncoder {
 				msg["videoCodec"] = "h265"
-			} else if qsv, _ := lastConfig["h265QsvAvailable"].(bool); qsv {
-				msg["videoCodec"] = "h265_qsv"
+			} else if vaapi, _ := lastConfig["h265VaapiAvailable"].(bool); vaapi {
+				msg["videoCodec"] = "h265_vaapi"
 			} else if nvenc, _ := lastConfig["h265Nvenc444Available"].(bool); nvenc {
 				msg["videoCodec"] = "h265_nvenc"
 			} else if intel, _ := lastConfig["intelAvailable"].(bool); intel {
@@ -64,8 +64,8 @@ func (s *Session) SendConfig(config map[string]any) error {
 				msg["videoCodec"] = "h265"
 			}
 		} else if vCodec == "av1" {
-			if qsv, _ := lastConfig["av1QsvAvailable"].(bool); qsv {
-				msg["videoCodec"] = "av1_qsv"
+			if vaapi, _ := lastConfig["av1VaapiAvailable"].(bool); vaapi {
+				msg["videoCodec"] = "av1_vaapi"
 			} else if nvenc, _ := lastConfig["av1NvencAvailable"].(bool); nvenc {
 				msg["videoCodec"] = "av1_nvenc"
 			}
@@ -76,8 +76,12 @@ func (s *Session) SendConfig(config map[string]any) error {
 }
 
 func (s *Session) SendInput(msg map[string]any) error {
-	s.emit(EventInputSent, cloneMap(msg))
-	return s.sendMessage(msg)
+	payload := cloneMap(msg)
+	if sampleID, ok := numberToInt64(payload["sampleId"]); ok && sampleID > 0 {
+		payload["clientInputSendNs"] = BenchmarkClockNowNs()
+	}
+	s.emit(EventInputSent, cloneMap(payload))
+	return s.sendMessage(payload)
 }
 
 func (s *Session) SendPing() error {
@@ -88,12 +92,18 @@ func (s *Session) SendPing() error {
 }
 
 func (s *Session) sendMessage(msg map[string]any) error {
-	body, err := json.Marshal(msg)
+	s.mu.Lock()
+	payload := cloneMap(msg)
+	if sampleID, ok := numberToInt64(payload["sampleId"]); ok && sampleID > 0 {
+		// Stamp immediately before serializing the control message so the
+		// server-side value represents the native send boundary, not event setup.
+		payload["clientInputSendNs"] = BenchmarkClockNowNs()
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
-
-	s.mu.Lock()
 	if msgType, _ := msg["type"].(string); msgType == "mousemove" || msgType == "mousebtn" || msgType == "keydown" || msgType == "keyup" || msgType == "wheel" {
 		s.stats.InputMessagesSent++
 	}

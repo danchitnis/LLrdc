@@ -9,6 +9,62 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
+func h264ParameterSets(data []byte) []byte {
+	var sets []byte
+	for _, nalu := range splitH264NALUsLocal(data) {
+		if len(nalu) == 0 {
+			continue
+		}
+		typ := nalu[0] & 0x1f
+		if typ == 7 || typ == 8 {
+			sets = append(sets, 0, 0, 0, 1)
+			sets = append(sets, nalu...)
+		}
+	}
+	return sets
+}
+
+func h264HasParameterSets(data []byte) bool {
+	for _, nalu := range splitH264NALUsLocal(data) {
+		if len(nalu) > 0 && (nalu[0]&0x1f == 7 || nalu[0]&0x1f == 8) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitH264NALUsLocal(data []byte) [][]byte {
+	var result [][]byte
+	start := -1
+	for i := 0; i < len(data); {
+		prefix := 0
+		if i+4 <= len(data) && data[i] == 0 && data[i+1] == 0 && data[i+2] == 0 && data[i+3] == 1 {
+			prefix = 4
+		} else if i+3 <= len(data) && data[i] == 0 && data[i+1] == 0 && data[i+2] == 1 {
+			prefix = 3
+		}
+		if prefix == 0 {
+			i++
+			continue
+		}
+		if start >= 0 && start < i {
+			nalu := data[start:i]
+			if len(nalu) > 0 {
+				result = append(result, nalu)
+			}
+		}
+		start = i + prefix
+		i += prefix
+	}
+	if start >= 0 && start < len(data) {
+		result = append(result, data[start:])
+	}
+	if len(result) == 0 && len(data) > 0 {
+		return [][]byte{data}
+	}
+	return result
+}
+
 func isKeyframe(codec string, data []byte) bool {
 	if strings.Contains(strings.ToLower(codec), "vp8") {
 		if len(data) == 0 {

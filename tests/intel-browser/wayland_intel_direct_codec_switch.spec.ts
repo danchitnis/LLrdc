@@ -64,30 +64,28 @@ test.describe('Wayland Intel Direct Codec Switch', () => {
         await page.goto(SERVER_URL);
         await page.click('body');
 
-        // Initial default should be h264_qsv (H.264 GPU)
+        // Initial default should be h264_vaapi (H.264 GPU)
         await expect(page.locator('#direct-buffer-status')).toHaveText(/Active/, { timeout: 30000 });
         await expect(page.locator('#status')).toContainText(/\[h264 🚀 GPU\]/, { timeout: 45000 });
         
         // Wait for streaming on the default h264 path
         await waitForStreamingFrames(page, 'Wait for decoded frames on default H.264 path');
 
-        // Check that UI is populated correctly (av1_qsv removed, h265_qsv-444 added)
+        // Check that UI is populated correctly (av1_vaapi removed, h265_vaapi-444 added)
         await page.click('#config-btn');
         const options = await page.locator('#video-codec-select option').allTextContents();
         expect(options).toContain('H.264 (Intel)');
         expect(options).toContain('HEVC 4:4:4 (Intel)');
-        expect(options).not.toContain('H.265 (Intel QSV)'); // Old label
         expect(options).not.toContain('H.265 (Intel)'); // My accidental addition earlier
-        expect(options).not.toContain('AV1 (Intel QSV)'); // Old AV1 removed
         
         // Ensure current selection is mapped correctly
-        await expect(page.locator('#video-codec-select')).toHaveValue('h264_qsv');
+        await expect(page.locator('#video-codec-select')).toHaveValue('h264_vaapi');
 
         // Switch to HEVC 4:4:4 pseudo-codec
         await page.evaluate(() => {
             const select = document.getElementById('video-codec-select') as HTMLSelectElement | null;
             if (select) {
-                select.value = 'h265_qsv-444';
+                select.value = 'h265_vaapi-444';
                 select.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
@@ -95,22 +93,22 @@ test.describe('Wayland Intel Direct Codec Switch', () => {
         // Wait for the new track to stream
         await expect(page.locator('#status')).toContainText(/\[h265 🚀 GPU\]/, { timeout: 45000 });
         
-        // Note: Chromium does not support HEVC decoding due to licensing, so we cannot use waitForStreamingFrames here.
+        // Note: the installed Chrome lane does not support HEVC decoding here, so use server-side frame checks.
         // We will rely on the server-side readyz check to verify the switch was successful.
 
-        // Check backend via readyz that chroma is 444 and codec is h265_qsv or hevc_vaapi (since it's resolved internally)
+        // Check backend via readyz that chroma is 444 and codec is h265_vaapi or hevc_vaapi (since it's resolved internally)
         await expect.poll(async () => {
             return await fetchReadyz(SERVER_URL);
         }, { timeout: 10000, message: 'Wait for backend to report HEVC 4:4:4' }).toMatchObject({
             chroma: '444',
-            videoCodec: 'h265_qsv'
+            videoCodec: 'h265_vaapi'
         });
 
         // Switch back to H.264 (which implicitly sets chroma back to 420 via UI logic)
         await page.evaluate(() => {
             const select = document.getElementById('video-codec-select') as HTMLSelectElement | null;
             if (select) {
-                select.value = 'h264_qsv';
+                select.value = 'h264_vaapi';
                 select.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
@@ -122,6 +120,6 @@ test.describe('Wayland Intel Direct Codec Switch', () => {
         // Verify backend state
         const finalReadyz = await fetchReadyz(SERVER_URL);
         expect(finalReadyz.chroma).toBe('420');
-        expect(finalReadyz.videoCodec).toBe('h264_qsv');
+        expect(finalReadyz.videoCodec).toBe('h264_vaapi');
     });
 });

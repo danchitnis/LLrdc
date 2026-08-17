@@ -46,7 +46,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
         } catch (e) {}
     });
 
-    test('should activate direct-buffer mode with Intel QSV and stream frames', async ({ page }) => {
+    test('should activate direct-buffer mode with Intel VAAPI and stream frames', async ({ page }) => {
         test.setTimeout(180000);
 
         await expect.poll(async () => {
@@ -87,7 +87,7 @@ test.describe('Wayland Intel Direct Buffer Path', () => {
         await page.evaluate(() => {
             const select = document.getElementById('video-codec-select') as HTMLSelectElement | null;
             if (select) {
-                select.value = 'av1_qsv';
+                select.value = 'av1_vaapi';
                 select.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });

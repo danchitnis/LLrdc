@@ -32,9 +32,9 @@ var (
 	AV1NVENCAvailable     bool
 	H264NVENC444Available bool
 	H265NVENC444Available bool
-	QSVAvailable          bool
-	H265QSVAvailable      bool
-	AV1QSVAvailable       bool
+	VAAPIAvailable        bool
+	H265VAAPIAvailable    bool
+	AV1VAAPIAvailable     bool
 	UseDebugFFmpeg        bool
 	UseDebugInput         bool
 	TestPattern           bool
@@ -187,10 +187,10 @@ func InitConfig() {
 		printFlag(os.Stderr, "port", "Port for HTTP server", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
 		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", TargetBandwidthMbps)
-		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)", VideoCodec)
+		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_vaapi, h265, h265_nvenc, h265_vaapi, hevc_vaapi, av1, av1_nvenc, av1_vaapi)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-nvidia", "Enable NVIDIA acceleration if available", UseNVIDIA)
-		printFlag(os.Stderr, "use-intel", "Enable Intel QSV acceleration if available", UseIntel)
+		printFlag(os.Stderr, "use-intel", "Enable Intel VAAPI acceleration if available", UseIntel)
 		printFlag(os.Stderr, "intel-render-node", "Path to Intel render node (e.g. /dev/dri/renderD128)", IntelRenderNode)
 		printFlag(os.Stderr, "capture-mode", "Capture mode (compat, direct, or agent)", CaptureMode)
 		printFlag(os.Stderr, "agent-address", "TCP address for remote agent streaming (e.g. host.docker.internal:12345)", AgentAddress)
@@ -220,10 +220,10 @@ func InitConfig() {
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP server")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
 	flag.IntVar(&TargetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
-	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h264_vaapi, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)")
+	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_vaapi, h265, h265_nvenc, h265_vaapi, hevc_vaapi, av1, av1_nvenc, av1_vaapi)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseNVIDIA, "use-nvidia", defaultUseNVIDIA, "Enable NVIDIA acceleration if available")
-	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel QSV acceleration if available")
+	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel VAAPI acceleration if available")
 	flag.StringVar(&IntelRenderNode, "intel-render-node", defaultIntelRenderNode, "Path to Intel render node (e.g. /dev/dri/renderD128)")
 	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat, direct, or agent)")
 	flag.StringVar(&AgentAddress, "agent-address", defaultAgentAddress, "TCP address for remote agent streaming (e.g. host.docker.internal:12345)")
@@ -281,29 +281,29 @@ func InitConfig() {
 	}
 
 	if UseIntel {
-		log.Printf("Checking Intel QSV capabilities...")
-		outQSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q h264_qsv && echo true || echo false").Output()
-		QSVAvailable = strings.TrimSpace(string(outQSV)) == "true"
-		if QSVAvailable {
-			log.Printf("Intel QSV hardware acceleration detected")
+		log.Printf("Checking Intel VAAPI capabilities...")
+		outVAAPI, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q h264_vaapi && echo true || echo false").Output()
+		VAAPIAvailable = strings.TrimSpace(string(outVAAPI)) == "true"
+		if VAAPIAvailable {
+			log.Printf("Intel VAAPI hardware acceleration detected")
 			renderNode := resolveIntelRenderNode()
-			checkCmd := fmt.Sprintf("TMP=$(mktemp /tmp/llrdc-hevc-qsv-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -init_hw_device vaapi=hw:%s -filter_hw_device hw -vf format=nv12,hwupload -c:v hevc_vaapi -bf 0 -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -f hevc \"$TMP\" >/dev/null 2>&1 && echo true || echo false", renderNode)
+			checkCmd := fmt.Sprintf("TMP=$(mktemp /tmp/llrdc-hevc-vaapi-XXXX.hevc) && ffmpeg -hide_banner -y -f lavfi -i testsrc=size=1280x720:rate=30 -t 2 -init_hw_device vaapi=hw:%s -filter_hw_device hw -vf format=nv12,hwupload -c:v hevc_vaapi -bf 0 -b:v 5M -maxrate 5M -bufsize 10M -g 60 -profile:v main -f hevc \"$TMP\" >/dev/null 2>&1 && echo true || echo false", renderNode)
 			cmd := exec.Command("bash", "-c", checkCmd)
 			cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR=/tmp/llrdc-run")
-			outH265QSV, _ := cmd.Output()
-			H265QSVAvailable = strings.TrimSpace(string(outH265QSV)) == "true"
-			if H265QSVAvailable {
+			outH265VAAPI, _ := cmd.Output()
+			H265VAAPIAvailable = strings.TrimSpace(string(outH265VAAPI)) == "true"
+			if H265VAAPIAvailable {
 				log.Printf("Intel H.265 hardware encode support detected")
 			}
-			outAV1QSV, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_qsv && echo true || echo false").Output()
-			AV1QSVAvailable = strings.TrimSpace(string(outAV1QSV)) == "true"
-			if AV1QSVAvailable {
-				log.Printf("AV1 QSV support detected")
+			outAV1VAAPI, _ := exec.Command("bash", "-c", "ffmpeg -hide_banner -encoders | grep -q av1_vaapi && echo true || echo false").Output()
+			AV1VAAPIAvailable = strings.TrimSpace(string(outAV1VAAPI)) == "true"
+			if AV1VAAPIAvailable {
+				log.Printf("AV1 VAAPI support detected")
 			}
 		}
 	}
 
-	if UseIntel && (VideoCodec == "h265_qsv" || VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi") && !H265QSVAvailable {
+	if UseIntel && (VideoCodec == "h265_vaapi" || VideoCodec == "hevc_vaapi") && !H265VAAPIAvailable {
 		if CaptureMode == CaptureModeDirect {
 			log.Fatalf("Invalid direct-buffer configuration: Intel H.265 hardware encode is not supported on this FFmpeg/driver stack")
 		}
@@ -331,9 +331,9 @@ func SyncConfigToCommon() {
 	common.AV1NVENCAvailable = AV1NVENCAvailable
 	common.H264NVENC444Available = H264NVENC444Available
 	common.H265NVENC444Available = H265NVENC444Available
-	common.QSVAvailable = QSVAvailable
-	common.H265QSVAvailable = H265QSVAvailable
-	common.AV1QSVAvailable = AV1QSVAvailable
+	common.VAAPIAvailable = VAAPIAvailable
+	common.H265VAAPIAvailable = H265VAAPIAvailable
+	common.AV1VAAPIAvailable = AV1VAAPIAvailable
 	common.UseDebugFFmpeg = UseDebugFFmpeg
 	common.UseDebugInput = UseDebugInput
 	common.TestPattern = TestPattern
@@ -362,23 +362,23 @@ func ResolveRequestedVideoCodec(codec string) string {
 	baseCodec := strings.Split(codec, "-")[0]
 
 	if UseIntel {
-		if baseCodec == "h265" || baseCodec == "hevc" || baseCodec == "h265_vaapi" || baseCodec == "hevc_vaapi" || baseCodec == "h265_qsv" {
-			if H265QSVAvailable {
-				return "h265_qsv"
+		if baseCodec == "h265" || baseCodec == "hevc" || baseCodec == "h265_vaapi" || baseCodec == "hevc_vaapi" {
+			if H265VAAPIAvailable || baseCodec == "h265_vaapi" || baseCodec == "hevc_vaapi" {
+				return "h265_vaapi"
 			}
-			return "h265_vaapi"
+			return "h265"
 		}
-		if baseCodec == "h264" || baseCodec == "h264_vaapi" || baseCodec == "h264_qsv" {
-			if QSVAvailable {
-				return "h264_qsv"
+		if baseCodec == "h264" || baseCodec == "h264_vaapi" {
+			if VAAPIAvailable || baseCodec == "h264_vaapi" {
+				return "h264_vaapi"
 			}
-			return "h264_vaapi"
+			return "h264"
 		}
-		if baseCodec == "av1" || baseCodec == "av1_qsv" || baseCodec == "av1_vaapi" {
-			if AV1QSVAvailable {
-				return "av1_qsv"
+		if baseCodec == "av1" || baseCodec == "av1_vaapi" {
+			if AV1VAAPIAvailable || baseCodec == "av1_vaapi" {
+				return "av1_vaapi"
 			}
-			return "av1_vaapi"
+			return "av1"
 		}
 	}
 
@@ -401,11 +401,11 @@ func ResolveRequestedVideoCodec(codec string) string {
 
 func NormalizeCodecFamily(codec string) string {
 	switch codec {
-	case "h264", "h264_nvenc", "h264_qsv", "h264_vaapi":
+	case "h264", "h264_nvenc", "h264_vaapi":
 		return "h264"
-	case "h265", "h265_nvenc", "hevc_nvenc", "h265_qsv", "h265_vaapi", "hevc_vaapi":
+	case "h265", "h265_nvenc", "hevc_nvenc", "h265_vaapi", "hevc_vaapi":
 		return "h265"
-	case "av1", "av1_nvenc", "av1_qsv", "av1_vaapi":
+	case "av1", "av1_nvenc", "av1_vaapi":
 		return "av1"
 	default:
 		return codec

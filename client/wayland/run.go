@@ -103,6 +103,18 @@ func (r *NativeRenderer) Run() error {
 	}
 	defer renderer.Destroy()
 
+	var presentation *presentationFeedback
+	pendingPresentation := make(map[uint64]client.NativeFramePresented)
+	if r.probeLatency {
+		presentation, err = newPresentationFeedback(unsafe.Pointer(window))
+		if err != nil {
+			r.emitLifecycle(client.NativeWindowLifecycle{Error: err.Error()})
+			return err
+		}
+		defer presentation.Close()
+		r.emitLifecycle(client.NativeWindowLifecycle{PresentationClockID: presentation.ClockID()})
+	}
+
 	windowState := nativeWindowState{
 		created: true,
 		shown:   true,
@@ -167,6 +179,7 @@ func (r *NativeRenderer) Run() error {
 		defer close(decodedFrames)
 		var currentCodec string
 		var av *avDecoder
+		decodedLogCount := 0
 
 		closeDecoders := func() {
 			if av != nil {
@@ -188,6 +201,13 @@ func (r *NativeRenderer) Run() error {
 					r.mu.Unlock()
 					continue
 				}
+				// A reconnect/config race can deliver a reset notification before
+				// the session has a codec value. Never replace a working decoder
+				// with an empty codec; the next media sample carries the actual
+				// codec and will continue through the existing decoder.
+				if strings.TrimSpace(codec) == "" {
+					continue
+				}
 				sCodec := strings.ToLower(codec)
 				cCodec := strings.ToLower(currentCodec)
 				if currentCodec != "" && normalizeClientCodecFamily(sCodec) != normalizeClientCodecFamily(cCodec) {
@@ -205,6 +225,13 @@ func (r *NativeRenderer) Run() error {
 
 				sCodec := strings.ToLower(sample.codec)
 				cCodec := strings.ToLower(currentCodec)
+				if strings.TrimSpace(sample.codec) == "" {
+					if currentCodec == "" {
+						continue
+					}
+					sample.codec = currentCodec
+					sCodec = strings.ToLower(sample.codec)
+				}
 
 				if currentCodec == "" {
 					currentCodec = sample.codec
@@ -249,6 +276,13 @@ func (r *NativeRenderer) Run() error {
 				}
 				frame, err := av.Decode(sample.data)
 				if err != nil {
+					// FFmpeg reports AVERROR_INVALIDDATA for parameter-set-only or
+					// out-of-order Annex-B access units. Keep the decoder alive so a
+					// subsequent SPS/PPS+IDR packet can establish the stream; tearing
+					// it down here loses parameter sets and can prevent recovery.
+					if strings.Contains(err.Error(), "decode av frame: -1094995529") {
+						continue
+					}
 					log.Printf("FFmpeg decode error: %v, resetting decoder", err)
 					av.Close()
 					av = nil
@@ -265,6 +299,10 @@ func (r *NativeRenderer) Run() error {
 					continue
 				}
 				if frame.width > 0 && frame.height > 0 {
+					if decodedLogCount < 3 {
+						log.Printf("native decoder produced frame: %dx%d marker=%d", frame.width, frame.height, decodeProbeMarker(frame))
+						decodedLogCount++
+					}
 					r.mu.RLock()
 					lowLatency := r.lowLatency
 					r.mu.RUnlock()
@@ -276,7 +314,9 @@ func (r *NativeRenderer) Run() error {
 						firstRemotePacketAt:          sample.firstRemotePacketAt,
 						firstPacketReadAt:            sample.firstPacketReadAt,
 						receiveAt:                    sample.receiveAt,
+						receiveNs:                    sample.receiveNs,
 						decodeReadyAt:                client.BenchmarkClockNowMs(),
+						decodeReadyNs:                client.BenchmarkClockNowNs(),
 					}, lowLatency)
 				}
 			}
@@ -293,6 +333,7 @@ func (r *NativeRenderer) Run() error {
 	}()
 
 	var lastPresentAt int64
+	presentationDiagCount := 0
 	for {
 		r.processWindowRequests(window, renderer)
 
@@ -449,6 +490,29 @@ func (r *NativeRenderer) Run() error {
 				r.emitLifecycle(lifecycle)
 			}
 		}
+		if presentation != nil {
+			presentation.Dispatch()
+			results := presentation.Poll()
+			if presentationDiagCount < 3 {
+				log.Printf("wayland presentation poll: clock=%d results=%d displayError=%d", presentation.ClockID(), len(results), presentation.Error())
+				presentationDiagCount++
+			}
+			for _, result := range results {
+				event, ok := pendingPresentation[result.token]
+				if !ok {
+					continue
+				}
+				delete(pendingPresentation, result.token)
+				if result.discarded {
+					continue
+				}
+				event.CompositorPresentedNs = result.presentedNs
+				event.CompositorPresentedAt = result.presentedNs / int64(time.Millisecond)
+				event.PresentationAt = event.CompositorPresentedAt
+				event.PresentationSource = "wayland_presentation_feedback"
+				r.emitPresent(event)
+			}
+		}
 
 		var decoded *nativeDecodedSample
 		select {
@@ -463,7 +527,13 @@ func (r *NativeRenderer) Run() error {
 				}
 				continue
 			}
-		case d := <-decodedFrames:
+		case d, ok := <-decodedFrames:
+			if !ok {
+				return nil
+			}
+			if d.frame == nil {
+				continue
+			}
 			decoded = &d
 		case <-time.After(16 * time.Millisecond):
 			// Heartbeat for events and UI
@@ -541,8 +611,16 @@ func (r *NativeRenderer) Run() error {
 			}
 
 			r.drawOverlay(renderer)
+			feedbackToken := uint64(0)
+			if presentation != nil {
+				feedbackToken = presentation.Request()
+				if presentationDiagCount < 3 {
+					log.Printf("wayland presentation request token=%d", feedbackToken)
+				}
+			}
+			renderSubmittedNs := client.BenchmarkClockNowNs()
 			renderer.Present()
-			lastPresentAt = client.BenchmarkClockNowMs()
+			lastPresentAt = renderSubmittedNs / int64(time.Millisecond)
 
 			if decoded != nil {
 				brightness := -1
@@ -563,7 +641,7 @@ func (r *NativeRenderer) Run() error {
 				r.presentedFrameCount++
 				r.mu.Unlock()
 
-				r.emitPresent(client.NativeFramePresented{
+				nativeEvent := client.NativeFramePresented{
 					Width:                        int(decoded.frame.width),
 					Height:                       int(decoded.frame.height),
 					PacketTimestamp:              decoded.packetTimestamp,
@@ -574,10 +652,18 @@ func (r *NativeRenderer) Run() error {
 					FirstRemotePacketAt:          decoded.firstRemotePacketAt,
 					FirstPacketReadAt:            decoded.firstPacketReadAt,
 					ReceiveAt:                    decoded.receiveAt,
+					ReceiveNs:                    decoded.receiveNs,
 					DecodeReadyAt:                decoded.decodeReadyAt,
+					DecodeReadyNs:                decoded.decodeReadyNs,
 					PresentationAt:               lastPresentAt,
-					PresentationSource:           "render_present",
-				})
+					PresentationSource:           "render_submit",
+					RenderSubmittedNs:            renderSubmittedNs,
+				}
+				if presentation != nil && feedbackToken > 0 {
+					pendingPresentation[feedbackToken] = nativeEvent
+				} else {
+					r.emitPresent(nativeEvent)
+				}
 			}
 		}
 	}

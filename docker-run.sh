@@ -20,7 +20,7 @@ SERVER_FPS="${FPS:-30}"
 SERVER_BANDWIDTH="${BANDWIDTH:-5}"
 SERVER_VBR="${VBR:-false}"
 SERVER_DAMAGE_TRACKING="${DAMAGE_TRACKING:-false}"
-SERVER_VIDEO_CODEC="${VIDEO_CODEC:-h264}"
+SERVER_VIDEO_CODEC="${VIDEO_CODEC:-}"
 SERVER_CHROMA="${CHROMA:-420}"
 SERVER_CAPTURE_MODE="${CAPTURE_MODE:-compat}"
 SERVER_RESOLUTION="${RESOLUTION:-0}"
@@ -33,8 +33,8 @@ USE_INTEL="false"
 USE_DETACHED="false"
 USE_HOST_NET="false"
 USE_DRY_RUN="false"
-USE_DEBUG_FFMPEG="false"
-USE_DEBUG_INPUT="false"
+USE_DEBUG_FFMPEG="${USE_DEBUG_FFMPEG:-false}"
+USE_DEBUG_INPUT="${USE_DEBUG_INPUT:-false}"
 SERVER_HDPI="${HDPI:-0}"
 HOST_RENDER_GID="${RENDER_GID:-}"
 HOST_VIDEO_GID="${VIDEO_GID:-}"
@@ -258,6 +258,9 @@ if [ "$USE_NVIDIA" = "false" ] && [ "$USE_INTEL" = "false" ]; then
 elif [ "$USE_INTEL" = "true" ]; then
   echo "  Mode  : Wayland (Intel GPU)"
 else
+  if [ -z "${SERVER_VIDEO_CODEC:-}" ]; then
+    SERVER_VIDEO_CODEC="h264"
+  fi
   echo "  Mode  : Wayland (NVIDIA GPU)"
 fi
 
@@ -269,7 +272,7 @@ fi
 GPU_ARGS=""
 if [ "$USE_INTEL" = "true" ]; then
   if [ -z "${SERVER_VIDEO_CODEC:-}" ] || [ "$SERVER_VIDEO_CODEC" = "vp8" ]; then
-    SERVER_VIDEO_CODEC="h264_qsv"
+    SERVER_VIDEO_CODEC="h264_vaapi"
   fi
   if [ -d /dev/dri ]; then
     GPU_ARGS="--device /dev/dri:/dev/dri"
@@ -331,6 +334,19 @@ if [ "$USE_NVIDIA" = "true" ]; then
   # Enable privileged mode for direct capture to bypass driver-level unprivileged memory export/import blocks
   if [ "$SERVER_CAPTURE_MODE" = "direct" ]; then
     GPU_ARGS="$GPU_ARGS --privileged"
+    # Mount host GBM and NVIDIA Allocator libraries into the container
+    if [ -d /usr/lib/x86_64-linux-gnu/gbm ]; then
+      GPU_ARGS="$GPU_ARGS -v /usr/lib/x86_64-linux-gnu/gbm:/usr/lib/x86_64-linux-gnu/gbm:ro"
+    fi
+    for lib in /usr/lib/x86_64-linux-gnu/libnvidia-allocator.so*; do
+      if [ -e "$lib" ] && [ ! -L "$lib" ]; then
+        GPU_ARGS="$GPU_ARGS -v $lib:$lib:ro"
+      fi
+    done
+    # Mount Vulkan ICD configurations to enable headless Vulkan-CUDA interop
+    if [ -d /usr/share/vulkan/icd.d ]; then
+      GPU_ARGS="$GPU_ARGS -v /usr/share/vulkan/icd.d:/usr/share/vulkan/icd.d:ro"
+    fi
   fi
 fi
 
@@ -431,6 +447,7 @@ DOCKER_RUN_CMD+=(
   --env "CPU_EFFORT=${CPU_EFFORT:-}"
   --env "NVENC_LATENCY_MODE=${NVENC_LATENCY_MODE:-}"
   --env "CLIENT_TIMEOUT=${CLIENT_TIMEOUT:-}"
+  --env "LLRDC_PRESENTATION_CLOCK_ID=${LLRDC_PRESENTATION_CLOCK_ID:-}"
   --env "ENABLE_AUDIO=${ENABLE_AUDIO:-false}"
   --env "AUDIO_BITRATE=${AUDIO_BITRATE:-128k}"
   --env "HDPI=${SERVER_HDPI}"

@@ -49,9 +49,11 @@ RUN wayland-scanner client-header tools/wayland/wlr-virtual-pointer-unstable-v1.
     && wayland-scanner private-code tools/wayland/wlr-export-dmabuf-unstable-v1.xml /tmp/wlr-export-dmabuf-unstable-v1-client-protocol.c \
     && wayland-scanner client-header /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell-client-protocol.h \
     && wayland-scanner private-code /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell-client-protocol.c \
+    && wayland-scanner client-header /usr/share/wayland-protocols/stable/presentation-time/presentation-time.xml presentation-time-client-protocol.h \
+    && wayland-scanner private-code /usr/share/wayland-protocols/stable/presentation-time/presentation-time.xml presentation-time-client-protocol.c \
     && gcc -o wayland_input_client tools/wayland/wayland_input_client.c wlr-virtual-pointer-unstable-v1-client-protocol.c virtual-keyboard-unstable-v1-client-protocol.c -I. $(pkg-config --cflags --libs wayland-client xkbcommon) \
     && gcc -O2 -o direct_buffer_probe tools/direct_buffer_probe.c $(pkg-config --cflags --libs wayland-client) \
-    && gcc -O2 -o latency_probe tools/latency_probe.c xdg-shell-client-protocol.c -I. $(pkg-config --cflags --libs wayland-client wayland-cursor)
+    && gcc -O2 -o latency_probe tools/latency_probe.c xdg-shell-client-protocol.c presentation-time-client-protocol.c -I. $(pkg-config --cflags --libs wayland-client wayland-cursor)
 
 ARG ENABLE_NVIDIA=false
 ARG CACHEBUST=11
@@ -82,7 +84,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   xfce4-pulseaudio-plugin \
   pavucontrol \
   python3 \
-  python3-tk \
   glycin-loaders \
   adwaita-icon-theme-full \
   elementary-xfce-icon-theme \
@@ -182,7 +183,6 @@ COPY --from=helper-builder /build/wayland_input_client ./wayland_input_client
 COPY --from=helper-builder /build/direct_buffer_probe /usr/local/bin/direct_buffer_probe
 COPY --from=helper-builder /build/latency_probe /usr/local/bin/latency_probe
 COPY --from=helper-builder /build/nvidia_direct_capture_native /usr/local/bin/nvidia_direct_capture_native
-COPY tools/latency_probe_app.py ./tools/
 
 RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/

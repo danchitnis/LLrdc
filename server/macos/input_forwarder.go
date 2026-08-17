@@ -58,6 +58,7 @@ func startInputProcessor() {
 	log.Println("Starting macOS input task processor")
 	inputChan := common.GetInputChannel()
 	for task := range inputChan {
+		common.NoteInputInjected(task.SampleID, common.BenchmarkClockNowNs())
 		var line string
 		switch task.Type {
 		case "mousemove":

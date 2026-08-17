@@ -191,11 +191,11 @@ func GetValidCombinations() []ValidCombination {
 			case "intel":
 				if UseIntel {
 					if codecName == "h265" {
-						hardwareOk = H265QSVAvailable
+						hardwareOk = H265VAAPIAvailable
 					} else if codecName == "av1" {
-						hardwareOk = AV1QSVAvailable
+						hardwareOk = AV1VAAPIAvailable
 					} else {
-						hardwareOk = QSVAvailable
+						hardwareOk = VAAPIAvailable
 					}
 				}
 			}
@@ -218,7 +218,7 @@ func GetValidCombinations() []ValidCombination {
 						}
 					} else if encoderName == "intel" {
 						if codecName == "h265" {
-							chromaOk = H265QSVAvailable
+							chromaOk = H265VAAPIAvailable
 						} else {
 							chromaOk = false
 						}

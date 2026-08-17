@@ -138,11 +138,14 @@ import "C"
 
 import (
 	"fmt"
+	"strings"
 	"unsafe"
 )
 
 type avDecoder struct {
-	raw C.llrdc_av_decoder
+	raw           C.llrdc_av_decoder
+	codec         string
+	h264ParamSets []byte
 }
 
 type decodedFrame struct {
@@ -162,38 +165,55 @@ func decodeProbeMarker(frame decodedFrame) int {
 		return 0
 	}
 
-	const (
-		markerBits = 16
-		refDarkX   = 80
-		refBrightX = 144
-		startX     = 240
-		startY     = 80
-		cellSize   = 40
-		cellGap    = 20
-	)
+	// Weston may expose a scaled logical surface. Try the unscaled layout and
+	// the common integer buffer scales without relaxing the inverse checksum.
+	for scale := 1; scale <= 4; scale++ {
+		if marker := decodeProbeMarkerAtScale(frame, scale); marker >= 0 {
+			return marker
+		}
+	}
+	return 0
+}
 
+func decodeProbeMarkerAtScale(frame decodedFrame, scale int) int {
+	const markerBits = 32
+	refDarkX, refBrightX, startX, startY := 40*scale, 72*scale, 120*scale, 40*scale
+	cellSize, cellGap := 18*scale, 7*scale
 	refDark := sampleMarkerCellAverage(frame, refDarkX, startY, cellSize)
 	refBright := sampleMarkerCellAverage(frame, refBrightX, startY, cellSize)
-	if refDark < 0 || refBright < 0 {
-		return 0
+	if refDark < 0 || refBright < 0 || absInt(refDark-refBright) < 24 {
+		return -1
 	}
 	threshold := (refDark + refBright) / 2
 
-	marker := 0
+	bits := make([]int, markerBits)
 	for bit := 0; bit < markerBits; bit++ {
 		cellX := startX + bit*(cellSize+cellGap)
 		cellAvg := sampleMarkerCellAverage(frame, cellX, startY, cellSize)
 		if cellAvg < 0 {
-			return 0
+			return -1
 		}
 		if cellAvg < threshold {
-			marker++
-			continue
+			bits[bit] = 1
 		}
-		break
 	}
-
+	marker := 0
+	inverse := 0
+	for bit := 0; bit < 16; bit++ {
+		marker |= bits[bit] << bit
+		inverse |= bits[bit+16] << bit
+	}
+	if inverse != (^marker & 0xffff) {
+		return -1
+	}
 	return marker
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func sampleMarkerCellAverage(frame decodedFrame, x, y, size int) int {
@@ -231,12 +251,29 @@ func (d *avDecoder) Init(codec string) error {
 	if rc := C.llrdc_av_init(&d.raw, cStr); rc != 0 {
 		return fmt.Errorf("init av decoder (%s): %d", codec, int(rc))
 	}
+	d.codec = codec
+	d.h264ParamSets = nil
 	return nil
 }
 
 func (d *avDecoder) Decode(data []byte) (decodedFrame, error) {
 	if len(data) == 0 {
 		return decodedFrame{}, nil
+	}
+	// NVENC can emit a forced IDR without the parameter sets in the same
+	// access unit. Cache SPS/PPS from any preceding unit and prepend them to
+	// later H.264 samples so a decoder that has just joined/reconnected can
+	// establish the stream instead of remaining stuck at "non-existing PPS".
+	if strings.Contains(strings.ToLower(d.codec), "h264") {
+		if sets := h264ParameterSets(data); len(sets) > 0 {
+			d.h264ParamSets = sets
+		}
+		if len(d.h264ParamSets) > 0 && !h264HasParameterSets(data) {
+			joined := make([]byte, 0, len(d.h264ParamSets)+len(data))
+			joined = append(joined, d.h264ParamSets...)
+			joined = append(joined, data...)
+			data = joined
+		}
 	}
 	rc := C.llrdc_av_decode(&d.raw, (*C.uchar)(unsafe.Pointer(&data[0])), C.uint(len(data)))
 	if rc != 0 {

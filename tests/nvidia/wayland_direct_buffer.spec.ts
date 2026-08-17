@@ -25,6 +25,10 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
                 ...process.env,
                 PORT: PORT.toString(),
                 HOST_PORT: PORT.toString(),
+                VIDEO_CODEC: 'h264_nvenc',
+                FPS: '60',
+                RESOLUTION: '1920x1080',
+                VBR: 'false',
                 CONTAINER_NAME,
             },
             stdio: 'inherit',
@@ -38,6 +42,35 @@ test.describe('Wayland Direct Buffer GPU Path', () => {
         try {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
         } catch (e) {}
+    });
+
+    test('installed Chrome validates direct H.264 1080p60, input, and reconnection', async ({ page }) => {
+        test.setTimeout(90000);
+        await page.goto(SERVER_URL);
+        await page.click('body');
+
+        const readyz: any = await fetchReadyz(SERVER_URL);
+        expect(readyz).toMatchObject({
+            acceleratorMode: 'nvidia',
+            videoCodec: 'h264_nvenc',
+            directBuffer: { requested: true, active: true, zeroCopyValidated: true, captureMode: 'direct' },
+        });
+        await expect(page.locator('#status')).toContainText(/WebTransport|WebSocket/, { timeout: 30000 });
+        await expect.poll(async () => (await page.evaluate(() => window.getStats?.().totalDecoded ?? 0)), {
+            timeout: 30000,
+        }).toBeGreaterThan(0);
+
+        const beforeInput = await page.evaluate(() => window.getStats?.().totalDecoded ?? 0);
+        await page.mouse.move(320, 240);
+        await expect.poll(async () => (await page.evaluate(() => window.getStats?.().totalDecoded ?? 0)), {
+            timeout: 20000,
+        }).toBeGreaterThan(beforeInput);
+
+        await page.reload();
+        await expect(page.locator('#status')).toContainText(/WebTransport|WebSocket/, { timeout: 30000 });
+        await expect.poll(async () => (await page.evaluate(() => window.getStats?.().totalDecoded ?? 0)), {
+            timeout: 30000,
+        }).toBeGreaterThan(0);
     });
 
     test('should activate direct-buffer mode and stream frames end to end or fail closed gracefully', async ({ page }) => {

@@ -28,9 +28,9 @@ var (
 	AV1NVENCAvailable     bool
 	H264NVENC444Available bool
 	H265NVENC444Available bool
-	QSVAvailable          bool
-	H265QSVAvailable      bool
-	AV1QSVAvailable       bool
+	VAAPIAvailable        bool
+	H265VAAPIAvailable    bool
+	AV1VAAPIAvailable     bool
 	UseDebugFFmpeg        bool
 	UseDebugInput         bool
 	TestPattern           bool
@@ -181,10 +181,10 @@ func InitConfig() {
 		printFlag(os.Stderr, "port", "Port for HTTP server", Port)
 		printFlag(os.Stderr, "fps", "Target framerate", FPS)
 		printFlag(os.Stderr, "bandwidth", "Target bandwidth in Mbps", TargetBandwidthMbps)
-		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_qsv, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)", VideoCodec)
+		printFlag(os.Stderr, "video-codec", "Video codec (vp8, h264, h264_nvenc, h264_vaapi, h265, h265_nvenc, h265_vaapi, hevc_vaapi, av1, av1_nvenc, av1_vaapi)", VideoCodec)
 		printFlag(os.Stderr, "chroma", "Chroma subsampling format (420 or 444)", Chroma)
 		printFlag(os.Stderr, "use-nvidia", "Enable NVIDIA acceleration if available", UseNVIDIA)
-		printFlag(os.Stderr, "use-intel", "Enable Intel QSV acceleration if available", UseIntel)
+		printFlag(os.Stderr, "use-intel", "Enable Intel VAAPI acceleration if available", UseIntel)
 		printFlag(os.Stderr, "intel-render-node", "Path to Intel render node (e.g. /dev/dri/renderD128)", IntelRenderNode)
 		printFlag(os.Stderr, "capture-mode", "Capture mode (compat, direct, or agent)", CaptureMode)
 		printFlag(os.Stderr, "agent-address", "TCP address for remote agent streaming (e.g. host.docker.internal:12345)", AgentAddress)
@@ -214,10 +214,10 @@ func InitConfig() {
 	flag.IntVar(&Port, "port", defaultPort, "Port for HTTP server")
 	flag.IntVar(&FPS, "fps", defaultFPS, "Target framerate")
 	flag.IntVar(&TargetBandwidthMbps, "bandwidth", defaultBandwidth, "Target bandwidth in Mbps")
-	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_qsv, h264_vaapi, h265, h265_nvenc, h265_qsv, hevc_vaapi, av1, av1_nvenc, av1_qsv)")
+	flag.StringVar(&VideoCodec, "video-codec", defaultVideoCodec, "Video codec (vp8, h264, h264_nvenc, h264_vaapi, h265, h265_nvenc, h265_vaapi, hevc_vaapi, av1, av1_nvenc, av1_vaapi)")
 	flag.StringVar(&Chroma, "chroma", defaultChroma, "Chroma subsampling format (420 or 444)")
 	flag.BoolVar(&UseNVIDIA, "use-nvidia", defaultUseNVIDIA, "Enable NVIDIA acceleration if available")
-	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel QSV acceleration if available")
+	flag.BoolVar(&UseIntel, "use-intel", defaultUseIntel, "Enable Intel VAAPI acceleration if available")
 	flag.StringVar(&IntelRenderNode, "intel-render-node", defaultIntelRenderNode, "Path to Intel render node (e.g. /dev/dri/renderD128)")
 	flag.StringVar(&CaptureMode, "capture-mode", defaultCaptureMode, "Capture mode (compat, direct, or agent)")
 	flag.StringVar(&AgentAddress, "agent-address", defaultAgentAddress, "TCP address for remote agent streaming (e.g. host.docker.internal:12345)")
@@ -254,23 +254,23 @@ func printFlag(w *os.File, name, usage string, def any) {
 
 func ResolveRequestedVideoCodec(codec string) string {
 	if UseIntel {
-		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" || codec == "h265_qsv" {
-			if H265QSVAvailable {
-				return "h265_qsv"
+		if codec == "h265" || codec == "hevc" || codec == "h265_vaapi" || codec == "hevc_vaapi" {
+			if H265VAAPIAvailable || codec == "h265_vaapi" || codec == "hevc_vaapi" {
+				return "h265_vaapi"
 			}
-			return "h265_vaapi"
+			return "h265"
 		}
-		if codec == "h264" || codec == "h264_vaapi" || codec == "h264_qsv" {
-			if QSVAvailable {
-				return "h264_qsv"
+		if codec == "h264" || codec == "h264_vaapi" {
+			if VAAPIAvailable || codec == "h264_vaapi" {
+				return "h264_vaapi"
 			}
-			return "h264_vaapi"
+			return "h264"
 		}
-		if codec == "av1" || codec == "av1_qsv" || codec == "av1_vaapi" {
-			if AV1QSVAvailable {
-				return "av1_qsv"
+		if codec == "av1" || codec == "av1_vaapi" {
+			if AV1VAAPIAvailable || codec == "av1_vaapi" {
+				return "av1_vaapi"
 			}
-			return "av1_vaapi"
+			return "av1"
 		}
 	}
 	return codec
@@ -278,11 +278,11 @@ func ResolveRequestedVideoCodec(codec string) string {
 
 func NormalizeCodecFamily(codec string) string {
 	switch codec {
-	case "h264", "h264_nvenc", "h264_qsv", "h264_vaapi":
+	case "h264", "h264_nvenc", "h264_vaapi":
 		return "h264"
-	case "h265", "h265_nvenc", "h265_qsv", "h265_vaapi", "hevc_vaapi":
+	case "h265", "h265_nvenc", "h265_vaapi", "hevc_vaapi":
 		return "h265"
-	case "av1", "av1_nvenc", "av1_qsv", "av1_vaapi":
+	case "av1", "av1_nvenc", "av1_vaapi":
 		return "av1"
 	default:
 		return codec

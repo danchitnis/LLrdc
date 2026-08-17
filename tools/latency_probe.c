@@ -14,15 +14,17 @@
 #include <poll.h>
 #include <wayland-client.h>
 #include "xdg-shell-client-protocol.h"
+#include "presentation-time-client-protocol.h"
 
 #define STATE_PATH "/tmp/llrdc-latency-probe.json"
-#define MARKER_BITS 16
+#define NEXT_SAMPLE_PATH "/tmp/llrdc-latency-probe-next-sample-id"
+#define MARKER_BITS 32
 #define MARKER_REF_DARK_X 40
 #define MARKER_REF_BRIGHT_X 72
 #define MARKER_START_X 120
 #define MARKER_START_Y 40
-#define MARKER_CELL_SIZE 20
-#define MARKER_CELL_GAP 10
+#define MARKER_CELL_SIZE 18
+#define MARKER_CELL_GAP 7
 
 struct probe_app {
     struct wl_display *display;
@@ -35,6 +37,8 @@ struct probe_app {
     struct wl_surface *surface;
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
+    struct wp_presentation *presentation;
+    uint32_t presentation_clock_id;
 
     int width, height;
     bool running;
@@ -42,6 +46,12 @@ struct probe_app {
     int marker;
     int64_t requested_at_ms;
     int64_t drawn_at_ms;
+    int64_t requested_at_ns;
+    int64_t drawn_at_ns;
+    int64_t probe_commit_ns;
+    int64_t source_presented_ns;
+    bool sample_commit_pending;
+    bool sample_commit_in_flight;
 
     int mouse_x, mouse_y;
     struct wl_buffer *buffer;
@@ -50,17 +60,43 @@ struct probe_app {
     bool was_near_center;
 };
 
+struct presentation_feedback_context {
+    struct probe_app *app;
+    int marker;
+    bool sampled;
+    int64_t commit_ns;
+};
+
+struct frame_callback_context {
+    struct probe_app *app;
+    int marker;
+    bool sampled;
+    int64_t commit_ns;
+};
+
+static clockid_t benchmark_clock_id(void) {
+    const char *value = getenv("LLRDC_PRESENTATION_CLOCK_ID");
+    if (value && atoi(value) == 4) return CLOCK_MONOTONIC_RAW;
+    return CLOCK_MONOTONIC;
+}
+
 static int64_t get_now_ms(void) {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    clock_gettime(benchmark_clock_id(), &ts);
     return ((int64_t)ts.tv_sec * 1000LL) + ((int64_t)ts.tv_nsec / 1000000LL);
+}
+
+static int64_t get_now_ns(void) {
+    struct timespec ts;
+    clock_gettime(benchmark_clock_id(), &ts);
+    return ((int64_t)ts.tv_sec * 1000000000LL) + (int64_t)ts.tv_nsec;
 }
 
 static void write_state(struct probe_app *app) {
     FILE *f = fopen(STATE_PATH, "w");
     if (!f) return;
-    fprintf(f, "{\"marker\": %d, \"color\": \"%s\", \"requestedAtMs\": %" PRId64 ", \"drawnAtMs\": %" PRId64 ", \"mouseX\": %d, \"mouseY\": %d}\n",
-            app->marker, app->is_white ? "white" : "black", app->requested_at_ms, app->drawn_at_ms, app->mouse_x, app->mouse_y);
+    fprintf(f, "{\"marker\": %d, \"color\": \"%s\", \"requestedAtMs\": %" PRId64 ", \"drawnAtMs\": %" PRId64 ", \"requestedAtNs\": %" PRId64 ", \"drawnAtNs\": %" PRId64 ", \"probeCommitNs\": %" PRId64 ", \"sourcePresentedNs\": %" PRId64 ", \"presentationClockId\": %u, \"mouseX\": %d, \"mouseY\": %d}\n",
+            app->marker, app->is_white ? "white" : "black", app->requested_at_ms, app->drawn_at_ms, app->requested_at_ns, app->drawn_at_ns, app->probe_commit_ns, app->source_presented_ns, app->presentation_clock_id, app->mouse_x, app->mouse_y);
     fclose(f);
 }
 
@@ -88,13 +124,14 @@ static void fill_buffer(struct probe_app *app) {
     draw_rect(app, 0, app->height - 20, 20, 20, marker_color);
     draw_rect(app, app->width - 20, app->height - 20, 20, 20, marker_color);
 
-    // Reference cells plus a unary marker stripe survive VP8 compression
-    // more reliably than single-pixel binary sampling.
+    // Reference cells plus a binary marker and its inverse survive codec
+    // quantization while allowing the full 16-bit sample range.
     draw_rect(app, MARKER_REF_DARK_X, MARKER_START_Y, MARKER_CELL_SIZE, MARKER_CELL_SIZE, dark_code_color);
     draw_rect(app, MARKER_REF_BRIGHT_X, MARKER_START_Y, MARKER_CELL_SIZE, MARKER_CELL_SIZE, bright_code_color);
     for (int bit = 0; bit < MARKER_BITS; bit++) {
         int x = MARKER_START_X + bit * (MARKER_CELL_SIZE + MARKER_CELL_GAP);
-        uint32_t color = (bit < app->marker) ? dark_code_color : bright_code_color;
+        int value = bit < 16 ? ((app->marker >> bit) & 1) : !((app->marker >> (bit - 16)) & 1);
+        uint32_t color = value ? dark_code_color : bright_code_color;
         draw_rect(app, x, MARKER_START_Y, MARKER_CELL_SIZE, MARKER_CELL_SIZE, color);
     }
 
@@ -109,29 +146,135 @@ static void fill_buffer(struct probe_app *app) {
 }
 
 static void frame_handle_done(void *data, struct wl_callback *callback, uint32_t time) {
-    struct probe_app *app = data;
-    app->drawn_at_ms = get_now_ms();
-    write_state(app);
+    (void)time;
+    struct frame_callback_context *ctx = data;
+    struct probe_app *app = ctx->app;
+    // Only the frame callback belonging to the sampled commit may update the
+    // state consumed by the server. Motion/cursor redraws can use the same
+    // marker, but are not the sampled source update.
+    if (ctx->sampled && ctx->marker == app->marker) {
+        app->probe_commit_ns = ctx->commit_ns;
+        app->drawn_at_ms = get_now_ms();
+        app->drawn_at_ns = get_now_ns();
+        write_state(app);
+    }
     wl_callback_destroy(callback);
+    free(ctx);
 }
 static const struct wl_callback_listener frame_listener = { .done = frame_handle_done };
 
+static void presentation_clock_id(void *data, struct wp_presentation *presentation, uint32_t clock_id) {
+    (void)presentation;
+    ((struct probe_app *)data)->presentation_clock_id = clock_id;
+}
+static const struct wp_presentation_listener presentation_listener = { .clock_id = presentation_clock_id };
+
+static void feedback_sync_output(void *data, struct wp_presentation_feedback *feedback, struct wl_output *output) {
+    (void)data; (void)feedback; (void)output;
+}
+static void feedback_presented(void *data, struct wp_presentation_feedback *feedback,
+                               uint32_t sec_hi, uint32_t sec_lo, uint32_t nsec,
+                               uint32_t refresh, uint32_t seq_hi, uint32_t seq_lo, uint32_t flags) {
+    (void)feedback; (void)refresh; (void)seq_hi; (void)seq_lo; (void)flags;
+    struct presentation_feedback_context *ctx = data;
+    struct probe_app *app = ctx->app;
+    uint64_t seconds = ((uint64_t)sec_hi << 32) | sec_lo;
+    if (ctx->sampled && ctx->marker == app->marker) {
+        // Preserve the commit timestamp captured for this exact feedback
+        // object.  A later redraw may have committed the same marker, but it
+        // must not replace the sampled commit in the latency trace.
+        app->probe_commit_ns = ctx->commit_ns;
+        app->source_presented_ns = (int64_t)(seconds * 1000000000ULL + nsec);
+        app->sample_commit_in_flight = false;
+        write_state(app);
+    }
+    free(ctx);
+}
+static void feedback_discarded(void *data, struct wp_presentation_feedback *feedback) {
+    (void)feedback;
+    struct presentation_feedback_context *ctx = data;
+    if (ctx->sampled && ctx->marker == ctx->app->marker) {
+        ctx->app->sample_commit_in_flight = false;
+    }
+    free(ctx);
+}
+static const struct wp_presentation_feedback_listener feedback_listener = {
+    .sync_output = feedback_sync_output,
+    .presented = feedback_presented,
+    .discarded = feedback_discarded,
+};
+
 static void commit_frame(struct probe_app *app) {
+    // Do not let an auxiliary cursor/brightness redraw supersede the sampled
+    // commit while its presentation feedback is still outstanding.
+    if (!app->sample_commit_pending && app->sample_commit_in_flight) return;
     fill_buffer(app);
     wl_surface_attach(app->surface, app->buffer, 0, 0);
     wl_surface_damage(app->surface, 0, 0, app->width, app->height);
     struct wl_callback *callback = wl_surface_frame(app->surface);
-    wl_callback_add_listener(callback, &frame_listener, app);
+    int marker = app->marker;
+    bool sampled = app->sample_commit_pending;
+    int64_t commit_ns = get_now_ns();
+    struct frame_callback_context *frame_ctx = calloc(1, sizeof(*frame_ctx));
+    if (frame_ctx) {
+        frame_ctx->app = app;
+        frame_ctx->marker = marker;
+        frame_ctx->sampled = sampled;
+        frame_ctx->commit_ns = commit_ns;
+        if (wl_callback_add_listener(callback, &frame_listener, frame_ctx) < 0) {
+            free(frame_ctx);
+            wl_callback_destroy(callback);
+        }
+    } else {
+        wl_callback_destroy(callback);
+    }
+    if (app->presentation) {
+        struct wp_presentation_feedback *feedback = wp_presentation_feedback(app->presentation, app->surface);
+        if (feedback) {
+            struct presentation_feedback_context *ctx = calloc(1, sizeof(*ctx));
+            if (ctx) {
+                ctx->app = app;
+                ctx->marker = marker;
+                ctx->sampled = sampled;
+                ctx->commit_ns = commit_ns;
+                if (wp_presentation_feedback_add_listener(feedback, &feedback_listener, ctx) < 0) {
+                    free(ctx);
+                    wp_presentation_feedback_destroy(feedback);
+                }
+            } else {
+                wp_presentation_feedback_destroy(feedback);
+            }
+        }
+    }
     wl_surface_commit(app->surface);
+    if (sampled) app->sample_commit_in_flight = true;
+}
+
+static uint64_t next_sample_id(void) {
+    FILE *f = fopen(NEXT_SAMPLE_PATH, "r");
+    if (!f) return 0;
+    unsigned long long value = 0;
+    int ok = fscanf(f, "%llu", &value);
+    fclose(f);
+    if (ok != 1 || value == 0) return 0;
+    unlink(NEXT_SAMPLE_PATH);
+    return (uint64_t)value;
 }
 
 static void trigger(struct probe_app *app) {
     int64_t now = get_now_ms();
     if (now - app->last_trigger_ms < 150) return;
-    app->marker++;
+    uint64_t sample_id = next_sample_id();
+    if (sample_id > 0 && sample_id <= INT32_MAX) app->marker = (int)sample_id;
+    else app->marker++;
     app->requested_at_ms = now;
+    app->requested_at_ns = get_now_ns();
+    app->source_presented_ns = 0;
+    app->sample_commit_in_flight = false;
+    app->sample_commit_pending = true;
     app->last_trigger_ms = now;
     commit_frame(app);
+    app->sample_commit_pending = false;
 }
 
 static void xdg_surface_handle_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
@@ -154,16 +297,16 @@ static void pointer_handle_motion(void *data, struct wl_pointer *wl_pointer, uin
     app->mouse_x = wl_fixed_to_int(surface_x);
     app->mouse_y = wl_fixed_to_int(surface_y);
 
+    if (app->sample_commit_in_flight) return;
     write_state(app);
 
     bool near_center = (abs(app->mouse_x - app->width/2) < 50 && abs(app->mouse_y - app->height/2) < 50);
     if (near_center != app->is_white) {
         app->is_white = near_center;
-        if (near_center) {
-            trigger(app);
-        } else {
-            commit_frame(app);
-        }
+        // Motion changes the brightness reference cells, but must not create
+        // a latency sample.  The authoritative marker is allocated by the
+        // sampled button-down below, after the control message is armed.
+        commit_frame(app);
     } else {
         commit_frame(app); 
     }
@@ -194,6 +337,7 @@ static void registry_handle_global(void *data, struct wl_registry *registry, uin
     if (strcmp(interface, wl_compositor_interface.name) == 0) app->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
     else if (strcmp(interface, wl_shm_interface.name) == 0) app->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0) { app->xdg_wm_base = wl_registry_bind(registry, name, &xdg_wm_base_interface, 1); xdg_wm_base_add_listener(app->xdg_wm_base, &xdg_wm_base_listener, app); }
+    else if (strcmp(interface, wp_presentation_interface.name) == 0 && !app->presentation) { app->presentation = wl_registry_bind(registry, name, &wp_presentation_interface, version < 1 ? version : 1); wp_presentation_add_listener(app->presentation, &presentation_listener, app); }
     else if (strcmp(interface, wl_seat_interface.name) == 0) { app->seat = wl_registry_bind(registry, name, &wl_seat_interface, 7); wl_seat_add_listener(app->seat, &seat_listener, app); }
 }
 static void registry_handle_global_remove(void *data, struct wl_registry *registry, uint32_t name) {}
@@ -212,6 +356,9 @@ int main(void) {
     if (!app.display) return 1;
     app.registry = wl_display_get_registry(app.display);
     wl_registry_add_listener(app.registry, &registry_listener, &app);
+    // The first roundtrip delivers globals; the second delivers events from
+    // newly bound globals such as wp_presentation.clock_id.
+    wl_display_roundtrip(app.display);
     wl_display_roundtrip(app.display);
     app.surface = wl_compositor_create_surface(app.compositor);
     app.xdg_surface = xdg_wm_base_get_xdg_surface(app.xdg_wm_base, app.surface);

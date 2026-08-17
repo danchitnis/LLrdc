@@ -3,7 +3,7 @@
 ## Summary
 
 The remote desktop was not actually being cropped by the app layout in normal browser use.
-The bug was specific to headed Playwright Chromium on this machine.
+This historical note is superseded: the browser lane now uses the installed headed Google Chrome binary on native Wayland.
 
 The visible browser window opened too small, so the bottom of the remote desktop was hidden unless the window was manually stretched.
 
@@ -18,15 +18,15 @@ The visible browser window opened too small, so the bottom of the remote desktop
 
 There were two separate Playwright/browser issues interacting:
 
-1. Native Wayland headed Chromium produced fractional layout overshoot.
+1. Native Wayland headed Chrome produced fractional layout overshoot.
 
    - On this setup, a requested `1280x800` viewport could lay out as roughly `1280.447 x 800.447`.
    - That made element bounds slightly larger than `window.innerWidth/innerHeight`.
-   - This was a Playwright headed Chromium + Wayland environment issue, not a viewer sizing bug.
+   - This was a headed Chrome + Wayland environment issue, not a viewer sizing bug.
 
 2. The Playwright project config was still overriding the intended real-window settings.
 
-   - `projects.chromium.use = { ...devices['Desktop Chrome'] }` reintroduced Playwright's fixed device viewport.
+   - A fixed browser device viewport reintroduced the sizing issue.
    - That cancelled the attempt to use a larger real browser window.
    - As a result, the headed browser still needed manual stretching even after page geometry looked better.
 
@@ -41,11 +41,11 @@ There were two separate Playwright/browser issues interacting:
 
 The final stable fix was in [`playwright.config.ts`](/home/danial/code/LLrdc/playwright.config.ts):
 
-1. Stop using the `Desktop Chrome` device override for the Chromium project.
+1. Stop using a fixed device override for the Chrome project.
 
    - That override was restoring a fixed Playwright device viewport and defeating the real-window fix.
 
-2. Run headed Chromium through X11/XWayland instead of native Wayland.
+2. Keep headed Chrome on native Wayland.
 
    - Use `--ozone-platform=x11`.
    - This removed the fractional viewport/layout overshoot.
@@ -86,7 +86,7 @@ For the WebRTC tests involved in this issue:
 
 If this regresses in the future, check these in order:
 
-1. Verify the Chromium project is not reapplying a device preset like `Desktop Chrome`.
+1. Verify the Chrome project is not reapplying a fixed device preset.
 2. Log both page and outer-window metrics:
 
    - `window.innerWidth`
@@ -96,7 +96,7 @@ If this regresses in the future, check these in order:
    - `screen.availWidth`
    - `screen.availHeight`
 
-3. Check whether headed Chromium is running on native Wayland instead of X11/XWayland.
+3. Check that headed Chrome is running on native Wayland.
 4. Confirm the test is using a real window (`viewport: null`) and not only an emulated viewport.
 5. Re-measure the correct `--window-size` for the current desktop environment if window-manager chrome changed.
 

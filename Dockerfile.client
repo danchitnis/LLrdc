@@ -58,6 +58,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     build-essential \
     pkg-config \
     libsdl2-dev \
+    libwayland-dev \
+    wayland-protocols \
+    libwayland-bin \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -74,6 +77,10 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     go mod download
+
+COPY client/wayland/presentation-time.xml /tmp/presentation-time.xml
+RUN wayland-scanner client-header /tmp/presentation-time.xml /usr/local/include/llrdc-presentation-time-client-protocol.h \
+    && wayland-scanner private-code /tmp/presentation-time.xml /usr/local/include/llrdc-presentation-time-client-protocol.c
 
 COPY internal ./internal
 COPY server ./server

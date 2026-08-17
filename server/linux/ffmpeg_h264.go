@@ -106,6 +106,11 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 	temp := make([]byte, 524288)
 	currentAU := make([][]byte, 0, 8)
 	currentHasVCL := false
+	// Keep the latest parameter sets available. Some NVENC forced-IDR
+	// outputs contain only the IDR slice even though the encoder was asked to
+	// repeat SPS/PPS; every emitted VCL access unit must remain independently
+	// decodable for a reconnecting native client.
+	parameterSets := make(map[int][]byte, 2)
 
 	emitCurrent := func() {
 		if !currentHasVCL && len(currentAU) == 0 {
@@ -115,8 +120,34 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 		parsedAtMs := benchmarkClockNowMs()
 
 		if len(currentAU) > 0 {
+			outputAU := currentAU
+			if currentHasVCL && len(parameterSets) > 0 {
+				hasSPS, hasPPS := false, false
+				for _, nal := range currentAU {
+					switch h264NALType(nal) {
+					case 7:
+						hasSPS = true
+					case 8:
+						hasPPS = true
+					}
+				}
+				prefix := make([][]byte, 0, 2)
+				if !hasSPS {
+					if sps := parameterSets[7]; len(sps) > 0 {
+						prefix = append(prefix, sps)
+					}
+				}
+				if !hasPPS {
+					if pps := parameterSets[8]; len(pps) > 0 {
+						prefix = append(prefix, pps)
+					}
+				}
+				if len(prefix) > 0 {
+					outputAU = append(prefix, currentAU...)
+				}
+			}
 			onFrame(EncodedVideoFrame{
-				Data:         joinNALUnits(currentAU),
+				Data:         joinNALUnits(outputAU),
 				ParsedAtMs:   parsedAtMs,
 				LatencyTrace: startLatencyProbeEncodedFrame(parsedAtMs, 0),
 			})
@@ -140,6 +171,9 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 
 		headerByte := nalCopy[start+prefixLen]
 		nalType := int(headerByte & 0x1f)
+		if nalType == 7 || nalType == 8 {
+			parameterSets[nalType] = nalCopy
+		}
 
 		isVCL := nalType == 1 || nalType == 5
 
@@ -223,4 +257,12 @@ func splitH264AnnexB(reader io.Reader, onFrame func(EncodedVideoFrame)) {
 			return
 		}
 	}
+}
+
+func h264NALType(nal []byte) int {
+	start, prefixLen, ok := findAnnexBStartCode(nal, 0)
+	if !ok || start+prefixLen >= len(nal) {
+		return -1
+	}
+	return int(nal[start+prefixLen] & 0x1f)
 }
