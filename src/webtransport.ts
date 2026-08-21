@@ -1,8 +1,28 @@
 import { log } from './ui';
 
+interface WebTransportStream {
+    readable: ReadableStream<Uint8Array>;
+    writable: WritableStream<Uint8Array>;
+}
+
+interface WebTransportConnection {
+    ready: Promise<void>;
+    closed: Promise<void>;
+    createBidirectionalStream: () => Promise<WebTransportStream>;
+    incomingUnidirectionalStreams: ReadableStream<ReadableStream<Uint8Array>>;
+}
+
+interface WebTransportOptions {
+    serverCertificateHashes: Array<{ algorithm: 'sha-256'; value: Uint8Array }>;
+}
+
+interface WebTransportConstructor {
+    new (url: string, options: WebTransportOptions): WebTransportConnection;
+}
+
 export class WebTransportManager {
-    private transport: any | null = null;
-    private controlStream: any | null = null;
+    private transport: WebTransportConnection | null = null;
+    private controlStream: WebTransportStream | null = null;
     private controlWriter: WritableStreamDefaultWriter | null = null;
     private onBinaryMessage: (buffer: ArrayBuffer) => void;
     private onJsonMessage: (msg: Record<string, unknown>) => void;
@@ -35,7 +55,7 @@ export class WebTransportManager {
         if (this.isWebTransportActive || this.isConnecting) return;
         this.isConnecting = true;
 
-        const wtGlobal = (globalThis as any).WebTransport;
+        const wtGlobal = (globalThis as typeof globalThis & { WebTransport?: WebTransportConstructor }).WebTransport;
         if (!wtGlobal) {
             log('[WebTransport] Error: API not supported.');
             this.isConnecting = false;
@@ -52,7 +72,7 @@ export class WebTransportManager {
                 bytes[i] = binaryString.charCodeAt(i);
             }
 
-            const options: any = {
+            const options: WebTransportOptions = {
                 serverCertificateHashes: [
                     {
                         algorithm: 'sha-256',
@@ -89,7 +109,7 @@ export class WebTransportManager {
         } catch (e) {
             const msg = (e as Error).message || 'Unknown error';
             log(`[WebTransport] Connection FAILED: ${msg}`);
-            const isWS = (globalThis as any).websocketTransport?.isActive;
+            const isWS = window.websocketTransport?.isActive;
             if (!isWS && (msg.toLowerCase().includes('timeout') || msg.toLowerCase().includes('hash'))) {
                 log('[WebTransport] Tip: If on Safari, try manually trusting the certificate in Keychain Access OR use the WebSocket fallback.');
             }
@@ -164,7 +184,7 @@ export class WebTransportManager {
         }
     }
 
-    private async handleVideoStream(stream: any) {
+    private async handleVideoStream(stream: ReadableStream<Uint8Array>) {
         log('[WebTransport] Video stream received');
         const reader = stream.getReader();
         let buffer = new Uint8Array(10 * 1024 * 1024); // 10MB persistent buffer

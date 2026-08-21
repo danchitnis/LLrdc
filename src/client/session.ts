@@ -4,12 +4,12 @@ import { WebSocketTransport } from '../websocket-transport';
 import { ClientEventEmitter } from './hooks';
 import { detectKeyFrame, parseBinaryVideoPacket } from './protocol';
 import { updateStatusText, log } from '../ui';
-import type { BrowserClientState, ConfigMessage, PresentedFrameMeta, BrowserStats, BrowserClientApi } from './types';
+import type { BrowserClientState, ConfigMessage, PresentedFrameMeta, BrowserStats, BrowserServerMessage } from './types';
 
 export interface BrowserClientEvents {
     connected: undefined;
     disconnected: undefined;
-    serverMessage: Record<string, unknown>;
+    serverMessage: BrowserServerMessage;
     presentedFrame: PresentedFrameMeta;
     error: string;
 }
@@ -24,7 +24,7 @@ export class BrowserClientSession {
 
     private presentedFrames: PresentedFrameMeta[] = [];
     private masterPollInterval: ReturnType<typeof setInterval>;
-    private isSecureContext = (globalThis as any).isSecureContext;
+    private isSecureContext = globalThis.isSecureContext;
     private isBootstrapping = false;
     private lastReceivedKeyFrameTime = 0;
     private lastKeyframeRequestTime = 0;
@@ -51,9 +51,9 @@ export class BrowserClientSession {
             onConnected
         );
 
-        (window as any).webcodecsManager = this.webcodecs;
-        (window as any).webtransportManager = this.webtransport;
-        (window as any).websocketTransport = this.websocket;
+        window.webcodecsManager = this.webcodecs;
+        window.webtransportManager = this.webtransport;
+        window.websocketTransport = this.websocket;
 
         this.installWindowApi();
 
@@ -195,8 +195,8 @@ export class BrowserClientSession {
     }
 
     private installWindowApi() {
-        (globalThis as any).getStats = () => this.getStats();
-        (globalThis as any).__llrdcClient = {
+        window.getStats = () => this.getStats();
+        window.__llrdcClient = {
             getState: () => this.getState(),
             getStats: () => this.getStats(),
             getPresentedFrames: () => this.getPresentedFrames(),
@@ -216,11 +216,11 @@ export class BrowserClientSession {
 
         const isKey = detectKeyFrame(this.webcodecs.videoCodec, packet.chunkData);
         if (isKey) {
-            (globalThis as any).hasReceivedKeyFrame = true;
+            window.hasReceivedKeyFrame = true;
             this.lastReceivedKeyFrameTime = now;
         }
 
-        if (!(globalThis as any).hasReceivedKeyFrame) {
+        if (!window.hasReceivedKeyFrame) {
             // If we've been waiting for a keyframe for more than 2 seconds, ask the server for one
             if (now - this.lastKeyframeRequestTime > 2000) {
                 log('[Transport] Waiting for keyframe... requesting one from server.');
@@ -258,24 +258,24 @@ export class BrowserClientSession {
             const wtPort = msg.webtransportPort as number;
 
             if (wtFingerprint && wtPort) {
-                const canUseWT = ('WebTransport' in (globalThis as any)) && this.isSecureContext;
+                const canUseWT = ('WebTransport' in globalThis) && this.isSecureContext;
                 
                 if (canUseWT) {
-                    const wtUrl = `https://${(globalThis as any).location.hostname}:${wtPort}/webtransport`;
+                    const wtUrl = `https://${globalThis.location.hostname}:${wtPort}/webtransport`;
                     this.webtransport.connect(wtUrl, wtFingerprint);
                     
                     // Fallback to WS if WT connection hangs or fails quickly
                     setTimeout(() => {
                         if (!this.webtransport.isWebTransportActive && !this.websocket.isActive) {
                             log('[Transport] WebTransport taking too long, trying WebSocket fallback...');
-                            const wsUrl = `ws://${(globalThis as any).location.hostname}:${(globalThis as any).location.port || 8080}/ws`;
+                            const wsUrl = `ws://${globalThis.location.hostname}:${globalThis.location.port || 8080}/ws`;
                             this.websocket.connect(wsUrl);
                         }
                     }, 2000);
                 } else {
                     const reason = this.isSecureContext ? 'Browser too old' : 'Non-secure context';
                     log(`[Transport] WebTransport not available (${reason}), falling back to WebSocket...`);
-                    const wsUrl = `ws://${(globalThis as any).location.hostname}:${(globalThis as any).location.port || 8080}/ws`;
+                    const wsUrl = `ws://${globalThis.location.hostname}:${globalThis.location.port || 8080}/ws`;
                     this.websocket.connect(wsUrl);
                 }
             }
@@ -288,7 +288,7 @@ export class BrowserClientSession {
         if (this.presentedFrames.length > MAX_PRESENTED_FRAMES) {
             this.presentedFrames.splice(0, this.presentedFrames.length - MAX_PRESENTED_FRAMES);
         }
-        (globalThis as any).__llrdcLatestFrameMeta = frame;
+        window.__llrdcLatestFrameMeta = frame;
         this.events.emit('presentedFrame', frame);
     }
 }

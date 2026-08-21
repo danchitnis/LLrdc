@@ -85,7 +85,7 @@ if [[ "${USE_DOCKER}" == "true" ]]; then
 else
   echo "▶ Starting local test-pattern server on port ${SERVER_PORT}"
   rm -f "${SERVER_LOG}"
-  "${SERVER_BIN}" --port "${SERVER_PORT}" --test-pattern --video-codec h264 --fps 30 --enable-audio=false >"${SERVER_LOG}" 2>&1 &
+  "${SERVER_BIN}" --port "${SERVER_PORT}" --test-pattern --video-codec h264 --fps 30 >"${SERVER_LOG}" 2>&1 &
   SERVER_PID=$!
 fi
 

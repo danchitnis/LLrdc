@@ -81,24 +81,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ffmpeg \
   xfce4 \
   xfce4-goodies \
-  xfce4-pulseaudio-plugin \
-  pavucontrol \
   python3 \
   glycin-loaders \
   adwaita-icon-theme-full \
   elementary-xfce-icon-theme \
   gnome-themes-extra \
   hicolor-icon-theme \
-  libpulse0 \
   libegl1 \
   libvulkan1 \
   shared-mime-info \
   libgbm1 \
   libdrm2 \
-  pulseaudio \
-  pulseaudio-utils \
-  alsa-utils \
-  libasound2-plugins \
   librsvg2-common \
   coreutils \
   ca-certificates \
@@ -188,7 +181,7 @@ RUN chown -R remote:remote /app
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
-EXPOSE 8080
+EXPOSE 8080/tcp 8090/tcp 8090/udp
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/app/llrdc"]

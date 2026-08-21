@@ -1,4 +1,5 @@
 import { log, statusEl, displayEl, sharpnessLayerEl, ctx, clientGpuCheckbox, applySmoothingSettings } from './ui';
+import type { PresentedFrameMeta } from './client/types';
 
 export class WebCodecsManager {
     public totalDecoded = 0;
@@ -20,9 +21,9 @@ export class WebCodecsManager {
     private decoder: VideoDecoder | null = null;
     private isInitializing = false;
     private decoderInitTimeout: ReturnType<typeof setTimeout> | null = null;
-    private onFramePresented?: (meta: any) => void;
+    private onFramePresented?: (meta: PresentedFrameMeta) => void;
 
-    constructor(onFramePresented?: (meta: any) => void) {
+    constructor(onFramePresented?: (meta: PresentedFrameMeta) => void) {
         this.onFramePresented = onFramePresented;
         this.initDecoder();
     }
@@ -153,7 +154,7 @@ export class WebCodecsManager {
                     found = true;
                     break;
                 }
-            } catch (e) {
+            } catch {
                 // Ignore errors for individual strings
             }
         }

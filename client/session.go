@@ -152,8 +152,6 @@ type SessionStats struct {
 	PresentedFrames   uint64    `json:"presentedFrames"`
 	DecodeErrors      uint64    `json:"decodeErrors"`
 	VideoBytes        uint64    `json:"videoBytes"`
-	AudioPackets      uint64    `json:"audioPackets"`
-	AudioBytes        uint64    `json:"audioBytes"`
 	ConnectedAt       time.Time `json:"connectedAt,omitempty"`
 }
 

@@ -245,8 +245,8 @@ Display backend selection:
 Important:
   - This is a native SDL client. It does not embed a browser or WebView.
   - VP8 and H.264 are decoded through the bundled FFmpeg codec libraries.
-  - The package uses the host's native SDL/Wayland/audio stack.
-  - Audio and clipboard integration still depend on the host session environment.
+  - The package uses the host's native SDL/Wayland stack.
+  - Clipboard integration still depends on the host session environment.
 EOF
 
 {

@@ -20,11 +20,11 @@
     "client:verify-package": "./scripts/verify-native-client-package.sh",
     "client:test": "./tests/linux-wayland-native/test-wayland-native-client.sh",
     "client:benchmark:latency": "./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
-    "start": "docker run --rm -p ${PORT:-8080}:${PORT:-8080}/tcp -p ${PORT:-8080}:${PORT:-8080}/udp -e PORT=${PORT:-8080} -e TEST_PATTERN=${TEST_PATTERN} -e FPS=${FPS:-30} -e VIDEO_CODEC=${VIDEO_CODEC:-vp8} -e HOST_UID=$(id -u) -e HDPI=${HDPI:-0} -e WEBRTC_PUBLIC_IP=${WEBRTC_PUBLIC_IP:-127.0.0.1} danchitnis/llrdc ./llrdc --port ${PORT:-8080} --fps ${FPS:-30} --video-codec ${VIDEO_CODEC:-vp8} --webrtc-public-ip ${WEBRTC_PUBLIC_IP:-127.0.0.1}",
-    "test": "./test.sh",
-    "test:cpu": "CONTAINER_IMAGE=danchitnis/llrdc:latest ./test.sh tests/cpu",
-    "test:intel": "CONTAINER_IMAGE=danchitnis/llrdc:intel ./test.sh tests/intel",
-    "test:nvidia": "./test.sh tests/nvidia",
+    "start": "./docker-run.sh",
+    "test": "./test-linux-cpu-browser.sh tests/linux-cpu-browser tests/cpu",
+    "test:cpu": "CONTAINER_IMAGE=danchitnis/llrdc:latest ./test-linux-cpu-browser.sh tests/cpu",
+    "test:intel": "CONTAINER_IMAGE=danchitnis/llrdc:intel ./test-linux-cpu-browser.sh tests/intel-browser",
+    "test:nvidia": "./test-linux-cpu-browser.sh tests/nvidia",
     "test:latency": "./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
     "test:latency:cpu": "LLRDC_ACCELERATOR=cpu ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
     "test:latency:intel": "LLRDC_ACCELERATOR=intel ./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
@@ -43,7 +43,5 @@
     "typescript-eslint": "^8.62.1",
     "vite": "^8.1.2"
   },
-  "dependencies": {
-    "ws": "^8.21.0"
-  }
+  "dependencies": {}
 }

@@ -83,7 +83,7 @@ test.describe('Wayland Intel VAAPI GPU Acceleration', () => {
     const verifyStreaming = async (page: any, message: string) => {
         console.log(`Verifying: ${message}`);
 
-        // Wait a moment for WebRTC to stabilize after a potential restart
+        // Wait a moment for the transport to stabilize after a potential restart
         await page.waitForTimeout(2000);
 
         // Generate activity

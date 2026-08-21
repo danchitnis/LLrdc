@@ -6,8 +6,10 @@ LLrdc (Low Latency remote desktop) is an entirely web-based, low-latency remote 
 
 - **XFCE4 Desktop in Docker**: Runs a full Ubuntu 24.04 and XFCE4 desktop environment inside a reproducible Docker container.
 - **Web-Based Client**: Access your desktop entirely via a modern web browser—no client software required.
-- **High-Performance Streaming**: Leverages WebRTC for ultra-low latency video streaming, with fallback to WebCodecs/WebSockets. Uses variable bitrate (bitrate drops on static screens) with an optional peak bandwidth cap.
+- **High-Performance Streaming**: Uses WebTransport over HTTP/3 for low-latency video and control, with a WebSocket fallback for browsers without WebTransport support. Uses variable bitrate (bitrate drops on static screens) with an optional peak bandwidth cap.
 - **Native Go Client**: Includes a Docker-built Linux native client using Go, SDL2, Wayland presentation feedback, and FFmpeg decode libraries.
+
+The supported surfaces are the Linux Docker server (CPU, Intel, or NVIDIA), the macOS split server, the browser client, and the native Linux/macOS clients. Linux `agent` capture mode is an internal transport used by the macOS split server.
 
 
 
@@ -78,23 +80,14 @@ To see verbose debug logs, you can use the following flags:
 - `--debug-ffmpeg`: Shows real-time ffmpeg frame rate and encoder reports.
 - `--debug`: Enables both ffmpeg and input debug logging.
 - `--hdpi [percent]` or `-h [percent]`: Enables High DPI scaling for the XFCE desktop. If no percentage is provided, it defaults to `200` (2x scaling). Example: `--hdpi 150` for 1.5x scaling.
-- `--capture-mode compat|direct`: Selects the Wayland capture path. `direct` requires `--nvidia` or `--intel` and only activates when direct-buffer probing succeeds.
-- `--webrtc-buffer [frames]`: Sets the WebRTC frame buffer limit (default: `30`).
+- `--capture-mode compat|direct|agent`: Selects the capture path. `direct` requires `--nvidia` or `--intel`; `agent` is reserved for the macOS split server.
 - `--activity-hz [hz]`: Sets the input activity heartbeat frequency (default: `30`).
 - `--activity-timeout [ms]`: Sets how long the heartbeat continues after last input (default: `1500`).
 - `--no-nvenc-latency`: Disables ultra-low-latency NVENC optimizations.
 
-### Network and WebRTC Configuration
+### Network and transport configuration
 
-By default, the server auto-detects your primary IP address for WebRTC. If you have multiple network interfaces (e.g., Tailscale, VPNs, or multiple LANs), you can use the following flags to control which interfaces are used for the stream:
-
-- `--iface <name>` or `-i <name>`: Prefer the specified host interface when selecting the public WebRTC IP (for Docker bridge mode, this does not map directly to container NIC names such as `eth0`).
-- `--exclude-iface <name>` or `-x <name>`: Prevent WebRTC from using the specified interface (e.g., `tailscale0`).
-
-```bash
-# Example: Exclude Tailscale and use real IP
-./docker-run.sh -x tailscale0
-```
+The HTTP/WebSocket server listens on `PORT` (default `8080`). WebTransport uses `PORT + 10` over both TCP and UDP (default `8090`). `docker-run.sh` publishes both ports automatically when bridge networking is used; `--host-net` uses the host network directly.
 
 ### 3. Connect
 
@@ -266,21 +259,16 @@ LLrdc can be configured using command-line flags (when running the binary direct
 The `llrdc` binary supports the following flags, categorized by their primary use case:
 
 #### User Flags
-- `--port`: Port for both HTTP and WebRTC UDP (default: `8080`).
+- `--port`: HTTP/WebSocket server port (default: `8080`). WebTransport uses `PORT + 10`.
 - `--fps`: Target frames per second (default: `30`).
 - `--video-codec`: Choice of `vp8` (default), `h264`, `h264_nvenc`, `h264_vaapi`, `h265`, `h265_nvenc`, `h265_vaapi`, `hevc_vaapi`, `av1`, `av1_nvenc`, or `av1_vaapi`.
 - `--chroma`: Chroma subsampling format, `420` (default) or `444`. See [Chroma 4:4:4](#chroma-444) below.
 - `--use-nvidia`: Enable NVIDIA acceleration for NVENC codecs.
 - `--use-intel`: Enable Intel acceleration for VAAPI codecs.
-- `--capture-mode`: Capture mode, `compat` (default) or `direct`.
+- `--capture-mode`: Capture mode, `compat` (default), `direct`, or internal `agent`.
 - `--use-debug-ffmpeg`: Enable verbose FFmpeg logging.
-- `--use-debug-x11`: Enable verbose X11/XFCE session logging.
-- `--display-num`: X11 display number inside the container (default: `99`).
+- `--use-debug-input`: Enable verbose input logging.
 - `--wallpaper`: Path to a custom wallpaper image.
-- `--webrtc-public-ip`: Manually set the public IP for ICE candidates.
-- `--webrtc-interfaces`: Comma-separated allowlist of network interfaces.
-- `--webrtc-exclude-interfaces`: Comma-separated blocklist of network interfaces.
-- `--webrtc-buffer`: WebRTC frame channel size (default: `30`). Lower values reduce lag but may increase stutter.
 - `--activity-hz`: Input heartbeat frequency in Hz (default: `30`). Controls how often the server pings for damage during movement.
 - `--activity-timeout`: Inactivity timeout in ms before stopping the heartbeat (default: `1500`).
 - `--nvenc-latency`: Enable ultra-low latency NVENC optimizations (default: `true`).
@@ -307,13 +295,11 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `USE_INTEL` | Enable Intel acceleration | `--use-intel` |
 | `CAPTURE_MODE` | Capture mode (`compat` or `direct`) | `--capture-mode` |
 | `USE_DEBUG_FFMPEG` | Enable FFmpeg debug logs | `--use-debug-ffmpeg` |
-| `USE_DEBUG_X11` | Enable X11 debug logs | `--use-debug-x11` |
-| `WEBRTC_PUBLIC_IP` | Public IP override | `--webrtc-public-ip` |
+| `USE_DEBUG_INPUT` | Enable input debug logs | `--use-debug-input` |
 | `ACTIVITY_PULSE_HZ` | Heartbeat frequency (Hz) | `--activity-hz` |
 | `ACTIVITY_TIMEOUT` | Inactivity timeout (ms) | `--activity-timeout` |
 | `NVENC_LATENCY_MODE` | Toggle NVENC ULL (Ultra Low Latency) | `--nvenc-latency` |
 | `TEST_PATTERN` | Use FFmpeg test pattern | `--test-pattern` |
-| `TEST_MINIMAL_X11` | Skip XFCE startup | `--test-minimal-x11` |
 | `WALLPAPER` | Custom wallpaper path | `--wallpaper` |
 | `ENABLE_CLIPBOARD` | Enable clipboard sync | `--enable-clipboard` |
 

@@ -92,9 +92,6 @@ func Run() error {
 	common.InitWebTransport(wtAddr)
 	startStreaming(broadcastVideoFrame)
 	if CaptureMode != CaptureModeAgent {
-		startAudioStreaming()
-	}
-	if CaptureMode != CaptureModeAgent {
 		common.StartClientTimeoutTracker()
 	}
 	startHTTPServer()

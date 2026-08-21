@@ -37,7 +37,7 @@ test.describe('Intel GPU Metrics Verification', () => {
         page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
         await page.goto(`http://localhost:${PORT}`);
 
-        // Wait for WebRTC connection
+        // Wait for the browser transport connection
         const statusEl = page.locator('#status');
         await expect(statusEl).toHaveText(/🚀/i, { timeout: 20000 });
 

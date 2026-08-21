@@ -9,6 +9,7 @@ set -euo pipefail
 IMAGE_NAME="danchitnis/llrdc"
 IMAGE_TAG="macos"
 CONTAINER_NAME="llrdc-macos"
+SERVER_PORT="${PORT:-8080}"
 LOG_DIR="test-logs"
 mkdir -p "$LOG_DIR"
 
@@ -34,13 +35,14 @@ echo "========================================"
 echo "Starting macos-server..."
 # Run with USE_DEBUG_INPUT=true to capture diagnostic logs
 export USE_DEBUG_INPUT=true
+export PORT="${SERVER_PORT}"
 ./macos-server > "$LOG_DIR/macos-server.log" 2>&1 &
 MACOS_SERVER_PID=$!
 
 echo "Waiting for macos-server to bind ports..."
 MAX_RETRIES=10
 COUNT=0
-while ! lsof -i :8080 >/dev/null || ! lsof -i :12345 >/dev/null; do
+while ! lsof -i :"${SERVER_PORT}" >/dev/null || ! lsof -i :12345 >/dev/null; do
     sleep 1
     COUNT=$((COUNT + 1))
     if [ $COUNT -ge $MAX_RETRIES ]; then
@@ -57,7 +59,6 @@ echo "Starting container (detached)..."
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --shm-size=2gb \
-  -e PULSE_SERVER=unix:/tmp/pulseaudio.socket \
   -e USE_DEBUG_INPUT=true \
   -p 12346:12346 \
   -p 12348:12348 \

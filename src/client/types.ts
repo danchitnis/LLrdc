@@ -1,8 +1,13 @@
-import { WebCodecsManager } from '../webcodecs';
-import { WebTransportManager } from '../webtransport';
-
 export interface ConfigMessage {
-    type: 'config';
+    type: 'config' | 'display_effect' | 'clipboard_get' | 'stats';
+    capabilities?: {
+        valid_combinations: Array<{
+            codec: string;
+            encoder: string;
+            chroma: string;
+            supported_clients: string[];
+        }>;
+    };
     bandwidth?: number;
     quality?: number;
     max_res?: number;
@@ -22,8 +27,6 @@ export interface ConfigMessage {
     enable_hybrid?: boolean;
     settle_time?: number;
     tile_size?: number;
-    enable_audio?: boolean;
-    audio_bitrate?: string;
     nvenc_latency?: boolean;
     activity_hz?: number;
     activity_timeout?: number;
@@ -37,7 +40,15 @@ export interface ConfigMessage {
     h265Nvenc444Available?: boolean;
     webtransportFingerprint?: string;
     webtransportPort?: number;
+    acceleratorMode?: string;
+    serverFfmpegCpu?: number;
+    serverIntelGpuUtil?: number;
+    ffmpegCpu?: number;
+    intelGpuUtil?: number;
+    directBuffer?: unknown;
 }
+
+export type BrowserServerMessage = Record<string, unknown> & Partial<ConfigMessage>;
 
 export interface PresentedFrameMeta {
     callbackAtMs: number;

@@ -12,10 +12,7 @@ test.describe('Wayland Client GPU Decoding', () => {
     } catch (e) {}
 
     console.log('Starting Wayland container...');
-    // Using docker-run.sh to ensure local changes are used if it builds/runs correctly
-    // or just direct docker run if we assume the image is ready.
-    // Given the context, ./docker-run.sh --wayland is preferred.
-    execSync(`PORT=${PORT} ./docker-run.sh --wayland --detach --name ${CONTAINER_NAME} --hdpi 100 --host-net`);
+    execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --hdpi 100 --host-net`);
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });
@@ -33,7 +30,7 @@ test.describe('Wayland Client GPU Decoding', () => {
     
     await page.goto(`http://localhost:${PORT}`);
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebRTC|WebTransport|WebCodecs)/i, { timeout: 45000 });
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebCodecs)/i, { timeout: 45000 });
 
     // Wait for at least one frame to be decoded
     await expect.poll(async () => {

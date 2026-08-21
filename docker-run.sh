@@ -355,7 +355,8 @@ if command -v nproc &> /dev/null; then
   NUM_CPUS=$(nproc)
 elif command -v sysctl &> /dev/null; then
   # Fallback for macOS
-  NUM_CPUS=$(sysctl -n hw.logicalcpu)
+  NUM_CPUS=$(sysctl -n hw.logicalcpu 2>/dev/null || true)
+  [[ "$NUM_CPUS" =~ ^[1-9][0-9]*$ ]] || NUM_CPUS=4
 else
   NUM_CPUS=4 # Safe fallback
 fi
@@ -448,8 +449,6 @@ DOCKER_RUN_CMD+=(
   --env "NVENC_LATENCY_MODE=${NVENC_LATENCY_MODE:-}"
   --env "CLIENT_TIMEOUT=${CLIENT_TIMEOUT:-}"
   --env "LLRDC_PRESENTATION_CLOCK_ID=${LLRDC_PRESENTATION_CLOCK_ID:-}"
-  --env "ENABLE_AUDIO=${ENABLE_AUDIO:-false}"
-  --env "AUDIO_BITRATE=${AUDIO_BITRATE:-128k}"
   --env "HDPI=${SERVER_HDPI}"
   --env "RESOLUTION=${SERVER_RESOLUTION}"
   --env "USE_DEBUG_FFMPEG=${USE_DEBUG_FFMPEG}"

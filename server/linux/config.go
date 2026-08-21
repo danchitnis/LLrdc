@@ -38,8 +38,6 @@ var (
 	UseDebugFFmpeg        bool
 	UseDebugInput         bool
 	TestPattern           bool
-	EnableAudio           bool
-	AudioBitrate          string
 	Wallpaper             string
 	ActivityPulseHz       int
 	ActivityTimeout       int
@@ -102,12 +100,7 @@ func InitConfig() {
 	defaultUseDebugFFmpeg := os.Getenv("USE_DEBUG_FFMPEG") == "true"
 	defaultUseDebugInput := os.Getenv("USE_DEBUG_INPUT") == "true"
 	defaultTestPattern := os.Getenv("TEST_PATTERN") != ""
-	defaultEnableAudio := os.Getenv("ENABLE_AUDIO") != "false"
 	defaultEnableClipboard := os.Getenv("ENABLE_CLIPBOARD") != "false"
-	defaultAudioBitrate := os.Getenv("AUDIO_BITRATE")
-	if defaultAudioBitrate == "" {
-		defaultAudioBitrate = "128k"
-	}
 
 	defaultWallpaper := os.Getenv("WALLPAPER")
 
@@ -196,8 +189,6 @@ func InitConfig() {
 		printFlag(os.Stderr, "agent-address", "TCP address for remote agent streaming (e.g. host.docker.internal:12345)", AgentAddress)
 		printFlag(os.Stderr, "use-debug-ffmpeg", "Enable FFmpeg debugging", UseDebugFFmpeg)
 		printFlag(os.Stderr, "wallpaper", "Path to wallpaper image", Wallpaper)
-		printFlag(os.Stderr, "enable-audio", "Enable audio streaming", EnableAudio)
-		printFlag(os.Stderr, "audio-bitrate", "Audio bitrate (e.g. 64k, 128k)", AudioBitrate)
 		printFlag(os.Stderr, "hdpi", "Set high DPI scaling percentage (e.g., 150, 200)", HDPI)
 		printFlag(os.Stderr, "res", "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.", InitialRes)
 		printFlag(os.Stderr, "client-timeout", "Timeout in seconds to pause streaming when no clients are connected (0 to disable)", ClientTimeout)
@@ -231,10 +222,7 @@ func InitConfig() {
 	flag.BoolVar(&UseDebugInput, "use-debug-input", defaultUseDebugInput, "Enable Input debugging")
 	flag.BoolVar(&TestPattern, "test-pattern", defaultTestPattern, "Run with test pattern instead of Wayland session")
 	flag.StringVar(&Wallpaper, "wallpaper", defaultWallpaper, "Path to wallpaper image")
-	EnableAudio = true
-	flag.BoolVar(&EnableAudio, "enable-audio", defaultEnableAudio, "Enable audio streaming")
 	flag.BoolVar(&EnableClipboard, "enable-clipboard", defaultEnableClipboard, "Enable clipboard synchronization")
-	flag.StringVar(&AudioBitrate, "audio-bitrate", defaultAudioBitrate, "Audio bitrate (e.g. 64k, 128k)")
 	flag.IntVar(&HDPI, "hdpi", defaultHDPI, "Set high DPI scaling percentage (e.g., 150, 200)")
 	flag.IntVar(&InitialRes, "res", defaultInitialRes, "Fixed initial resolution height (720, 1080, 1440, 2160). 0 for adaptive.")
 	flag.IntVar(&ClientTimeout, "client-timeout", defaultClientTimeout, "Timeout in seconds to pause streaming when no clients are connected (0 to disable)")
@@ -337,9 +325,7 @@ func SyncConfigToCommon() {
 	common.UseDebugFFmpeg = UseDebugFFmpeg
 	common.UseDebugInput = UseDebugInput
 	common.TestPattern = TestPattern
-	common.EnableAudio = EnableAudio
 	common.EnableClipboard = EnableClipboard
-	common.AudioBitrate = AudioBitrate
 	common.Wallpaper = Wallpaper
 	common.ActivityPulseHz = ActivityPulseHz
 	common.ActivityTimeout = ActivityTimeout

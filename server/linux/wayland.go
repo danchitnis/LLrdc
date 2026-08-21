@@ -133,18 +133,6 @@ func startWayland() error {
 		home = "/home/remote"
 	}
 
-	// 1. Setup .asoundrc for the remote user to bridge ALSA to PulseAudio
-	asoundrc := `pcm.!default {
-    type pulse
-    fallback "sysdefault"
-}
-ctl.!default {
-    type pulse
-    fallback "sysdefault"
-}
-`
-	_ = os.WriteFile(filepath.Join(home, ".asoundrc"), []byte(asoundrc), 0644)
-
 	// Labwc config dir in a standard location
 	configDir := filepath.Join(home, ".config", "labwc")
 	_ = os.MkdirAll(configDir, 0755)
@@ -208,67 +196,6 @@ xfdesktop &
 wait_for_cmd 100 pgrep -x xfsettingsd
 wait_for_cmd 100 pgrep -x xfce4-panel
 wait_for_cmd 100 pgrep -x xfdesktop
-
-# Ensure the PulseAudio panel plugin exists in the default XFCE panel.
-python3 - <<'PY'
-import re
-import subprocess
-
-def run(cmd):
-    return subprocess.run(cmd, shell=True, text=True, capture_output=True)
-
-def query(path):
-    res = run(f"xfconf-query -c xfce4-panel -p {path}")
-    return res.stdout.strip() if res.returncode == 0 else ""
-
-def query_ids(path):
-    raw = query(path)
-    return [int(line.strip()) for line in raw.splitlines() if line.strip().isdigit()]
-
-panel1_ids = query_ids("/panels/panel-1/plugin-ids")
-panel2_ids = query_ids("/panels/panel-2/plugin-ids")
-
-all_props = query("/").splitlines()
-used_ids = set(panel1_ids + panel2_ids)
-for prop in all_props:
-    m = re.search(r"/plugins/plugin-(\d+)$", prop.strip())
-    if m:
-        used_ids.add(int(m.group(1)))
-
-existing_pulseaudio = None
-for pid in sorted(used_ids):
-    plugin_name = query(f"/plugins/plugin-{pid}")
-    if plugin_name == "pulseaudio":
-        existing_pulseaudio = pid
-        break
-
-if existing_pulseaudio is None:
-    plugin_id = max([19] + sorted(used_ids)) + 1
-    run(f"xfconf-query -c xfce4-panel -p /plugins/plugin-{plugin_id} -n -t string -s pulseaudio --create")
-else:
-    plugin_id = existing_pulseaudio
-
-# Remove the pulseaudio plugin from panel-2 if a previous bad config put it there.
-if plugin_id in panel2_ids:
-    new_panel2_ids = [pid for pid in panel2_ids if pid != plugin_id]
-    if new_panel2_ids:
-        args = " ".join([f"-t int -s {pid}" for pid in new_panel2_ids])
-        run(f"xfconf-query -c xfce4-panel -p /panels/panel-2/plugin-ids {args}")
-
-# Append to the top panel if it's not already there.
-if plugin_id not in panel1_ids:
-    new_panel1_ids = list(panel1_ids)
-    insert_after = 6 if 6 in new_panel1_ids else None
-    if insert_after is not None:
-        insert_idx = new_panel1_ids.index(insert_after) + 1
-        new_panel1_ids.insert(insert_idx, plugin_id)
-    else:
-        new_panel1_ids.append(plugin_id)
-    args = " ".join([f"-t int -s {pid}" for pid in new_panel1_ids])
-    run(f"xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids {args}")
-
-run("xfce4-panel -r")
-PY
 
 xfdesktop --reload
 
@@ -379,9 +306,6 @@ touch "$READY_FILE"
 	if err := waitForDisplayState(w, h, 10*time.Second); err != nil {
 		return err
 	}
-
-	// PulseAudio is disabled to minimize startup latency and avoid unnecessary overhead in low-latency mode.
-	readiness.Set(readinessPulseAudio, true)
 
 	// XFCE Desktop session components (panels, etc.) are allowed to boot in the background.
 	// We don't block video capture on them being fully ready.

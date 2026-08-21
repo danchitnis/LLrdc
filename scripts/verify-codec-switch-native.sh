@@ -43,7 +43,7 @@ fi
 
 echo "2. Starting local server (Linux native CPU codec test: VP8 -> H264)..."
 docker rm -f "${SERVER_NAME}" >/dev/null 2>&1 || true
-PORT=${SERVER_PORT} ./docker-run.sh --detach --name "${SERVER_NAME}" --host-net --test-pattern --video-codec vp8 > /dev/null
+PORT=${SERVER_PORT} TEST_PATTERN=1 ./docker-run.sh --detach --name "${SERVER_NAME}" --host-net --video-codec vp8 > /dev/null
 
 cleanup() {
     echo "Cleaning up..."

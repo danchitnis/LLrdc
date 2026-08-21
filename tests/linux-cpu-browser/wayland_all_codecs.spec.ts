@@ -20,7 +20,7 @@ test.describe('Wayland All Codecs Verification', () => {
             } catch (e) {}
 
             console.log(`Starting container for ${codec} test...`);
-            // We use --host-net for WebRTC and set the initial codec via environment variable
+            // Use host networking so the browser can reach both HTTP and WebTransport ports.
             execSync(`PORT=${PORT} ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`, {
                 env: {
                     ...process.env,

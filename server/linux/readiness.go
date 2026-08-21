@@ -13,7 +13,6 @@ const (
 	readinessWaylandSocket  = "wayland_socket_ready"
 	readinessInputHelper    = "input_helper_ready"
 	readinessDesktopSession = "desktop_session_ready"
-	readinessPulseAudio     = "pulseaudio_ready"
 )
 
 const (
@@ -30,7 +29,6 @@ var readiness = &readinessTracker{
 		readinessWaylandSocket:  false,
 		readinessInputHelper:    false,
 		readinessDesktopSession: false,
-		readinessPulseAudio:     false,
 	},
 }
 
@@ -72,7 +70,6 @@ func initReadiness() {
 	readiness.Set(readinessWaylandSocket, TestPattern)
 	readiness.Set(readinessInputHelper, TestPattern)
 	readiness.Set(readinessDesktopSession, TestPattern)
-	readiness.Set(readinessPulseAudio, TestPattern || !EnableAudio)
 }
 
 func waitForPredicate(name string, timeout, pollInterval time.Duration, fn func() (bool, error)) error {

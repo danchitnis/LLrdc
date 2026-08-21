@@ -24,7 +24,6 @@ var (
 	targetDrawMouse        = true        // Default: true
 	targetKeyframeInterval = 2           // Default: 2 seconds
 	ffmpegCmd              *exec.Cmd
-	ffmpegAudioCmd         *exec.Cmd
 	ffmpegMutex            sync.Mutex
 	ffmpegShouldRun        = true
 	ffmpegStreamID         uint32
@@ -74,10 +73,6 @@ func PauseStreaming() {
 	isResizing = true
 	log.Println("Pausing wf-recorder for resize...")
 	KillFFmpegWithTimestamp()
-	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
-		log.Println("Pausing audio ffmpeg for resize...")
-		ffmpegAudioCmd.Process.Kill()
-	}
 }
 
 func ResumeStreaming() {
@@ -92,10 +87,6 @@ func PauseStreamingTimeout() {
 	streamingPaused = true
 	log.Println("Pausing streaming due to client inactivity timeout...")
 	KillFFmpegWithTimestamp()
-	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
-		log.Println("Pausing audio streaming due to client inactivity timeout...")
-		_ = ffmpegAudioCmd.Process.Kill()
-	}
 }
 
 func ResumeStreamingTimeout() {
@@ -324,42 +315,6 @@ func RestartForResize() {
 	log.Println("Screen size changed, restarting ffmpeg...")
 	KillFFmpegWithTimestamp()
 
-	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
-		log.Println("Screen size changed, restarting audio ffmpeg...")
-		ffmpegAudioCmd.Process.Kill()
-	}
-}
-
-func SetEnableAudio(enable bool) {
-	ffmpegMutex.Lock()
-	defer ffmpegMutex.Unlock()
-
-	if EnableAudio == enable {
-		return
-	}
-
-	EnableAudio = enable
-
-	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
-		log.Printf("Enable audio changed to %v, restarting audio ffmpeg...", enable)
-		ffmpegAudioCmd.Process.Kill()
-	}
-}
-
-func SetAudioBitrate(bitrate string) {
-	ffmpegMutex.Lock()
-	defer ffmpegMutex.Unlock()
-
-	if AudioBitrate == bitrate {
-		return
-	}
-
-	AudioBitrate = bitrate
-
-	if ffmpegAudioCmd != nil && ffmpegAudioCmd.Process != nil {
-		log.Printf("Audio bitrate changed to %s, restarting audio ffmpeg...", bitrate)
-		_ = ffmpegAudioCmd.Process.Kill()
-	}
 }
 
 func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {

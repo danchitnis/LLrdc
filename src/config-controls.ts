@@ -1,5 +1,4 @@
 import {
-    audioBitrateSelect,
     bandwidthSelect,
     clientGpuCheckbox,
     configBtn,
@@ -10,7 +9,6 @@ import {
     cpuThreadsSelect,
     desktopMouseCheckbox,
     damageTrackingCheckbox,
-    enableAudioCheckbox,
     framerateSelect,
     hdpiSelect,
     hybridCheckbox,
@@ -49,12 +47,10 @@ interface ConfigControlHandlers {
     sendConfigSync: () => void;
     scheduleResize: () => void;
     reinitDecoder: () => void;
-    setPendingHdpi: (value: number) => void;
-    setPendingMaxRes: (value: number) => void;
 }
 
 export function wireConfigControls(handlers: ConfigControlHandlers) {
-    const { sendConfig, sendConfigSync, scheduleResize, reinitDecoder, setPendingHdpi, setPendingMaxRes } = handlers;
+    const { sendConfig, sendConfigSync, scheduleResize, reinitDecoder } = handlers;
 
     if (configBtn && configDropdown) {
         configBtn.addEventListener('click', () => {
@@ -80,9 +76,6 @@ export function wireConfigControls(handlers: ConfigControlHandlers) {
     wireSelect(cpuThreadsSelect, sendConfig);
     if (nvencLatencyCheckbox) nvencLatencyCheckbox.addEventListener('change', sendConfig);
     if (desktopMouseCheckbox) desktopMouseCheckbox.addEventListener('change', sendConfig);
-    if (enableAudioCheckbox) enableAudioCheckbox.addEventListener('change', sendConfig);
-    wireSelect(audioBitrateSelect, sendConfig);
-
     if (vbrCheckbox) {
         vbrCheckbox.addEventListener('change', () => {
             if (vbrThresholdGroup) vbrThresholdGroup.style.display = vbrCheckbox.checked ? 'flex' : 'none';
@@ -108,14 +101,12 @@ export function wireConfigControls(handlers: ConfigControlHandlers) {
 
     if (hdpiSelect) {
         hdpiSelect.addEventListener('change', () => {
-            setPendingHdpi(parseInt(hdpiSelect.value, 10));
             sendConfig();
         });
     }
 
     if (maxResSelect) {
         maxResSelect.addEventListener('change', () => {
-            setPendingMaxRes(parseInt(maxResSelect.value, 10));
             sendConfigSync();
             scheduleResize();
         });

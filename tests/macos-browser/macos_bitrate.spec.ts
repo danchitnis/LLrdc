@@ -12,7 +12,7 @@ test('macOS split bitrate switching', async ({ page }) => {
     await page.goto('http://localhost:8080/viewer.html');
     await page.waitForFunction(() => (window as any).networkManager?.wsConnected === true, { timeout: 15000 });
     
-    // Settle initial resolution and WebRTC connection
+    // Settle initial resolution and browser transport connection
     await page.waitForTimeout(5000);
 
     // Initial check - default should be around 5 Mbps (often shown as BW: 4.x or 5.x)

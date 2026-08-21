@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	// OnForceKeyframe is triggered when a keyframe is requested (e.g., via signaling or RTCP PLI).
+	// OnForceKeyframe is triggered when a client requests a keyframe.
 	OnForceKeyframe func()
 
 	// OnClientConnected is triggered when a new client is fully connected.

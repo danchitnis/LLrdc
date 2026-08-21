@@ -13,7 +13,6 @@ echo "  Image: ${IMAGE_NAME}:${IMAGE_TAG}"
 docker run --rm -it \
   --name "${CONTAINER_NAME}" \
   --shm-size=2gb \
-  -e PULSE_SERVER=unix:/tmp/pulseaudio.socket \
   -e USE_DEBUG_INPUT=true \
   -p 12346:12346 \
   -p 12348:12348 \

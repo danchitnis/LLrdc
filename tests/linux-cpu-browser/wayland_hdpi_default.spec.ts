@@ -45,7 +45,7 @@ test.describe('Wayland HDPI Default Scaling', () => {
     
     // 2. Wait for connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebRTC|WebTransport|WebCodecs|WebSocket)/i, { timeout: 60000 });
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebCodecs|WebSocket)/i, { timeout: 60000 });
 
     // 3. Verify initial HDPI dropdown value is mapped to 100 (from 0)
     const hdpiSelect = page.locator('#hdpi-select');

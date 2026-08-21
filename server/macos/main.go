@@ -53,7 +53,7 @@ func configPayload() map[string]interface{} {
 		"videoCodec":              common.VideoCodec,
 		"chroma":                  common.Chroma,
 		"captureMode":             common.CaptureMode,
-		"webtransportPort":        8090,
+		"webtransportPort":        common.Port + 10,
 		"webtransportFingerprint": common.WebTransportFingerprint,
 		"screenWidth":             width,
 		"screenHeight":            height,
@@ -143,7 +143,8 @@ func main() {
 
 	// 5. Start WebTransport and WebSockets
 	common.MessageHandler = HandleControlMessage
-	common.InitWebTransport("0.0.0.0:8090")
+	webTransportAddr := fmt.Sprintf("0.0.0.0:%d", common.Port+10)
+	common.InitWebTransport(webTransportAddr)
 
 	// 6. Start HTTP Server
 	fs := http.FileServer(http.Dir("public"))
@@ -204,10 +205,10 @@ func main() {
 	})
 
 	common.StartClientTimeoutTracker()
-	log.Printf("macOS Native Server listening on :%d", common.Port)
-	ln, err := net.Listen("tcp4", "0.0.0.0:8080")
+	log.Printf("macOS Native Server listening on :%d (WebTransport :%d)", common.Port, common.Port+10)
+	ln, err := net.Listen("tcp4", fmt.Sprintf("0.0.0.0:%d", common.Port))
 	if err != nil {
-		log.Fatalf("Failed to listen on 0.0.0.0:8080: %v", err)
+		log.Fatalf("Failed to listen on %s: %v", fmt.Sprintf("0.0.0.0:%d", common.Port), err)
 	}
 	if err := http.Serve(ln, nil); err != nil {
 		log.Fatalf("HTTP server failed: %v", err)

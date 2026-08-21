@@ -1,12 +1,12 @@
 import { 
-    log, bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup, 
-    damageTrackingCheckbox, mpdecimateCheckbox, hybridCheckbox, settleSlider, settleValue, 
+    bandwidthSelect, vbrCheckbox, vbrThresholdSlider, vbrThresholdValue, vbrThresholdGroup,
+    damageTrackingCheckbox, mpdecimateCheckbox, settleSlider, settleValue,
     tileSizeSlider, tileSizeValue, keyframeIntervalSelect, targetTypeRadios, qualitySlider, 
     qualityValue, framerateSelect, hdpiSelect, maxResSelect, displayContainerEl, 
     cpuEffortSlider, cpuEffortValue, cpuThreadsSelect, nvencLatencyCheckbox, 
     desktopMouseCheckbox, activityHzSlider, activityHzValue, activityTimeoutSlider, 
     activityTimeoutValue, videoCodecSelect, clipboardCheckbox, 
-    enableAudioCheckbox, audioBitrateSelect, setServerFfmpegCpu, 
+    setServerFfmpegCpu,
     setServerIntelGpuUtil, setAcceleratorMode, applySmoothingSettings 
 } from './ui';
 import { WebCodecsManager } from './webcodecs';
@@ -23,7 +23,7 @@ export { };
 let triggerResizeUpdate: () => void = () => { };
 
 const session = new BrowserClientSession();
-const webcodecs = (window as any).webcodecsManager as WebCodecsManager;
+const webcodecs = window.webcodecsManager as WebCodecsManager;
 
 setupInput((data) => {
     session.sendInput(data);
@@ -36,8 +36,6 @@ session.events.on('connected', () => {
 let configDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let deferredConfigTimer: ReturnType<typeof setTimeout> | null = null;
 let currentHdpi = 100;
-let pendingHdpi: number | null = null;
-let pendingMaxRes: number | null = null;
 let hasReceivedInitialConfig = false;
 
 function buildConfigMessage(): ConfigMessage {
@@ -63,8 +61,6 @@ function buildConfigMessage(): ConfigMessage {
         enable_desktop_mouse: desktopMouseCheckbox ? desktopMouseCheckbox.checked : true,
         settle_time: settleSlider ? parseInt(settleSlider.value, 10) : 500,
         tile_size: tileSizeSlider ? parseInt(tileSizeSlider.value, 10) : 128,
-        enable_audio: enableAudioCheckbox ? enableAudioCheckbox.checked : true,
-        audio_bitrate: audioBitrateSelect ? audioBitrateSelect.value : '128k',
         hdpi: hdpiSelect ? parseInt(hdpiSelect.value, 10) : 100,
         max_res: maxResSelect ? parseInt(maxResSelect.value, 10) : 0,
         activity_hz: activityHzSlider ? parseInt(activityHzSlider.value, 10) : 30,
@@ -104,16 +100,16 @@ function sendConfigSync() {
     session.sendConfig(buildConfigMessage());
 }
 
-session.events.on('serverMessage', (msg: any) => {
+session.events.on('serverMessage', (msg) => {
     if (msg.type === 'config') {
         if (msg.capabilities && msg.capabilities.valid_combinations && videoCodecSelect) {
-            const browserCombos = msg.capabilities.valid_combinations.filter((combo: any) =>
+            const browserCombos = msg.capabilities.valid_combinations.filter(combo =>
                 combo.supported_clients.includes('browser')
             );
 
             // Rebuild select options dynamically to only show those supported by server and browser client
             videoCodecSelect.innerHTML = '';
-            browserCombos.forEach((combo: any) => {
+            browserCombos.forEach((combo) => {
                 let encoderSuffix = combo.encoder;
                 if (combo.encoder === 'intel') {
                     encoderSuffix = 'vaapi';
@@ -235,16 +231,8 @@ session.events.on('serverMessage', (msg: any) => {
             activityTimeoutValue.textContent = msg.activity_timeout.toString() + ' ms';
         }
 
-        if (msg.enable_audio !== undefined && enableAudioCheckbox) {
-            enableAudioCheckbox.checked = msg.enable_audio;
-        }
-
         if (msg.enableClipboard !== undefined && clipboardCheckbox) {
             clipboardCheckbox.checked = msg.enableClipboard as boolean;
-        }
-
-        if (msg.audio_bitrate && audioBitrateSelect) {
-            audioBitrateSelect.value = msg.audio_bitrate;
         }
 
         if (msg.hdpi !== undefined && hdpiSelect) {
@@ -258,7 +246,7 @@ session.events.on('serverMessage', (msg: any) => {
         }
 
         if (msg.acceleratorMode) {
-            setAcceleratorMode(msg.acceleratorMode);
+            setAcceleratorMode(msg.acceleratorMode as 'cpu' | 'intel' | 'nvidia');
         }
 
         if (msg.serverFfmpegCpu !== undefined) {
@@ -272,8 +260,6 @@ session.events.on('serverMessage', (msg: any) => {
         updateDirectBufferUi(msg);
 
         hasReceivedInitialConfig = true;
-        pendingHdpi = null;
-        pendingMaxRes = null;
     }
 
     if (msg.type === 'display_effect') {
@@ -301,8 +287,6 @@ wireConfigControls({
     sendConfigSync,
     scheduleResize: () => triggerResizeUpdate(),
     reinitDecoder: () => webcodecs.initDecoder(),
-    setPendingHdpi: (val) => { pendingHdpi = val; },
-    setPendingMaxRes: (val) => { pendingMaxRes = val; }
 });
 
 let resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -322,20 +306,20 @@ triggerResizeUpdate = () => {
     }, 250); // 250ms debounce
 };
 
-(globalThis as any).addEventListener('resize', () => {
+globalThis.addEventListener('resize', () => {
     triggerResizeUpdate();
 });
 
 // Clipboard sync
 if (clipboardCheckbox) {
-    (globalThis as any).addEventListener('focus', async () => {
+    globalThis.addEventListener('focus', async () => {
         if (!clipboardCheckbox.checked) return;
         try {
             const text = await navigator.clipboard.readText();
             if (text) {
                 session.sendInput(JSON.stringify({ type: 'clipboard_set', text }));
             }
-        } catch (e) {
+        } catch {
             // Ignore clipboard errors
         }
     });

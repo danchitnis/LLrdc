@@ -19,7 +19,7 @@ fi
 
 cleanup_containers() {
     # Remove any containers created from the llrdc image.
-    # (Tests start the server via `npm start` -> `docker run`.)
+    # Tests start the server through the maintained Docker runner.
     local latest_containers
     local intel_containers
 
@@ -67,6 +67,10 @@ done
 if [ ${#TEST_FILES[@]} -eq 0 ]; then
     # Default: all Playwright spec files, excluding latency_matrix.
     while IFS= read -r f; do
+        case "$f" in
+            tests/linux-cpu-browser/*|tests/cpu/*) ;;
+            *) continue ;;
+        esac
         if [[ "$f" == *"latency_matrix.spec.ts"* ]]; then
             continue
         fi
@@ -79,7 +83,7 @@ needs_intel_image=false
 
 for spec in "${TEST_FILES[@]}"; do
     case "$spec" in
-        tests/intel/*)
+        tests/intel/*|tests/intel-browser/*)
             needs_intel_image=true
             ;;
         *)

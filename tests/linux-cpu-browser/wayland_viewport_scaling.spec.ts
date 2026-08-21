@@ -126,7 +126,7 @@ test.describe('Wayland Video Scaling', () => {
         await page.setViewportSize(TARGET_VIEWPORT);
         await page.goto(`http://localhost:${PORT}`);
 
-        await expect(page.locator('#status')).toHaveText(/\[(WebRTC|WebTransport|WebCodecs)/i, { timeout: 20000 });
+        await expect(page.locator('#status')).toHaveText(/\[(WebTransport|WebCodecs)/i, { timeout: 20000 });
         await expect.poll(async () => {
             return await page.evaluate(() => {
                 const canvas = document.getElementById('display') as HTMLCanvasElement | null;

@@ -7,7 +7,7 @@ This architecture allows LLrdc to utilize Apple's native GPU for high-performanc
 The system is split across the virtualization boundary into two components:
 
 1. **Docker Agent (`Dockerfile.macos`)**: Runs headless Labwc and the XFCE desktop. It uses `wf-recorder` to capture uncompressed raw YUV420p video frames and streams them instantly over a local TCP loopback (`host.docker.internal:12345`). It also listens on a TCP port (`12346`) to receive instant input commands (mouse/keyboard) from the host.
-2. **macOS Native Server (`server/macos`)**: Runs natively on your Mac. It hosts the WebRTC/HTTP stack, manages browser connections, and uses Apple's **VideoToolbox (CGO)** to encode the incoming raw frames to a low-latency H.264 bitstream. It also routes your browser's input data back over TCP to the Docker container in real-time.
+2. **macOS Native Server (`server/macos`)**: Runs natively on your Mac. It hosts the HTTP/WebTransport stack, manages browser connections, and uses Apple's **VideoToolbox (CGO)** to encode the incoming raw frames to a low-latency H.264 bitstream. It also routes your browser's input data back over TCP to the Docker container in real-time.
 
 ## Prerequisites
 
@@ -71,4 +71,4 @@ You should now see the XFCE desktop streaming in H.264 at 60 FPS, with instantan
 - The Go server in Docker (`llrdc`) is run with `--capture-mode agent` and `--fps 60`, which bypasses local encoding and pipes raw frames out via `wf-recorder`.
 - To prevent network bloat, the macOS `video_receiver.go` uses a 1-frame deep `sync.Pool` dropping queue. If the hardware encoder falls behind, intermediate frames are silently dropped to guarantee absolute zero-latency for the freshest frame.
 - Input commands bypass Wayland queue aggregation and are written directly to `wayland_input_client.c` via standard input for immediate execution.
-- In WebRTC mode, the frontend `input.ts` binds to the active `<video>` element, ensuring mouse coordinates scale perfectly regardless of window size.
+- The frontend `input.ts` binds to the active display surface, ensuring mouse coordinates scale perfectly regardless of window size.

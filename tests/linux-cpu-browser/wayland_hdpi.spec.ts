@@ -48,7 +48,7 @@ test.describe('Wayland HDPI Scaling', () => {
     
     // 2. Wait for connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebRTC|WebTransport|WebCodecs|WebSocket)/i, { timeout: 60000 });
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebCodecs|WebSocket)/i, { timeout: 60000 });
 
     // Generate some activity to ensure the decoder receives frames
     await page.mouse.move(100, 100);

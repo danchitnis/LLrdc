@@ -77,10 +77,10 @@ Those values are environment-specific and should not be assumed portable across 
 
 ## Important Test Conditions
 
-For the WebRTC tests involved in this issue:
+For the browser transport tests involved in this issue:
 
 - Run with a single Playwright worker.
-- Use `--host-net` for the llrdc container, otherwise WebRTC may fail for unrelated reasons.
+- Use `--host-net` for the llrdc container when testing transport connectivity across both exposed ports.
 
 ## How To Debug This Again
 

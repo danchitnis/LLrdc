@@ -25,9 +25,9 @@ test.describe('Wayland GPU Acceleration and Reconfiguration', () => {
         try {
             execSync(`docker rm -f ${CONTAINER_NAME}`, { stdio: 'ignore' });
         } catch (e) {}
-        console.log(`Starting server with --wayland and --nvidia on port ${PORT}...`);
+        console.log(`Starting NVIDIA server on port ${PORT}...`);
         
-        serverProcess = spawn('./docker-run.sh', ['--wayland', '--nvidia', '--host-net'], {
+        serverProcess = spawn('./docker-run.sh', ['--nvidia', '--host-net'], {
             env: { 
                 ...process.env, 
                 PORT: PORT.toString(), 

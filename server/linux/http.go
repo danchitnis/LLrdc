@@ -52,9 +52,7 @@ func configPayload(restarted bool) map[string]interface{} {
 		"keyframe_interval":       targetKeyframeInterval,
 		"settle_time":             SettleTime,
 		"tile_size":               TileSize,
-		"enable_audio":            EnableAudio,
 		"enableClipboard":         EnableClipboard,
-		"audio_bitrate":           AudioBitrate,
 		"hdpi":                    HDPI,
 		"max_res":                 InitialRes,
 		"activity_hz":             ActivityPulseHz,
@@ -557,14 +555,6 @@ func HandleControlMessage(msg map[string]interface{}, writeJSON func(interface{}
 		if tileSize, ok := msg["tile_size"].(float64); ok {
 			TileSize = int(tileSize)
 			common.TileSize = TileSize
-		}
-		if enableAudioBool, ok := msg["enable_audio"].(bool); ok {
-			SetEnableAudio(enableAudioBool)
-			common.EnableAudio = EnableAudio
-		}
-		if audioBitrateStr, ok := msg["audio_bitrate"].(string); ok {
-			SetAudioBitrate(audioBitrateStr)
-			common.AudioBitrate = AudioBitrate
 		}
 		if activityHzFloat, ok := msg["activity_hz"].(float64); ok {
 			activityHz := int(activityHzFloat)

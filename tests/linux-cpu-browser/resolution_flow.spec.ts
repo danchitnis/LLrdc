@@ -45,7 +45,7 @@ test.describe('Resolution Flow Verification', () => {
     
     // 1. Wait for connection
     const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebRTC|WebTransport|WebCodecs|WebSocket)/i, { timeout: 30000 });
+    await expect(statusEl).toHaveText(/\[(WebTransport|WebCodecs|WebSocket)/i, { timeout: 30000 });
 
     const maxResSelect = page.locator('#max-res-select');
 
@@ -124,7 +124,7 @@ test.describe('Resolution Flow Verification', () => {
     
     // 1. Wait for connection
     const statusEl = dprPage.locator('#status');
-    await expect(statusEl).toHaveText(/\[(WebRTC|WebTransport|WebCodecs|WebSocket)/i, { timeout: 30000 });
+      await expect(statusEl).toHaveText(/\[(WebTransport|WebCodecs|WebSocket)/i, { timeout: 30000 });
 
     // 1b. Wait for stream to start
     console.log('Waiting for High DPI stream to start...');
