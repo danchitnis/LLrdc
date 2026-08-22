@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { execSync, spawn } from 'child_process';
-import { waitForServerReady } from '../helpers';
+import { FULL_HD_STREAM_SIZE, waitForServerReady } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-scaling-test';
 const PORT = '8096';
 const TARGET_VIEWPORT = { width: 1280, height: 800 };
-const STREAM_SIZE = { width: 1920, height: 1080 };
+const STREAM_SIZE = FULL_HD_STREAM_SIZE;
 const TOLERANCE_PX = 1;
 
 type RectMetrics = {

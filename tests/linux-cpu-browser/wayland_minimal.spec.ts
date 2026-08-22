@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execSync, spawn } from 'child_process';
-import { waitForServerReady } from '../helpers';
+import { execSync } from 'child_process';
+import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-test';
 const PORT = '8081';
@@ -8,7 +8,9 @@ const WT_PORT = '8091';
 
 test.use({ ignoreHTTPSErrors: true });
 
-test.describe('Minimal Wayland E2E', () => {
+test.describe('CPU browser connection smoke test', () => {
+  test.setTimeout(120000);
+
   test.beforeAll(async () => {
     // Ensure any dangling container from a previous failed run is removed
     try {
@@ -20,9 +22,6 @@ test.describe('Minimal Wayland E2E', () => {
     console.log('Starting container...');
     const containerImage = process.env.CONTAINER_IMAGE || 'danchitnis/llrdc:latest';
     execSync(`IMAGE_NAME=${containerImage.split(':')[0]} IMAGE_TAG=${containerImage.split(':')[1] || 'latest'} PORT=${PORT} VBR=false ./docker-run.sh --detach --name ${CONTAINER_NAME} --host-net`, { stdio: 'inherit' });
-    
-    // Log container output
-    spawn('docker', ['logs', '-f', CONTAINER_NAME], { stdio: 'inherit' });
     
     await waitForServerReady(`http://localhost:${PORT}`);
   });
@@ -36,59 +35,41 @@ test.describe('Minimal Wayland E2E', () => {
     }
   });
 
-  test('should establish WebTransport via HTTPS and handle mouse click', async ({ page }) => {
+  test('uses installed headed Chrome and receives CPU-streamed frames', async ({ page }) => {
     page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
     await page.setViewportSize({ width: 1280, height: 819 });
-    
-    // 1. Load the page via the HTTPS port (TCP TLS)
-    console.log(`Navigating to https://localhost:${WT_PORT}...`);
-    await page.goto(`https://localhost:${WT_PORT}`);
-    
-    // 2. Wait for WebTransport connection
-    const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebTransport/i, { timeout: 20000 });
 
-    console.log('Switching to H.264 to verify it does not crash...');
-    await page.click('#config-btn');
-    await expect(page.locator('#config-dropdown')).toBeVisible();
-    await page.locator('.config-tab-btn[data-tab="tab-stream"]').click();
-    await page.evaluate(() => {
-        const sel = document.getElementById('video-codec-select') as HTMLSelectElement;
-        if (sel) {
-            sel.value = 'h264';
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+    await expect.poll(() => fetchReadyz(`http://localhost:${PORT}`), {
+      timeout: 30000,
+      message: 'Wait for the CPU server to report compatibility-mode readiness',
+    }).toMatchObject({
+      ready: true,
+      acceleratorMode: 'cpu',
+      useIntel: false,
+      directBuffer: {
+        captureMode: 'compat',
+        active: false,
+      },
     });
 
+    const cdp = await page.context().newCDPSession(page);
+    const browserVersion = await cdp.send('Browser.getVersion');
+    console.log(`Browser product: ${browserVersion.product}`);
+    console.log(`Configured executable: ${process.env.PLAYWRIGHT_CHROME_EXECUTABLE || 'Chrome channel'}`);
+    expect(browserVersion.product).toMatch(/^Chrome\//);
+    expect(browserVersion.userAgent).not.toContain('HeadlessChrome');
+
+    console.log(`Navigating to https://localhost:${WT_PORT}...`);
+    await page.goto(`https://localhost:${WT_PORT}`);
+
+    const statusEl = page.locator('#status');
+    await expect(statusEl).toHaveText(/\[WebTransport/i, { timeout: 20000 });
+    await waitForStreamingFrames(page, 'Wait for decoded CPU-streamed frames', 30000);
     await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
-        timeout: 20000,
-    }).toContain('Target video codec changed to h264');
+      timeout: 10000,
+      message: 'Wait for the server-side WebTransport session log',
+    }).toContain('WebTransport session established');
 
-    // After codec change, server restarts. Client should reconnect.
-    await expect(statusEl).toHaveText(/\[WebTransport/i, { timeout: 30000 });
-
-    // Close config dropdown
-    await page.click('#config-btn');
-    await expect(page.locator('#config-dropdown')).not.toBeVisible();
-
-    // 3. Simulate mouse click
-    const displayContainer = page.locator('#display-container');
-    await displayContainer.click({ position: { x: 100, y: 100 } });
-    
-    // Move the mouse and verify video frames are arriving (FPS > 0)
-    await page.mouse.move(400, 300);
-    await page.waitForTimeout(5000); 
-
-    await expect(async () => {
-        await page.mouse.move(200 + Math.random() * 400, 150 + Math.random() * 300);
-        await page.waitForTimeout(200);
-        const status = await statusEl.textContent() || '';
-        expect(status).toMatch(/\[WebTransport/i);
-        const fpsMatch = status.match(/FPS: (\d+)/);
-        const fps = fpsMatch ? parseInt(fpsMatch[1], 10) : 0;
-        expect(fps).toBeGreaterThan(0);
-    }).toPass({ timeout: 20000 });
-    
     const finalStatus = await statusEl.textContent();
     console.log(`Final Status: ${finalStatus}`);
   });

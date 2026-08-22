@@ -47,8 +47,8 @@ The final stable fix was in [`playwright.config.ts`](/home/danial/code/LLrdc/pla
 
 2. Keep headed Chrome on native Wayland.
 
-   - Use `--ozone-platform=x11`.
-   - This removed the fractional viewport/layout overshoot.
+   - Use `--ozone-platform=wayland` on Linux and the active graphical session's Wayland socket.
+   - Do not pass Linux Ozone arguments when the same suite runs on macOS.
 
 3. Use a real browser window instead of a globally fixed Playwright viewport.
 

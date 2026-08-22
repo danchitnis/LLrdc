@@ -22,6 +22,7 @@
     "client:benchmark:latency": "./tests/linux-wayland-native/benchmark-wayland-native-latency.sh",
     "start": "./docker-run.sh",
     "test": "./test-linux-cpu-browser.sh tests/linux-cpu-browser tests/cpu",
+    "test:cpu:connection": "CONTAINER_IMAGE=danchitnis/llrdc:latest ./test-linux-cpu-browser.sh tests/linux-cpu-browser/wayland_minimal.spec.ts",
     "test:cpu": "CONTAINER_IMAGE=danchitnis/llrdc:latest ./test-linux-cpu-browser.sh tests/cpu",
     "test:intel": "CONTAINER_IMAGE=danchitnis/llrdc:intel ./test-linux-cpu-browser.sh tests/intel-browser",
     "test:nvidia": "./test-linux-cpu-browser.sh tests/nvidia",

@@ -51,7 +51,7 @@ test.describe('Hardware Options Visibility (CPU Mode)', () => {
   test('should hide hardware-only options when running without hardware acceleration', async ({ page }) => {
     await page.goto(`http://localhost:${PORT}`);
     
-    await expect(page.locator('#status')).toContainText(/\[vp8\]/i, { timeout: 20000 });
+    await expect(page.locator('#status')).toContainText(/\[(WebTransport|WebSocket|WebCodecs) vp8\]/i, { timeout: 20000 });
 
     // Open Config
     await page.click('#config-btn');

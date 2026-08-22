@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { readClientStats, waitForServerReady } from '../helpers';
+import { readClientStats, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-framerate-test';
 const PORT = '8084';
@@ -53,6 +53,12 @@ test.describe('Wayland Dynamic Framerate E2E', () => {
     await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
       timeout: 20000,
     }).toContain('Received framerate config: 60 fps');
+
+    await waitForStreamingFrames(page, 'Wait for the stream to reconnect at 60 FPS', 30000);
+    if (!await page.locator('#config-dropdown').isVisible()) {
+      await page.click('#config-btn');
+    }
+    await streamTabLocator.click();
 
     // Select 15 FPS
     console.log('Selecting 15 FPS...');

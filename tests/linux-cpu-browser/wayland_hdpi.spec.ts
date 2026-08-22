@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady } from '../helpers';
+import { FULL_HD_STREAM_SIZE, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-hdpi-test';
 const PORT = '8092';
@@ -49,6 +49,7 @@ test.describe('Wayland HDPI Scaling', () => {
     // 2. Wait for connection
     const statusEl = page.locator('#status');
     await expect(statusEl).toHaveText(/\[(WebTransport|WebCodecs|WebSocket)/i, { timeout: 60000 });
+    await waitForStreamingFrames(page, 'Initial HDPI stream should be active', 30000);
 
     // Generate some activity to ensure the decoder receives frames
     await page.mouse.move(100, 100);
@@ -92,16 +93,16 @@ test.describe('Wayland HDPI Scaling', () => {
     console.log('Changing max resolution to 1080p...');
     await maxResSelect.selectOption('1080');
     await expect(maxResSelect).toHaveValue('1080');
+    await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
+      timeout: 20000,
+    }).toContain('Received max resolution config: 1080p');
 
     await expect.poll(async () => {
       return await getVideoResolution();
     }, {
       message: 'Stream should switch to a 1080p-class resolution after selecting 1080p',
       timeout: 30000,
-    }).toMatchObject({
-      width: 1920,
-      height: 1080,
-    });
+    }).toMatchObject(FULL_HD_STREAM_SIZE);
 
     console.log('Switching back to responsive mode...');
     await maxResSelect.selectOption('0');
@@ -123,10 +124,7 @@ test.describe('Wayland HDPI Scaling', () => {
     }, {
       message: 'Stream should switch back to 1080p-class resolution before changing HDPI',
       timeout: 30000,
-    }).toMatchObject({
-      width: 1920,
-      height: 1080,
-    });
+    }).toMatchObject(FULL_HD_STREAM_SIZE);
     
     // 6. Change HDPI to 150%
     console.log('Changing HDPI to 150%...');
@@ -179,10 +177,7 @@ test.describe('Wayland HDPI Scaling', () => {
     }, {
       message: '1080p-class stream resolution should still be preserved after HDPI change',
       timeout: 30000,
-    }).toMatchObject({
-      width: 1920,
-      height: 1080,
-    });
+    }).toMatchObject(FULL_HD_STREAM_SIZE);
     
     console.log('Stream recovery verified successfully.');
   });

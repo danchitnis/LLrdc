@@ -1,5 +1,12 @@
 import { expect, Page } from '@playwright/test';
 
+export const WAYLAND_DIMENSION_ALIGNMENT = 16;
+export const FULL_HD_STREAM_SIZE = { width: 1920, height: 1072 } as const;
+
+export function alignWaylandDimension(value: number): number {
+    return Math.floor(value / WAYLAND_DIMENSION_ALIGNMENT) * WAYLAND_DIMENSION_ALIGNMENT;
+}
+
 export interface ContainerImage {
     name: string;
     tag: string;
@@ -50,6 +57,8 @@ export interface ReadyzPayload {
     conditions?: Record<string, boolean>;
     chroma?: string;
     videoCodec?: string;
+    acceleratorMode?: string;
+    useIntel?: boolean;
     directBuffer?: {
         requested?: boolean;
         supported?: boolean;

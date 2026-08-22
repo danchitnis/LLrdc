@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady } from '../helpers';
+import { FULL_HD_STREAM_SIZE, waitForServerReady } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-wayland-mouse-test';
 const PORT = '8082';
@@ -34,13 +34,13 @@ test.describe('Wayland Mouse E2E', () => {
     const statusEl = page.locator('#status');
     await expect(statusEl).toContainText(/\[.+\]/i, { timeout: 30000 });
 
-    // Wait for the remote stream to actually be 1920x1080 (forced by --res 1080p at startup).
+    // The 1080p preset is aligned down for the encoder.
     await expect.poll(async () => {
         return await page.evaluate(() => {
             const canvas = document.getElementById('display') as HTMLCanvasElement;
             return { width: canvas.width, height: canvas.height };
         });
-    }, { timeout: 30000 }).toMatchObject({ width: 1920, height: 1080 });
+    }, { timeout: 30000 }).toMatchObject(FULL_HD_STREAM_SIZE);
 
     const box = await page.evaluate(() => {
         const el = document.getElementById('display-container');
@@ -67,7 +67,7 @@ test.describe('Wayland Mouse E2E', () => {
     }).toContain('Wayland mouse move:');
 
     const moveIndex = logs.indexOf('Wayland mouse move:');
-    const firstMouseDownIndex = logs.indexOf('"action":"mousedown"');
+    const firstMouseDownIndex = logs.indexOf('Wayland mouse button 272 mousedown');
     expect(moveIndex).toBeGreaterThanOrEqual(0);
     if (firstMouseDownIndex >= 0) {
         expect(moveIndex).toBeLessThan(firstMouseDownIndex);
@@ -92,8 +92,7 @@ test.describe('Wayland Mouse E2E', () => {
     console.log('--- END LOGS ---');
     
     expect(logs).toContain('Wayland mouse move:');
-    // Also check that we received the mousedown message
-    expect(logs).toContain('"action":"mousedown"');
+    expect(logs).toContain('Wayland mouse button 272 mousedown');
     
     await expect(statusEl).toContainText(/\[.+\]/i);
   });
@@ -106,13 +105,13 @@ test.describe('Wayland Mouse E2E', () => {
     const statusEl = page.locator('#status');
     await expect(statusEl).toContainText(/\[.+\]/i, { timeout: 30000 });
 
-    // Wait for the remote stream to actually be 1920x1080 (forced by --res 1080p at startup).
+    // The 1080p preset is aligned down for the encoder.
     await expect.poll(async () => {
         return await page.evaluate(() => {
             const canvas = document.getElementById('display') as HTMLCanvasElement;
             return { width: canvas.width, height: canvas.height };
         });
-    }, { timeout: 30000 }).toMatchObject({ width: 1920, height: 1080 });
+    }, { timeout: 30000 }).toMatchObject(FULL_HD_STREAM_SIZE);
 
     const box = await page.evaluate(() => {
         const el = document.getElementById('display-container');

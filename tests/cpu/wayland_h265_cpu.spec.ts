@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from '../helpers';
+import { fetchReadyz, readClientStats, waitForServerReady } from '../helpers';
 
 const PORT = 8900 + Math.floor(Math.random() * 200);
 const SERVER_URL = `http://localhost:${PORT}`;
@@ -61,9 +61,30 @@ test.describe('Wayland CPU H.265', () => {
         });
 
         await page.goto(SERVER_URL);
+        const hevcSupported = await page.evaluate(async () => {
+            if (typeof VideoDecoder === 'undefined') return false;
+            try {
+                const support = await VideoDecoder.isConfigSupported({
+                    codec: 'hev1.1.6.L120.90',
+                    optimizeForLatency: true,
+                    hardwareAcceleration: 'prefer-software',
+                });
+                return support.supported;
+            } catch {
+                return false;
+            }
+        });
+        test.skip(!hevcSupported, 'Installed Google Chrome does not expose an HEVC WebCodecs decoder');
+
         await page.click('body');
 
-        await expect(page.locator('#status')).toContainText(/\[h265\]/i, { timeout: 45000 });
-        await waitForStreamingFrames(page, 'Wait for sustained CPU H.265 decoding');
+        await expect(page.locator('#status')).toContainText(/\[(WebTransport|WebSocket|WebCodecs) h265\]/i, { timeout: 45000 });
+        await expect.poll(async () => {
+            const stats = await readClientStats(page);
+            return stats.totalDecoded > 10 && stats.fps > 0;
+        }, {
+            timeout: 30000,
+            message: 'Wait for active CPU H.265 decoding',
+        }).toBe(true);
     });
 });

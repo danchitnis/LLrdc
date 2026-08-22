@@ -1,5 +1,15 @@
 import { defineConfig } from '@playwright/test';
 
+const chromeExecutable = process.env.PLAYWRIGHT_CHROME_EXECUTABLE;
+const launchArgs = [
+  '--autoplay-policy=no-user-gesture-required',
+  '--window-size=1324,931',
+];
+
+if (process.platform === 'linux') {
+  launchArgs.splice(1, 0, '--ozone-platform=wayland');
+}
+
 export default defineConfig({
   testDir: './tests',
   // Run tests serially to avoid multiple concurrent Docker containers.
@@ -18,13 +28,12 @@ export default defineConfig({
     // enough to show the entire desktop without manual stretching.
     viewport: null,
     screen: { width: 1324, height: 931 },
-    channel: 'chrome',
+    // The CPU browser runners set an explicit system Chrome executable. Keep
+    // the Chrome channel fallback for direct Playwright use on other hosts.
+    channel: chromeExecutable ? undefined : 'chrome',
     launchOptions: {
-      args: [
-        '--autoplay-policy=no-user-gesture-required',
-        '--ozone-platform=wayland',
-        '--window-size=1324,931'
-      ]
+      ...(chromeExecutable ? { executablePath: chromeExecutable } : {}),
+      args: launchArgs,
     },
     trace: 'on-first-retry',
     video: 'on',

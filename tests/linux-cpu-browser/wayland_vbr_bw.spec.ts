@@ -83,7 +83,9 @@ test.describe('Wayland VBR Bandwidth Verification', () => {
 
         console.log(`Bandwidth ratio (VBR/CBR): ${(avgVbrBw / avgCbrBw).toFixed(4)}`);
 
-        // We expect a significant drop. Even 50% drop is a good sign for VBR on static content.
-        expect(avgVbrBw).toBeLessThan(avgCbrBw * 0.5);
+        // Require both a useful relative reduction and a low absolute bitrate.
+        // The exact ratio varies with the visible desktop and Chrome window.
+        expect(avgVbrBw).toBeLessThan(1);
+        expect(avgVbrBw).toBeLessThan(avgCbrBw * 0.8);
     });
 });

@@ -1,6 +1,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { execSync } from 'child_process';
-import { waitForServerReady, waitForStreamingFrames } from '../helpers';
+import { alignWaylandDimension, FULL_HD_STREAM_SIZE, waitForServerReady, waitForStreamingFrames } from '../helpers';
 
 const CONTAINER_NAME = 'llrdc-res-flow-test';
 const PORT = '8094';
@@ -33,6 +33,20 @@ test.describe('Resolution Flow Verification', () => {
     });
   };
 
+  const getExpectedResponsiveResolution = async (page: Page) => {
+    const dimensions = await page.locator('#display-container').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        width: rect.width * window.devicePixelRatio,
+        height: rect.height * window.devicePixelRatio,
+      };
+    });
+    return {
+      width: alignWaylandDimension(dimensions.width),
+      height: alignWaylandDimension(dimensions.height),
+    };
+  };
+
   test('should verify Responsive -> 720p -> 1080p -> Responsive flow', async ({ page }) => {
     test.setTimeout(60000);
     
@@ -54,9 +68,9 @@ test.describe('Resolution Flow Verification', () => {
     await waitForStreamingFrames(page, 'Initial stream should be active', 20000);
 
     // 2. Initial Responsive Check
-    // The server aligns to 8 pixels.
-    // viewportH = 700. topBar = 48. containerH = 652. Aligned to 8 = 648.
-    // viewportW = 1100. Aligned to 8 = 1096.
+    // Derive the responsive size from the actual headed browser layout. The
+    // server aligns both dimensions down to its encoder-compatible boundary.
+    const expectedResponsiveResolution = await getExpectedResponsiveResolution(page);
     console.log('Checking initial responsive resolution...');
     await expect.poll(async () => {
       const res = await getVideoResolution(page);
@@ -65,10 +79,7 @@ test.describe('Resolution Flow Verification', () => {
     }, {
       message: 'Initial resolution should match viewport (aligned minus top bar)',
       timeout: 15000,
-    }).toMatchObject({
-      width: 1096,
-      height: 648,
-    });
+    }).toMatchObject(expectedResponsiveResolution);
 
     // 3. Open Config Menu
     console.log('Opening config menu...');
@@ -89,12 +100,9 @@ test.describe('Resolution Flow Verification', () => {
     console.log('Switching to 1080p...');
     await maxResSelect.selectOption('1080');
     await expect.poll(() => getVideoResolution(page), {
-      message: 'Resolution should switch to 1920x1080',
+      message: 'Resolution should switch to aligned 1080p',
       timeout: 15000,
-    }).toMatchObject({
-      width: 1920,
-      height: 1080,
-    });
+    }).toMatchObject(FULL_HD_STREAM_SIZE);
 
     // 5. Switch back to Responsive
     console.log('Switching back to Responsive...');
@@ -102,10 +110,7 @@ test.describe('Resolution Flow Verification', () => {
     await expect.poll(() => getVideoResolution(page), {
       message: 'Resolution should return to viewport size (aligned)',
       timeout: 15000,
-    }).toMatchObject({
-      width: 1096,
-      height: 648,
-    });
+    }).toMatchObject(expectedResponsiveResolution);
 
     console.log('Resolution flow verified successfully!');
   });
