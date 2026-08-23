@@ -6,6 +6,7 @@ import { assertInstalledHeadedChrome, assertStreamingConnection, ConnectionTarge
 const CONTAINER_NAME = 'llrdc-wayland-test';
 const PORT = '8081';
 const WT_PORT = '8091';
+const SERVER_HOST = process.env.LLRDC_SERVER_HOST || 'localhost';
 
 test.describe('CPU browser connection smoke test', () => {
   test.setTimeout(120000);
@@ -38,7 +39,7 @@ test.describe('CPU browser connection smoke test', () => {
     page.on('console', msg => console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`));
     await page.setViewportSize({ width: 1280, height: 819 });
 
-    await expect.poll(() => fetchReadyz(`http://localhost:${PORT}`), {
+      await expect.poll(() => fetchReadyz(`http://${SERVER_HOST}:${PORT}`), {
       timeout: 30000,
       message: 'Wait for the CPU server to report compatibility-mode readiness',
     }).toMatchObject({
@@ -54,11 +55,11 @@ test.describe('CPU browser connection smoke test', () => {
     await assertInstalledHeadedChrome(page);
 
     const target: ConnectionTarget = {
-      serverHost: 'localhost',
+      serverHost: SERVER_HOST,
       port: Number(PORT),
       captureMode: 'compat',
-      serverUrl: `http://localhost:${PORT}`,
-      viewerUrl: `https://127.0.0.1:${WT_PORT}`,
+      serverUrl: `http://${SERVER_HOST}:${PORT}`,
+      viewerUrl: `https://${SERVER_HOST}:${WT_PORT}`,
       expectedTransport: 'WebTransport',
       statusCodec: 'vp8',
       browserSurface: 'linux',

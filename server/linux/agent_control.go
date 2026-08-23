@@ -13,6 +13,8 @@ import (
 	"github.com/danchitnis/llrdc/internal/splitproto"
 )
 
+var captureReconfigurationPending bool
+
 var (
 	controlConns   = make(map[net.Conn]struct{})
 	controlConnsMu sync.Mutex
@@ -144,18 +146,49 @@ func handleApplyConfig(conn net.Conn, config map[string]interface{}) {
 		displayChangeRequested = true
 	}
 
-	if displayChangeRequested {
-		actualW, actualH := GetScreenSize()
-		_ = resizeDisplay(actualW, actualH)
-		captureChangeRequested = true
+	// Stop the active screencopy before changing the compositor mode or scale.
+	// Applying a new HDPI scale while wf-recorder still owns a frame can make
+	// wlroots reject the next buffer as having invalid dimensions.
+	ffmpegMutex.Lock()
+	pendingReconfiguration := captureReconfigurationPending
+	ffmpegMutex.Unlock()
+	captureRestartRequested := displayChangeRequested || captureChangeRequested || pendingReconfiguration
+	reconfigurationReady := true
+	if captureRestartRequested {
+		// Keep the capture supervisor from starting a replacement process while
+		// the compositor output is being reconfigured.
+		ffmpegMutex.Lock()
+		isResizing = true
+		captureReconfigurationPending = true
+		ffmpegMutex.Unlock()
+		KillFFmpegWithTimestamp()
+		// Do not rely on a fixed sleep: wait until wf-recorder has actually
+		// released its screencopy buffers before changing the output geometry.
+		if !waitForFFmpegExit(5 * time.Second) {
+			log.Printf("Timed out waiting for capture process to exit before display reconfiguration")
+			reconfigurationReady = false
+		}
 	}
 
-	if captureChangeRequested {
-		// Kill wf-recorder to trigger restart with new dimensions/format
-		KillFFmpegWithTimestamp()
-
-		// Brief pause to allow wf-recorder to fully exit and Wayland to settle
-		time.Sleep(100 * time.Millisecond)
+	if reconfigurationReady && displayChangeRequested {
+		actualW, actualH := GetScreenSize()
+		if err := resizeDisplay(actualW, actualH); err != nil {
+			log.Printf("Display reconfiguration failed for %dx%d: %v", actualW, actualH, err)
+			reconfigurationReady = false
+		} else if err := waitForDisplayState(actualW, actualH, 5*time.Second); err != nil {
+			log.Printf("Display did not reach requested mode %dx%d before capture restart: %v", actualW, actualH, err)
+			reconfigurationReady = false
+		}
+	}
+	if !reconfigurationReady {
+		log.Printf("Capture restart deferred until the compositor and capture process acknowledge the requested configuration")
+		return
+	}
+	if captureRestartRequested {
+		ffmpegMutex.Lock()
+		isResizing = false
+		captureReconfigurationPending = false
+		ffmpegMutex.Unlock()
 	}
 
 	if paused, ok := config["paused"].(bool); ok {

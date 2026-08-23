@@ -54,6 +54,24 @@ func KillFFmpegWithTimestamp() {
 	}
 }
 
+// waitForFFmpegExit waits for the capture supervisor to clear its active
+// process after cmd.Wait returns. A SIGTERM alone is not sufficient before a
+// Wayland mode change: wf-recorder can still own a screencopy buffer while its
+// process is shutting down.
+func waitForFFmpegExit(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		ffmpegMutex.Lock()
+		active := ffmpegCmd
+		ffmpegMutex.Unlock()
+		if active == nil {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
 func ForceDirectCaptureKeyframe() {
 	ffmpegMutex.Lock()
 	cmd := ffmpegCmd
@@ -745,6 +763,11 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 				startTime := time.Now()
 				// We just wait for it to exit.
 				_ = cmd.Wait()
+				ffmpegMutex.Lock()
+				if ffmpegCmd == cmd {
+					ffmpegCmd = nil
+				}
+				ffmpegMutex.Unlock()
 				// Prevent rapid spin loop if TCP is refused or config is invalid,
 				// but allow instantaneous restart if it ran for a bit.
 				if time.Since(startTime) < 100*time.Millisecond {
@@ -796,6 +819,11 @@ func startStreaming(onFrame func(EncodedVideoFrame, uint32, string)) {
 
 			streamProducedFrame := <-doneCh
 			_ = cmd.Wait()
+			ffmpegMutex.Lock()
+			if ffmpegCmd == cmd {
+				ffmpegCmd = nil
+			}
+			ffmpegMutex.Unlock()
 
 			if CaptureMode == CaptureModeDirect && !streamProducedFrame {
 				setDirectBufferActive(false, "Direct-buffer capture process exited without producing frames")

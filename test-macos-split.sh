@@ -1,106 +1,157 @@
 #!/usr/bin/env bash
-# test-macos-split.sh
-# Usage: ./test-macos-split.sh [test_file.spec.ts]
-# If no argument is provided, runs all tests in tests/macos-browser/
-
 set -euo pipefail
 
-# Configuration
-IMAGE_NAME="danchitnis/llrdc"
-IMAGE_TAG="macos"
-CONTAINER_NAME="llrdc-macos"
-SERVER_PORT="${PORT:-8080}"
-LOG_DIR="test-logs"
-mkdir -p "$LOG_DIR"
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "macOS split browser tests require Darwin; no Linux or nzxt5 execution is supported." >&2
+    exit 2
+fi
 
-TEST_TO_RUN="${1:-}"
+CHROME_APP="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+SAFARI_DRIVER="/usr/bin/safaridriver"
+IMAGE="danchitnis/llrdc:macos"
+BASE_PORT="${PORT:-8080}"
+ARTIFACT_ROOT="${MACOS_TEST_ARTIFACT_ROOT:-.artefact/macos-browser}"
+BROWSER_FILTER=""
+SCENARIO_FILTER=""
+SCENARIOS=(connection reconfiguration resolution hdpi input clipboard codecs)
+SAFARI_SCENARIOS=(connection reconfiguration resolution hdpi input codecs)
+BROWSERS=(chrome safari)
 
-echo "========================================"
-echo "Cleaning up previous session..."
-killall macos-server 2>/dev/null || true
-docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-rm -f "$LOG_DIR"/*.log
+usage() {
+    cat <<'EOF'
+Usage: ./test-macos-split.sh [--browser chrome|safari] [--scenario NAME]
 
-echo "========================================"
-echo "Building components..."
-npm run build
-go build -o macos-server ./server/macos/*.go
+Runs the local native macOS server and Docker capture agent in each scenario,
+then drives the installed headed Chrome and Safari sequentially.
+EOF
+}
 
-echo "========================================"
-echo "Building Docker container..."
-./docker-build.sh --macos
-docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:latest"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --browser) BROWSER_FILTER="${2:-}"; shift 2 ;;
+        --scenario) SCENARIO_FILTER="${2:-}"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
 
-echo "========================================"
-echo "Starting macos-server..."
-# Run with USE_DEBUG_INPUT=true to capture diagnostic logs
-export USE_DEBUG_INPUT=true
-export PORT="${SERVER_PORT}"
-./macos-server > "$LOG_DIR/macos-server.log" 2>&1 &
-MACOS_SERVER_PID=$!
+contains() {
+    local needle="$1"
+    shift
+    local value
+    for value in "$@"; do
+        [[ "$value" == "$needle" ]] && return 0
+    done
+    return 1
+}
 
-echo "Waiting for macos-server to bind ports..."
-MAX_RETRIES=10
-COUNT=0
-while ! lsof -i :"${SERVER_PORT}" >/dev/null || ! lsof -i :12345 >/dev/null; do
-    sleep 1
-    COUNT=$((COUNT + 1))
-    if [ $COUNT -ge $MAX_RETRIES ]; then
-        echo "❌ ERROR: macos-server failed to bind ports in time."
-        cat "$LOG_DIR/macos-server.log"
-        kill $MACOS_SERVER_PID
-        exit 1
+if [[ -n "$BROWSER_FILTER" ]] && ! contains "$BROWSER_FILTER" "${BROWSERS[@]}"; then
+    echo "Unsupported browser: $BROWSER_FILTER" >&2
+    exit 2
+fi
+if [[ -n "$SCENARIO_FILTER" ]] && ! contains "$SCENARIO_FILTER" "${SCENARIOS[@]}"; then
+    echo "Unsupported scenario: $SCENARIO_FILTER" >&2
+    exit 2
+fi
+if [[ "$BROWSER_FILTER" == "safari" ]] && [[ "$SCENARIO_FILTER" == "clipboard" ]]; then
+    echo "Safari does not implement clipboard synchronization; clipboard is not a Safari scenario." >&2
+    exit 2
+fi
+
+for command in docker curl npm go npx lsof; do
+    command -v "$command" >/dev/null || { echo "Required command not found: $command" >&2; exit 2; }
+done
+[[ -x "$CHROME_APP" ]] || { echo "Installed Google Chrome not found at $CHROME_APP" >&2; exit 2; }
+[[ -x "$SAFARI_DRIVER" ]] || { echo "Safari WebDriver not found at $SAFARI_DRIVER" >&2; exit 2; }
+docker info >/dev/null 2>&1 || { echo "Docker Desktop is not running" >&2; exit 2; }
+
+for port in "$BASE_PORT" "$((BASE_PORT + 10))" 12345 12346 12348; do
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+        echo "Required local port is already in use: $port" >&2
+        exit 2
     fi
 done
-echo "✅ macos-server is ready."
 
-echo "========================================"
-echo "Starting container (detached)..."
-docker run -d \
-  --name "${CONTAINER_NAME}" \
-  --shm-size=2gb \
-  -e USE_DEBUG_INPUT=true \
-  -p 12346:12346 \
-  -p 12348:12348 \
-  --add-host host.docker.internal:host-gateway \
-  "${IMAGE_NAME}:${IMAGE_TAG}" > /dev/null
+mkdir -p "$ARTIFACT_ROOT"
+echo "Building frontend, native macOS server, and local Docker capture image..."
+npm run build
+go build -o macos-server ./server/macos/*.go
+./docker-build.sh --macos
 
-echo "Waiting for container to connect to host..."
-sleep 5
-if ! grep -q "Video producer connected" "$LOG_DIR/macos-server.log"; then
-    echo "⚠️ Warning: Video producer hasn't connected yet. Check container logs."
-    docker logs "$CONTAINER_NAME" | tail -n 20
+run_combo() {
+    local browser="$1"
+    local scenario="$2"
+    local combo_dir="${ARTIFACT_ROOT}/${browser}-${scenario}"
+    local container="llrdc-macos-${browser}-${scenario}"
+    local server_log="${combo_dir}/macos-server.log"
+    local status=0
+    local server_pid=""
+
+    mkdir -p "$combo_dir"
+    rm -f "$server_log" "${combo_dir}/container.log"
+    docker rm -f "$container" >/dev/null 2>&1 || true
+
+    cleanup_combo() {
+        if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+        fi
+        docker logs "$container" >"${combo_dir}/container.log" 2>&1 || true
+        docker rm -f "$container" >/dev/null 2>&1 || true
+    }
+    trap cleanup_combo RETURN
+
+    echo "=== ${browser}/${scenario}: starting fresh local server and capture agent ==="
+    PORT="$BASE_PORT" USE_DEBUG_INPUT=true ./macos-server >"$server_log" 2>&1 &
+    server_pid=$!
+    for attempt in {1..30}; do
+        if curl -fsS "http://127.0.0.1:${BASE_PORT}/healthz" >/dev/null 2>&1 && lsof -nP -iTCP:12345 -sTCP:LISTEN >/dev/null 2>&1; then break; fi
+        sleep 1
+        if [[ "$attempt" == 30 ]]; then echo "macos-server did not become ready; see $server_log" >&2; return 1; fi
+    done
+
+    docker run -d \
+        --name "$container" \
+        --shm-size=2gb \
+        -e USE_DEBUG_INPUT=true \
+        -p 12346:12346 \
+        -p 12348:12348 \
+        --add-host host.docker.internal:host-gateway \
+        "$IMAGE" >/dev/null
+
+    for attempt in {1..30}; do
+        if grep -q "Video producer connected" "$server_log"; then break; fi
+        sleep 1
+        if [[ "$attempt" == 30 ]]; then echo "Docker capture agent did not connect; see $server_log" >&2; return 1; fi
+    done
+
+    set +e
+    MACOS_TEST_BASE_URL="http://127.0.0.1:${BASE_PORT}" \
+    MACOS_TEST_CONTAINER="$container" \
+    MACOS_TEST_ARTIFACT_DIR="$combo_dir" \
+        npx tsx tests/macos-safari/run.ts --browser "$browser" --scenario "$scenario"
+    status=$?
+    set -e
+    if [[ "$status" -ne 0 ]]; then echo "FAIL ${browser}/${scenario}; artifacts: $combo_dir" >&2; else echo "PASS ${browser}/${scenario}"; fi
+    return "$status"
+}
+
+selected_browsers=("${BROWSERS[@]}")
+selected_scenarios=("${SCENARIOS[@]}")
+[[ -n "$BROWSER_FILTER" ]] && selected_browsers=("$BROWSER_FILTER")
+[[ -n "$SCENARIO_FILTER" ]] && selected_scenarios=("$SCENARIO_FILTER")
+if [[ "$SCENARIO_FILTER" == "clipboard" ]] && [[ -z "$BROWSER_FILTER" ]]; then
+    echo "Skipping Safari clipboard: Safari clipboard synchronization is not implemented."
+    selected_browsers=(chrome)
 fi
 
-echo "========================================"
-echo "Running Playwright Tests..."
-export CONTAINER_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
-set +e
+for browser in "${selected_browsers[@]}"; do
+    if [[ "$browser" == "safari" ]] && [[ -z "$SCENARIO_FILTER" ]]; then
+        selected_scenarios=("${SAFARI_SCENARIOS[@]}")
+    fi
+    for scenario in "${selected_scenarios[@]}"; do
+        run_combo "$browser" "$scenario"
+    done
+done
 
-if [ -n "$TEST_TO_RUN" ]; then
-    echo "Running specific test: $TEST_TO_RUN"
-    npx playwright test "tests/macos-browser/$TEST_TO_RUN" --workers=1 --reporter=line --max-failures=1
-    TEST_EXIT=$?
-else
-    echo "Running all macOS tests..."
-    npx playwright test tests/macos-browser/ --workers=1 --reporter=line --max-failures=1
-    TEST_EXIT=$?
-fi
-set -e
-
-if [ $TEST_EXIT -eq 0 ]; then
-    echo "✅ TEST(S) PASSED"
-else
-    echo "❌ TEST(S) FAILED"
-    echo "--- LAST 50 LINES OF macos-server.log ---"
-    tail -n 50 "$LOG_DIR/macos-server.log"
-    echo "--- LAST 50 LINES OF CONTAINER LOGS ---"
-    docker logs "$CONTAINER_NAME" 2>&1 | tail -n 50
-fi
-
-echo "========================================"
-echo "Tearing down..."
-kill $MACOS_SERVER_PID 2>/dev/null || true
-docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-
-exit $TEST_EXIT
+echo "All selected local macOS installed-browser scenarios passed."

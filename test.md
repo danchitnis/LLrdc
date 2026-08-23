@@ -9,13 +9,14 @@ This is the authoritative guide to the maintained tests. The primary Linux brows
 | CPU connection | local Docker | local macOS or nzxt5 Wayland session | WebTransport |
 | NVIDIA connection | prestarted nzxt5 | local macOS or nzxt5 Wayland session | HTTPS + WebTransport |
 | Intel connection | prestarted nzxt5 | local macOS or nzxt5 Wayland session | HTTPS + WebTransport |
-| macOS split | managed by `test-macos-split.sh` | local macOS Chrome | split-server browser flow |
+| macOS split | local native macOS server + local Docker capture agent | installed headed Chrome, then installed headed Safari | Chrome: WebTransport; Safari: WebSocket |
 | Native Wayland | local or nzxt5 | native SDL/Wayland client | WebTransport |
 
 ## Prerequisites and synchronization
 
 - Node.js/npm dependencies are installed (`npm install`), Docker is running, and the checkout is on `next`.
-- Browser tests use the installed, headed Google Chrome binary. Playwright's bundled Chromium is not used; headless Chrome is rejected.
+- Linux/GPU browser tests use the installed, headed Google Chrome binary. Playwright's bundled Chromium is not used; headless Chrome is rejected.
+- The macOS split lane requires `/Applications/Google Chrome.app` and `/usr/bin/safaridriver`. It never launches Playwright Chromium or Playwright WebKit. Enable Safari Develop/Developer Settings → Allow Remote Automation once before the first run (or run `safaridriver --enable`). Chrome uses WebTransport; Safari is intentionally pinned to WebSocket until the Safari WebTransport path is enabled for this lane.
 - The Linux browser lane needs an active Wayland session and `XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY` on nzxt5.
 - For remote work, synchronize the macOS checkout to nzxt5 with SCP before running there. Preserve and inspect remote changes first; the sync skill's archive-overlay workflow is the supported method:
 
@@ -79,13 +80,21 @@ Use `--server-host`, `--port`, and Intel's `--render-node D130` when the endpoin
 
 ## macOS split browser suite
 
-The split runner owns its local server/container lifecycle and executes all retained specs under `tests/macos-browser/`:
+This is a macOS-only local test. It starts the native macOS VideoToolbox server and its local Docker Desktop capture/input agent. It does not use nzxt5, SSH, SCP, or an external Linux host. The runner builds once, then runs the maintained scenarios in installed headed Chrome followed by Safari. Each browser/scenario pair gets a fresh server, capture container, and browser session.
 
 ```bash
 npm run test:macos:browser
+./test-macos-split.sh --browser chrome
+./test-macos-split.sh --browser safari
+./test-macos-split.sh --scenario connection
+./test-macos-split.sh --browser safari --scenario codecs
 ```
 
-Focused diagnostics can be selected with the runner's existing Playwright arguments when needed; they are not substitutes for the primary connection tests.
+Chrome scenarios are `connection`, `reconfiguration`, `resolution`, `hdpi`, `input`, `clipboard`, and `codecs`. Safari scenarios are `connection`, `reconfiguration`, `resolution`, `hdpi`, `input`, and the H.265 4:4:4 codec check. Safari clipboard synchronization and H.264 4:4:4 are not implemented, so they are intentionally not run. Chrome requires WebTransport; Safari requires WebSocket for now. The wrong transport, certificate/navigation failure, missing Safari automation, unsupported decoder, or non-advancing frame stream fails the scenario. Failure artifacts are stored under `.artefact/macos-browser/<browser>-<scenario>/` and include the server log, container log, and a browser screenshot. The runner always closes the active browser and removes only the server/container it started.
+
+The Safari HDPI scenario uses a fixed headed window that maps to a 1920x1072 capture surface at Safari's 2x pixel ratio, then verifies the compositor reaches 200% scale and frames continue advancing.
+
+The viewer is loaded from local HTTP. Chrome's WebTransport path uses the native server's HTTPS listener at HTTP port + 10 and its persisted certificate fingerprint; Safari uses the viewer's local WebSocket endpoint. The macOS suite does not inject insecure-origin/browser fallback flags.
 
 ## Native package and latency tests
 
