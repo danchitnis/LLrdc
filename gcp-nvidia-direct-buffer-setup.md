@@ -130,7 +130,7 @@ On Google Cloud, standard GRUB configurations are overridden by cloud-init profi
 3. Run the container with direct-buffer capture enabled:
 
    ```bash
-   ./docker-run.sh --nvidia --direct-buffer --detach --name llrdc --host-net
+   ./docker-run.sh --nvidia --capture-mode direct --detach --name llrdc --host-net
    ```
 
 ---

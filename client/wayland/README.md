@@ -52,11 +52,7 @@ curl -s http://127.0.0.1:18080/statsz | jq .
 
 ## Automated Benchmarking
 
-To perform a full latency and stability benchmark, use the automated test script:
-
-```bash
-./tests/linux-wayland-native/benchmark-wayland-native-latency.sh
-```
+See the canonical repository test catalog: [test.md](../../test.md).
 
 ## Troubleshooting
 

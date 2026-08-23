@@ -10,7 +10,10 @@ test('macOS split bitrate switching', async ({ page }) => {
     
     console.log('--- Navigating to viewer ---');
     await page.goto('http://localhost:8080/viewer.html');
-    await page.waitForFunction(() => (window as any).networkManager?.wsConnected === true, { timeout: 15000 });
+    await page.waitForFunction(() => {
+        const state = (window as any).__llrdcClient?.getState?.();
+        return state?.webtransportActive === true || state?.wsConnected === true;
+    }, { timeout: 30000 });
     
     // Settle initial resolution and browser transport connection
     await page.waitForTimeout(5000);

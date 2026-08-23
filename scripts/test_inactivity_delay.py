@@ -107,7 +107,7 @@ def main():
     ssh(f"docker rm -f {CONTAINER}", check=False, capture=True)
     ssh(
         f"cd {REMOTE_DIR} && IMAGE_TAG={IMAGE_TAG} CLIENT_TIMEOUT={CLIENT_TIMEOUT} "
-        f"./docker-run.sh --nvidia --direct-buffer --detach --name {CONTAINER}",
+        f"./docker-run.sh --nvidia --capture-mode direct --detach --name {CONTAINER}",
         capture=True,
     )
 

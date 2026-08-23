@@ -120,6 +120,6 @@ else
   info "Modesetting is active and GID/allocators are aligned!"
   info "You can now build and run LLrdc container with direct-buffer capture:"
   echo "  ./docker-build.sh --nvidia"
-  echo "  ./docker-run.sh --nvidia --direct-buffer --detach --name llrdc --host-net"
+  echo "  ./docker-run.sh --nvidia --capture-mode direct --detach --name llrdc --host-net"
 fi
 echo "--------------------------------------------------------"

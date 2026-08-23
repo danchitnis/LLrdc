@@ -1,36 +1,5 @@
 import { expect, Page } from '@playwright/test';
 
-export const WAYLAND_DIMENSION_ALIGNMENT = 16;
-export const FULL_HD_STREAM_SIZE = { width: 1920, height: 1072 } as const;
-
-export function alignWaylandDimension(value: number): number {
-    return Math.floor(value / WAYLAND_DIMENSION_ALIGNMENT) * WAYLAND_DIMENSION_ALIGNMENT;
-}
-
-export interface ContainerImage {
-    name: string;
-    tag: string;
-    ref: string;
-}
-
-export function getContainerImage(defaultTag = 'latest'): ContainerImage {
-    const image = process.env.CONTAINER_IMAGE || `danchitnis/llrdc:${defaultTag}`;
-    const lastSlash = image.lastIndexOf('/');
-    const lastColon = image.lastIndexOf(':');
-
-    if (lastColon > lastSlash) {
-        const name = image.slice(0, lastColon);
-        const tag = image.slice(lastColon + 1);
-        return { name, tag, ref: image };
-    }
-
-    return {
-        name: image,
-        tag: defaultTag,
-        ref: `${image}:${defaultTag}`,
-    };
-}
-
 export async function waitForServerReady(baseUrl: string, timeoutMs = 45000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     let lastStatus = 'server not reachable yet';

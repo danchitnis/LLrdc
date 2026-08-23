@@ -202,31 +202,7 @@ npm run client:verify-package
 
 ### Test the Native Client
 
-The native Linux client test uses Dockerized native/cgo unit tests plus the latency benchmark. This is the authoritative Linux native lane because it packages the client, launches a dedicated Weston bench, connects to a real LLrdc server over same-host WebTransport, drives deterministic input, decodes the visual sample ID, and verifies destination Wayland presentation feedback.
-
-```bash
-npm run client:test
-```
-
-That command runs host-safe Go tests, builds the native/cgo client test image, and executes the authoritative benchmark.
-
-Run the benchmark directly when you want to tune sample count, codec, or ULL settings:
-
-```bash
-npm run client:benchmark:latency
-```
-
-- `client:benchmark:latency` packages the client, launches a dedicated Weston bench, drives deterministic pointer moves through the native client control API, and reports stage timings from control injection through native present using a monotonic clock plus probe-marker correlation.
-
-The destination Wayland surface must be foreground and visible to its compositor. The benchmark checks focus and requires at least one `wp_presentation` **presented** callback before sampling; an occluded or superseded surface is a hard failure. An installed desktop is not sufficient by itself: an SSH shell does not carry GNOME's application-activation context, so a nested Weston window started remotely can remain unfocused and correctly produce only discarded feedback.
-
-For `nzxt5`, synchronize the repository and run the remote-session wrapper from SSH:
-
-```bash
-ssh nzxt5 'cd ~/code/LLrdc && ./scripts/run-remote-wayland-latency.sh'
-```
-
-By default the wrapper starts an isolated headless `labwc` Wayland destination in a disposable NVIDIA-image container. This avoids SSH/GNOME focus and lock-state problems while still requiring real `wp_presentation` feedback. It imports the active user environment when available, synchronizes the source and destination presentation clock, and fails instead of substituting SDL render-submit time. To measure against the physical GNOME compositor instead, use `LLRDC_DESTINATION_COMPOSITOR=gnome`; that requires an unlocked local or GNOME Remote Desktop/RDP session and launches the native client through GNOME application activation. Do not use `ssh -X` or an X11-only session for this benchmark.
+The maintained native, browser, split-surface, and latency commands are documented in [test.md](test.md).
 
 ## Clipboard
 
@@ -303,87 +279,9 @@ PORT=9090 HOST_PORT=9090 FPS=60 VIDEO_CODEC=h264 ./docker-run.sh
 | `WALLPAPER` | Custom wallpaper path | `--wallpaper` |
 | `ENABLE_CLIPBOARD` | Enable clipboard sync | `--enable-clipboard` |
 
-## Reproducible Benchmarks
+## Testing
 
-The authoritative benchmark is the native Wayland client lane. It runs H.264 at 1920×1080/60 with VBR disabled, uses same-host WebTransport, and ends at destination Wayland presentation feedback. Each accelerator invocation reports one capture mode independently; GPU lanes default to `direct`, while CPU uses `compat`.
-
-```bash
-./docker-build.sh --nvidia       # NVIDIA surface
-# ./docker-build.sh --intel     # Intel surface
-# ./docker-build.sh              # CPU surface
-```
-
-Run the NVIDIA direct-path benchmark:
-
-```bash
-npm run test:latency:nvidia
-```
-
-Run the CPU or Intel lanes with the same measurement and report format:
-
-```bash
-npm run test:latency:cpu
-npm run test:latency:intel
-```
-
-On `nzxt5`, use the generic host-local runner:
-
-```bash
-./scripts/benchmark-latency.sh
-```
-
-This defaults to the NVIDIA lane. Select another surface explicitly:
-
-```bash
-./scripts/benchmark-latency.sh --accel cpu
-./scripts/benchmark-latency.sh --accel intel
-```
-
-Select `cpu`, `intel`, or `nvidia` with `--accel`. The runner chooses
-H.264 software, VAAPI, or NVENC respectively, runs the supported capture
-comparison, and writes results to a timestamped directory under
-`.artefact/<accelerator>/`. Use `--mode direct --samples 20` for a quick
-GPU direct-path check.
-
-Each invocation reports its own accelerator, codec, capture mode, percentile statistics, and stage breakdown. Intel and NVIDIA can be run independently in `compat` mode with `--mode compat`; CPU supports `compat` only.
-
-Run the separate installed-Chrome functional lane:
-
-```bash
-npm run test:browser:chrome:nvidia
-```
-
-Run the cross-host NVIDIA or Intel browser connection smoke against a
-prestarted server on `nzxt5`. The browser runner does not start or stop the
-server; start one capture mode at a time and pass the same mode to the runner.
-
-```bash
-# On nzxt5, build the selected image once.
-ssh nzxt5 'bash -lic "cd ~/code/LLrdc && ./docker-build.sh --nvidia"'
-ssh nzxt5 'bash -lic "cd ~/code/LLrdc && PORT=8080 HOST_PORT=8080 VIDEO_CODEC=h264_nvenc ./docker-run.sh --nvidia --capture-mode compat --host-net --detach --name llrdc-nvidia-browser"'
-
-# Browser on macOS: headed Chrome accepts the HTTPS certificate if needed,
-# then uses WebTransport on the server's HTTPS port.
-npm run test:nvidia:connection -- --capture-mode compat
-
-# Browser on nzxt5: headed Chrome and WebTransport via the active Wayland session.
-ssh nzxt5 'bash -lic "cd ~/code/LLrdc && ./test-nvidia-browser.sh --capture-mode compat"'
-```
-
-Repeat with `--capture-mode direct` after replacing the server with a direct
-capture container. Use `--intel` and `--intel-device D130` for the Intel lane,
-then run `npm run test:intel:connection -- --capture-mode compat` locally or invoke
-`./test-intel-browser.sh` through SSH on `nzxt5`. Override the endpoint with
-`--server-host`, `--port`, and (for Intel) `--render-node` when needed.
-
-The native report records nanosecond stages for control delivery, input injection, source commit and presentation, capture/encode, WebTransport write, client read/decode, SDL submission, and destination compositor presentation. It rejects duplicate/undecodable/discarded/non-monotonic samples and never repairs timestamps. Its endpoint is compositor feedback, not physical photon emission; a camera or photodiode is required for that.
-
-Notes:
-- The benchmark disables VBR for reproducibility.
-- On the Intel Linux surface, direct capture uses the `h264_vaapi` encoder in
-  the DMA-BUF `wf-recorder` path; reports include the requested codec and the
-  verified encoder backend.
-- Chrome canvas/WebCodecs callbacks are not used for authoritative latency measurements.
+See [test.md](test.md) for the canonical test matrix, prerequisites, commands, and retained diagnostics.
 
 ## Chroma 4:4:4
 
