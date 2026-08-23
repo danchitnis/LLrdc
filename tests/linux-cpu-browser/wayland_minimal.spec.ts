@@ -1,12 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
-import { fetchReadyz, waitForServerReady, waitForStreamingFrames } from '../helpers';
+import { fetchReadyz, waitForServerReady } from '../helpers';
+import { assertInstalledHeadedChrome, assertStreamingConnection, ConnectionTarget, navigateToHttpsViewer } from '../support/browser-connection';
 
 const CONTAINER_NAME = 'llrdc-wayland-test';
 const PORT = '8081';
 const WT_PORT = '8091';
-
-test.use({ ignoreHTTPSErrors: true });
 
 test.describe('CPU browser connection smoke test', () => {
   test.setTimeout(120000);
@@ -52,25 +51,27 @@ test.describe('CPU browser connection smoke test', () => {
       },
     });
 
-    const cdp = await page.context().newCDPSession(page);
-    const browserVersion = await cdp.send('Browser.getVersion');
-    console.log(`Browser product: ${browserVersion.product}`);
-    console.log(`Configured executable: ${process.env.PLAYWRIGHT_CHROME_EXECUTABLE || 'Chrome channel'}`);
-    expect(browserVersion.product).toMatch(/^Chrome\//);
-    expect(browserVersion.userAgent).not.toContain('HeadlessChrome');
+    await assertInstalledHeadedChrome(page);
 
-    console.log(`Navigating to https://localhost:${WT_PORT}...`);
-    await page.goto(`https://localhost:${WT_PORT}`);
-
-    const statusEl = page.locator('#status');
-    await expect(statusEl).toHaveText(/\[WebTransport/i, { timeout: 20000 });
-    await waitForStreamingFrames(page, 'Wait for decoded CPU-streamed frames', 30000);
+    const target: ConnectionTarget = {
+      serverHost: 'localhost',
+      port: Number(PORT),
+      captureMode: 'compat',
+      serverUrl: `http://localhost:${PORT}`,
+      viewerUrl: `https://127.0.0.1:${WT_PORT}`,
+      expectedTransport: 'WebTransport',
+      statusCodec: 'vp8',
+      browserSurface: 'linux',
+    };
+    console.log(`Navigating to ${target.viewerUrl}...`);
+    await navigateToHttpsViewer(page, target);
+    await assertStreamingConnection(page, target, 'Wait for decoded CPU-streamed frames');
     await expect.poll(() => execSync(`docker logs ${CONTAINER_NAME}`).toString(), {
       timeout: 10000,
       message: 'Wait for the server-side WebTransport session log',
     }).toContain('WebTransport session established');
 
-    const finalStatus = await statusEl.textContent();
+    const finalStatus = await page.locator('#status').textContent();
     console.log(`Final Status: ${finalStatus}`);
   });
 });

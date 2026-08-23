@@ -59,6 +59,8 @@ export interface ReadyzPayload {
     videoCodec?: string;
     acceleratorMode?: string;
     useIntel?: boolean;
+    useNvidia?: boolean;
+    hardwareAvailable?: boolean;
     directBuffer?: {
         requested?: boolean;
         supported?: boolean;
@@ -69,6 +71,8 @@ export interface ReadyzPayload {
         renderer?: string;
         screencopyAvailable?: boolean;
         linuxDmabufAvailable?: boolean;
+        backend?: string;
+        zeroCopyValidated?: boolean;
     };
 }
 

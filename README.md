@@ -353,6 +353,29 @@ Run the separate installed-Chrome functional lane:
 npm run test:browser:chrome:nvidia
 ```
 
+Run the cross-host NVIDIA or Intel browser connection smoke against a
+prestarted server on `nzxt5`. The browser runner does not start or stop the
+server; start one capture mode at a time and pass the same mode to the runner.
+
+```bash
+# On nzxt5, build the selected image once.
+ssh nzxt5 'bash -lic "cd ~/code/LLrdc && ./docker-build.sh --nvidia"'
+ssh nzxt5 'bash -lic "cd ~/code/LLrdc && PORT=8080 HOST_PORT=8080 VIDEO_CODEC=h264_nvenc ./docker-run.sh --nvidia --capture-mode compat --host-net --detach --name llrdc-nvidia-browser"'
+
+# Browser on macOS: headed Chrome accepts the HTTPS certificate if needed,
+# then uses WebTransport on the server's HTTPS port.
+npm run test:nvidia:connection -- --capture-mode compat
+
+# Browser on nzxt5: headed Chrome and WebTransport via the active Wayland session.
+ssh nzxt5 'bash -lic "cd ~/code/LLrdc && ./test-nvidia-browser.sh --capture-mode compat"'
+```
+
+Repeat with `--capture-mode direct` after replacing the server with a direct
+capture container. Use `--intel` and `--intel-device D130` for the Intel lane,
+then run `npm run test:intel:connection -- --capture-mode compat` locally or invoke
+`./test-intel-browser.sh` through SSH on `nzxt5`. Override the endpoint with
+`--server-host`, `--port`, and (for Intel) `--render-node` when needed.
+
 The native report records nanosecond stages for control delivery, input injection, source commit and presentation, capture/encode, WebTransport write, client read/decode, SDL submission, and destination compositor presentation. It rejects duplicate/undecodable/discarded/non-monotonic samples and never repairs timestamps. Its endpoint is compositor feedback, not physical photon emission; a camera or photodiode is required for that.
 
 Notes:

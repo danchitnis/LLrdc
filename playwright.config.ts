@@ -28,7 +28,7 @@ export default defineConfig({
     // enough to show the entire desktop without manual stretching.
     viewport: null,
     screen: { width: 1324, height: 931 },
-    // The CPU browser runners set an explicit system Chrome executable. Keep
+    // The browser runners set an explicit system Chrome executable. Keep
     // the Chrome channel fallback for direct Playwright use on other hosts.
     channel: chromeExecutable ? undefined : 'chrome',
     launchOptions: {
